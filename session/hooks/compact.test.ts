@@ -2,6 +2,7 @@ import { test, expect } from 'claude-code/testing'
 
 import { ENABLED_FIELD, THRESHOLD_FIELD } from './compact.tsx'
 import { COMPACT_MARK, HANDOFF_INSTRUCTIONS, RECAP_HEADER } from './compact-logic.ts'
+import { bridgeFresh, hashRoot } from '../scripts/precompact-logic.mjs'
 import { guardWorld } from './testkit.ts'
 import { clockAt, memoryStore } from './testkit.ts'
 
@@ -118,12 +119,33 @@ type LogOpts = {
   // with `$`, /compact comes back as the engine's session.compact over `rows` (default: none)
   $?: any
   rows?: readonly unknown[]
+  // the conversation $.session.messages() returns
+  convo?: () => readonly unknown[]
+  // HOME, the transcript fs.read returns (a throw when absent) and what fs.write does
+  home?: string
+  transcript?: string
+  write?: (path: string, text: string) => void
 }
 const logWorld = (on: any, o: LogOpts = {}) => {
   const store = memoryStore(on, o.store)
   const clock = clockAt(on)
-  on('session.surfaces', () => ({ value: o.surfaces ?? ['terminal'] }))
+  let headless = false
+  on('session.surfaces', () => ({ value: headless ? [] : (o.surfaces ?? ['terminal']) }))
   on('session.root', () => ({ value: '/proj' }))
+  const writes: { path: string; text: string }[] = []
+  if (o.convo) on('session.messages', () => ({ value: o.convo!() }) as never)
+  on('env.get', (_$: any, e: any) => ({ value: e.name === 'HOME' ? o.home : undefined }) as never)
+  on('fs.read', (_$: any, e: any) => {
+    if (o.transcript === undefined) throw new Error('ENOENT')
+    reads.push(String(e.path))
+    return { value: o.transcript } as never
+  })
+  const reads: string[] = []
+  on('fs.write', (_$: any, e: any) => {
+    o.write?.(e.path, e.text)
+    writes.push({ path: e.path, text: e.text })
+    return { value: undefined } as never
+  })
   on('ui.toast', () => ({ value: undefined }))
   on('ui.status', () => ({ value: undefined }))
   let forks = 0
@@ -148,7 +170,10 @@ const logWorld = (on: any, o: LogOpts = {}) => {
   const seen = { args: [] as string[] }
   if (o.$) engineCompact(on, o.$, () => o.rows ?? [], seen)
   const log = () => (store.get(LOG) ?? []) as any[]
-  return { store, clock, log, forks: () => forks, compacts: () => compacts, reached: () => reached, commands: () => seen.args.length }
+  return {
+    store, clock, log, writes, reads, goHeadless: () => (headless = true),
+    forks: () => forks, compacts: () => compacts, reached: () => reached, commands: () => seen.args.length,
+  }
 }
 
 const until = async (cond: () => boolean, label: string) => {
@@ -476,7 +501,6 @@ const theEngines: [string, object][] = [
   ['a person’s /compact', { trigger: 'manual', instructions: 'keep the code', messages: ROWS }],
   ['a bare /compact', { trigger: 'manual', messages: ROWS }],
   ['a subagent’s auto-compact', { trigger: 'auto', agentId: 'a1', messages: ROWS }],
-  ['a precompute', { trigger: 'precompute', messages: ROWS }],
 ]
 for (const [why, input] of theEngines) {
   test(`${why} goes on to the engine untouched, no handoff`, async ($, on) => {
@@ -574,4 +598,297 @@ test('flow: a failed handoff leaves the engine to summarize, the log has its tok
   await until(() => w.log()[0]?.outcome === 'recap-failed:aborted', 'recap-failed')
   await until(() => w.log()[0]?.tokens !== undefined, 'tokens')
   expect(w.log()[0].tokens).toEqual({ summarizer: { input: 160, output: 40 }, before: 90000, after: 4000 })
+})
+
+// ── pre-write: a handoff made ahead, once per conversation key, near the threshold ──
+const NOW = Date.parse('2026-10-08T09:00:00Z')
+// every test uses its own tag: the once-per-key record lives as long as the module
+const convo = (tag: string, n = 4) =>
+  Array.from({ length: n }, (_, i) => ({ handle: `${tag}${i + 1}`, uuid: `${tag}-u${i + 1}`, role: i % 2 ? 'assistant' : 'user', text: `r${i + 1}`, toolUses: [] }))
+const at = (percent: number) => () => ({ value: { startedAt: 0, context: { window: 100, tokens: percent, percent }, rateLimits: [] } })
+const RECAP = 'recap.project:/proj'
+const stored = (key: string, extra: object = {}) => ({ [RECAP]: { text: 'STORED', ts: NOW, sessionId: 's', key, ...extra } })
+const lastRecap = ($: any) => $.command.run({ command: 'last-recap', args: '' } as never) as Promise<{ text?: string }>
+const prewritten = (w: { log: () => any[] }) => w.log().some(l => l.outcome === 'prewritten')
+const settled = async (w: { log: () => any[]; store: Map<string, unknown> }) => {
+  await until(() => prewritten(w) && w.store.has(RECAP), 'prewrite')
+  await new Promise(r => setTimeout(r, 20))
+}
+const quiet = () => new Promise(r => setTimeout(r, 30))
+
+test('F1-AC-6 a pre-write at threshold-5 forks once, keeps the recap with its key and session, /last-recap shows it', async ($, on) => {
+  const w = logWorld(on, { usage: at(65), convo: () => convo('a') })
+  await $.turn.complete(TURN)
+  await settled(w)
+  expect(w.forks()).toBe(1)
+  expect(w.store.get(RECAP)).toMatchObject({ text: 'GOAL: ship smart-compact', key: '4:a4', sessionId: 'sess-1234abcd' })
+  w.goHeadless()
+  expect((await lastRecap($)).text).toContain('GOAL: ship smart-compact')
+})
+
+test('F1-AC-16 the pre-write ring entry carries recap tokens, recapCalls and discardedPrecomputes', async ($, on) => {
+  const w = logWorld(on, { usage: at(66), convo: () => convo('b') })
+  await $.turn.complete(TURN)
+  await settled(w)
+  expect(w.log().find(l => l.outcome === 'prewritten')).toMatchObject({ decision: 'prewrite', recapCalls: 1, recapTokens: 2, discardedPrecomputes: 0, project: '/proj' })
+})
+
+test('a recap stored without a key still reads', async ($, on) => {
+  const w = logWorld(on, { store: { [RECAP]: { text: 'OLD', ts: NOW, sessionId: 's' } } })
+  w.goHeadless()
+  expect((await lastRecap($)).text).toContain('OLD')
+})
+
+test('F1-AC-3 the key is attempted before the fork: a failed fork is not retried on the same key', async ($, on) => {
+  const w = logWorld(on, { usage: at(67), convo: () => convo('c'), fork: UNANSWERED })
+  await $.turn.complete(TURN)
+  await until(() => w.log().some(l => l.outcome === 'prewrite-failed:aborted'), 'failed entry')
+  expect(w.log().find(l => l.outcome === 'prewrite-failed:aborted')).toMatchObject({ recapCalls: 1, discardedPrecomputes: 0 })
+  await $.turn.complete(TURN)
+  await quiet()
+  expect(w.forks()).toBe(1)
+})
+
+test('F1-AC-5 two turns on the same key at threshold-3 fork once', async ($, on) => {
+  const w = logWorld(on, { usage: at(67), convo: () => convo('d') })
+  await $.turn.complete(TURN)
+  await $.turn.complete(TURN)
+  await settled(w)
+  expect(w.forks()).toBe(1)
+})
+
+test('F1-AC-4 headless, subagent and other reasons make no pre-write at threshold-5', async ($, on) => {
+  const w = logWorld(on, { usage: at(65), convo: () => convo('e'), surfaces: [] })
+  await $.turn.complete(TURN)
+  await $.turn.complete({ ...(TURN as object), agentId: 'a1' } as never)
+  await $.turn.complete({ ...(TURN as object), reason: 'aborted' } as never)
+  await quiet()
+  expect(w.forks()).toBe(0)
+})
+
+test('F1-AC-4 interactive, a subagent turn and another reason make no pre-write at threshold-5', async ($, on) => {
+  const w = logWorld(on, { usage: at(65), convo: () => convo('e2') })
+  await $.turn.complete({ ...(TURN as object), agentId: 'a1' } as never)
+  await $.turn.complete({ ...(TURN as object), reason: 'aborted' } as never)
+  await quiet()
+  expect(w.forks()).toBe(0)
+})
+
+test('below threshold-5 and with smart-compact off, no pre-write', async ($, on) => {
+  const w = logWorld(on, { usage: at(64), convo: () => convo('f') })
+  await $.turn.complete(TURN)
+  await quiet()
+  expect(w.forks()).toBe(0)
+})
+
+test('smart-compact off makes no pre-write', { options: { [ENABLED_FIELD]: false } }, async ($, on) => {
+  const w = logWorld(on, { usage: at(67), convo: () => convo('g') })
+  await $.turn.complete(TURN)
+  await quiet()
+  expect(w.forks()).toBe(0)
+})
+
+const lines = (tag: string) => ['{"type":"file-history-snapshot"}', ...convo(tag).map(r => JSON.stringify({ uuid: r.uuid })), '{"type":"system"}']
+
+test('F1-AC-8 a proven bridge is written at the hashed path and passes bridgeFresh', async ($, on) => {
+  const transcript = lines('h')
+  const w = logWorld(on, { usage: at(67), convo: () => convo('h'), home: '/home/me', transcript: transcript.join('\n') })
+  await $.turn.complete(TURN)
+  await until(() => w.writes.length === 1, 'bridge write')
+  expect(w.writes[0]!.path).toBe(`/home/me/.claude/session/handoff/${hashRoot('/proj')}.json`)
+  expect(w.reads[0]).toMatch(/sess-1234abcd\.jsonl$/)
+  const record = JSON.parse(w.writes[0]!.text)
+  expect(record).toMatchObject({ key: '4:h4', sessionId: 'sess-1234abcd', text: 'GOAL: ship smart-compact', lastUuid: 'h-u4', lineCount: 5 })
+  expect(bridgeFresh(record, { session_id: 'sess-1234abcd', transcript_path: '/t' }, transcript, NOW)).toBe(true)
+})
+
+const unproven: [string, LogOpts][] = [
+  ['no HOME', { transcript: lines('i1').join('\n'), convo: () => convo('i1') }],
+  ['no transcript', { home: '/home/me', convo: () => convo('i2') }],
+  ['the last uuid is not on the transcript', { home: '/home/me', transcript: lines('zz').join('\n'), convo: () => convo('i3') }],
+  ['rows with no uuid', { home: '/home/me', transcript: lines('i4').join('\n'), convo: () => convo('i4').map(({ uuid: _u, ...r }) => r) }],
+]
+for (const [why, o] of unproven) {
+  test(`F1-AC-9 ${why}: no bridge, the recap is still stored`, async ($, on) => {
+    const w = logWorld(on, { usage: at(67), ...o })
+    await $.turn.complete(TURN)
+    await settled(w)
+    expect(w.writes).toEqual([])
+    expect((w.store.get(RECAP) as any).text).toBe('GOAL: ship smart-compact')
+  })
+}
+
+test('F1-AC-10 a throwing bridge write or a broken store does not throw out of the turn', async ($, on) => {
+  const w = logWorld(on, {
+    usage: at(67),
+    convo: () => convo('j'),
+    home: '/home/me',
+    transcript: lines('j').join('\n'),
+    write: () => {
+      throw new Error('read-only')
+    },
+  })
+  expect(await $.turn.complete(TURN)).toMatchObject({ text: 'ok' })
+  await until(() => w.store.has(RECAP), 'recap')
+  await quiet()
+})
+
+test('F1-AC-10 a broken store does not throw out of the turn', async ($, on) => {
+  const b = logWorld(on, { usage: at(67), convo: () => convo('j2') })
+  b.store.broken = true
+  expect(await $.turn.complete(TURN)).toMatchObject({ text: 'ok' })
+  await quiet()
+  expect(b.forks()).toBe(1)
+})
+
+// ── session.compact: a fresh stored handoff stands in for the fork ──
+const OURS: [string, object][] = [
+  ['auto', { trigger: 'auto' }],
+  ['plugin', { trigger: 'plugin' }],
+  ['manual with the mark', { trigger: 'manual', instructions: COMPACT_MARK }],
+  ['precompute', { trigger: 'precompute' }],
+]
+for (const [why, trigger] of OURS) {
+  test(`F1-AC-13 ${why}, fresh stored handoff: 0 forks, the handoff and the tail`, async ($, on) => {
+    const w = logWorld(on, { usage: WINDOW_1000, fork: answered, store: stored('4:h4') })
+    const done = await compactWith($, { ...trigger, messages: ROWS })
+    expect(w.forks()).toBe(0)
+    expect(w.compacts()).toBe(0)
+    expect(done.messages[0]).toEqual({ role: 'user', text: RECAP_HEADER + 'STORED', toolUses: [] })
+    expect(done.messages.slice(1).map((m: any) => m.handle)).toEqual(['h3', 'h4'])
+  })
+  test(`F1-AC-13 ${why}, stale stored handoff: exactly one recapNow`, async ($, on) => {
+    const w = logWorld(on, { usage: WINDOW_1000, fork: answered, store: stored('4:zz') })
+    const done = await compactWith($, { ...trigger, messages: ROWS })
+    expect(w.forks()).toBe(1)
+    expect(w.compacts()).toBe(0)
+    expect(done.messages[0].text).toBe(RECAP_HEADER + 'GOAL: ship')
+  })
+  test(`F1-AC-13 ${why}, fresh stored recap without a key: exactly one recapNow`, async ($, on) => {
+    const w = logWorld(on, { usage: WINDOW_1000, fork: answered, store: { [RECAP]: { text: 'STORED', ts: NOW, sessionId: 's' } } })
+    const done = await compactWith($, { ...trigger, messages: ROWS })
+    expect(w.forks()).toBe(1)
+    expect(w.compacts()).toBe(0)
+    expect(done.messages[0].text).toBe(RECAP_HEADER + 'GOAL: ship')
+  })
+  test(`F1-AC-15 ${why} with smart-compact off goes to the engine, 0 forks`, { options: { [ENABLED_FIELD]: false } }, async ($, on) => {
+    const w = logWorld(on, { usage: WINDOW_1000, fork: answered, store: stored('4:h4') })
+    expect(await compactWith($, { ...trigger, messages: ROWS })).toEqual(SUMMARY)
+    expect(w.compacts()).toBe(1)
+    expect(w.forks()).toBe(0)
+  })
+}
+
+test('a fresh reuse is logged compacted:handoff+<tail>', async ($, on) => {
+  const w = logWorld(on, { usage: WINDOW_1000, fork: answered, store: stored('4:h4') })
+  await compactWith($, { trigger: 'auto', messages: ROWS })
+  await until(() => w.log()[0]?.outcome === 'compacted:handoff+2', 'handoff entry')
+  expect(w.log()[0]).toMatchObject({ decision: 'auto-compact', project: '/proj' })
+})
+
+test('a stored handoff followed by 4 or more rows is stale', async ($, on) => {
+  const w = logWorld(on, { usage: WINDOW_1000, fork: answered, store: stored('4:h4') })
+  const more = [...ROWS, row('h5', 'user', 'a'), row('h6', 'assistant', 'b'), row('h7', 'user', 'c'), row('h8', 'assistant', 'd')]
+  await compactWith($, { trigger: 'auto', messages: more })
+  expect(w.forks()).toBe(1)
+})
+
+// ── the cost of a pre-write lands on the next compaction in its project ──
+const PW = { id: 'pw', ts: 0, session: 's', percent: 67, threshold: 70, decision: 'prewrite', outcome: 'prewritten', arm: 'after', project: '/proj', recapCalls: 1, recapTokens: 7, discardedPrecomputes: 0 }
+
+test('a pending prewritten entry is charged to the next compaction, as a discarded precompute', async ($, on) => {
+  const w = logWorld(on, { usage: WINDOW_1000, fork: answered, store: { [LOG]: [PW], ...stored('4:zz', { prewriteId: 'pw' }) } })
+  await compactWith($, { trigger: 'auto', messages: ROWS })
+  await until(() => w.log().some(l => l.outcome === 'compacted:recap+2'), 'compaction entry')
+  const entry = w.log().find(l => l.outcome === 'compacted:recap+2')
+  expect(entry).toMatchObject({ recapCalls: 1, recapTokens: 7, discardedPrecomputes: 1 })
+  expect(w.log().find(l => l.id === 'pw').chargedTo).toBe(entry.id)
+  expect((w.store.get('smart-compact.compactions') as any[])[0]).toMatchObject({ recapTokens: 7, discardedPrecomputes: 1 })
+})
+
+test('the pre-write a compaction reused is not counted as discarded', async ($, on) => {
+  const w = logWorld(on, { usage: WINDOW_1000, fork: answered, store: { [LOG]: [PW], ...stored('4:h4', { prewriteId: 'pw' }) } })
+  await compactWith($, { trigger: 'auto', messages: ROWS })
+  await until(() => w.log().some(l => l.outcome === 'compacted:handoff+2'), 'compaction entry')
+  expect(w.log().find(l => l.outcome === 'compacted:handoff+2')).toMatchObject({ recapTokens: 7, recapCalls: 1, discardedPrecomputes: 0 })
+})
+
+// ── the engine's own compaction, seen from the token drop ──
+const dropWorld = (on: any, o: LogOpts) => {
+  let tokens = 60
+  const w = logWorld(on, { ...o, usage: () => ({ value: { startedAt: 0, context: { window: 100, tokens, percent: tokens }, rateLimits: [] } }) })
+  return { w, drop: () => (tokens = 10) }
+}
+
+test('F1-AC-20/21 an engine compaction logs compacted:engine and keeps a readable summary as the recap', async ($, on) => {
+  const { w, drop } = dropWorld(on, { convo: () => [{ role: 'user', text: 'ENGINE SUMMARY', toolUses: [] }] })
+  await $.turn.complete(TURN)
+  drop()
+  await $.turn.complete(TURN)
+  await until(() => w.log().some(l => l.outcome === 'compacted:engine'), 'engine entry')
+  expect(w.log().find(l => l.outcome === 'compacted:engine')).toMatchObject({ arm: 'after', tokensBefore: 60, tokensAfter: 10 })
+  await until(() => (w.store.get(RECAP) as any)?.text === 'ENGINE SUMMARY', 'summary kept')
+  w.goHeadless()
+  expect((await lastRecap($)).text).toContain('ENGINE SUMMARY')
+})
+
+test('F1-AC-21 with no readable summary the pre-written handoff stays', async ($, on) => {
+  const { w, drop } = dropWorld(on, { convo: () => [], store: stored('4:h4') })
+  await $.turn.complete(TURN)
+  drop()
+  await $.turn.complete(TURN)
+  await until(() => w.log().some(l => l.outcome === 'compacted:engine'), 'engine entry')
+  await quiet()
+  expect((w.store.get(RECAP) as any).text).toBe('STORED')
+  w.goHeadless()
+  expect((await lastRecap($)).text).toContain('STORED')
+})
+
+test('a pending prewritten entry is charged to compacted:engine', async ($, on) => {
+  const { w, drop } = dropWorld(on, { store: { [LOG]: [PW] } })
+  await $.turn.complete(TURN)
+  drop()
+  await $.turn.complete(TURN)
+  await until(() => w.log().some(l => l.outcome === 'compacted:engine'), 'engine entry')
+  expect(w.log().find(l => l.outcome === 'compacted:engine')).toMatchObject({ recapTokens: 7, recapCalls: 1, discardedPrecomputes: 1 })
+})
+
+test('F1-AC-23 off: the engine’s auto-compact is logged in the off arm with its summarizer usage', { options: { [ENABLED_FIELD]: false } }, async ($, on) => {
+  const w = logWorld(on, {
+    usage: WINDOW_1000,
+    fork: answered,
+    compact: () => ({ ...SUMMARY, usage: { input_tokens: 100, output_tokens: 40, cache_creation_input_tokens: 0, cache_read_input_tokens: 60 }, tokensBefore: 90000, tokensAfter: 4000 }),
+  })
+  await compactWith($, { trigger: 'auto', messages: ROWS })
+  await until(() => w.log()[0]?.tokens !== undefined, 'off entry')
+  expect(w.forks()).toBe(0)
+  expect(w.log()[0]).toMatchObject({ arm: 'off', outcome: 'compacted', tokens: { summarizer: { input: 160, output: 40 }, before: 90000, after: 4000 } })
+})
+
+// ── /smart-compact ──
+const E = (arm: string, id: string) => ({ id, ts: NOW, session: 's', percent: 80, threshold: 70, decision: 'auto-compact', outcome: 'compacted:engine', arm, tokensBefore: 100, tokensAfter: 20 })
+
+test('F1-AC-25 /smart-compact log prints the entries, then a totals line per arm', async ($, on) => {
+  logWorld(on, { store: { [LOG]: [E('before', 'e1'), E('after', 'e2'), E('off', 'e3')] } })
+  const [entries, totals] = (await run($, 'log')).text!.split('\n\n')
+  expect(entries!.split('\n')).toHaveLength(3)
+  for (const arm of ['before', 'after', 'off']) expect(totals).toMatch(new RegExp(`^${arm}: 1 compaction`, 'm'))
+})
+
+test('F1-AC-26 a bare or blank /smart-compact never sets and says at 50%', { options: { [THRESHOLD_FIELD]: 50 } }, async ($, on) => {
+  const w = world(on, 0)
+  for (const args of ['', '   ', '\t']) expect((await run($, args)).text).toContain('at 50%')
+  expect(w.configSets).toEqual([])
+})
+
+test('F1-AC-27 /smart-compact 40 sets the threshold; off then on switch the feature', async ($, on) => {
+  const w = world(on, 0)
+  await run($, '40')
+  await run($, 'off')
+  await run($, 'on')
+  expect(w.configSets).toEqual([
+    { key: `session.${THRESHOLD_FIELD}`, value: 40 },
+    { key: `session.${ENABLED_FIELD}`, value: false },
+    { key: `session.${ENABLED_FIELD}`, value: true },
+  ])
 })

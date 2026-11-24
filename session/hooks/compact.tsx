@@ -2,18 +2,19 @@ import { atom, update } from 'claude-code'
 import type { On, PluginOptions } from 'claude-code'
 
 import {
-  compactionSeen, firstLine, HANDOFF_INSTRUCTIONS, handoffFor, parseSmartCompactArgs, RECAP_HEADER, shouldCompactNow, summaryOf,
-  tailBudget, tailStart, tokensDropped,
+  compactionSeen, firstLine, HANDOFF_INSTRUCTIONS, handoffFor, handoffFresh, parseSmartCompactArgs, PREWRITE_MARGIN, precomputeKey,
+  prewriteAllowed, RECAP_HEADER, shouldCompactNow, summaryOf, tailBudget, tailStart, tokensDropped,
 } from './compact-logic.ts'
 import type { HandoffFor } from './compact-logic.ts'
 import {
-  appendLog, armTotals, asCompactions, asLog, COMPACTIONS_KEY, fmtArmTotals, fmtLastCheck, fmtLog, fmtStats, LOG_KEY, recordCompaction,
-  seedCompactions,
+  appendLog, armTotals, asCompactions, asLog, chargePending, COMPACTIONS_KEY, fmtArmTotals, fmtLastCheck, fmtLog, fmtStats, LOG_KEY,
+  PREWRITE_OUTCOME, recordCompaction, seedCompactions,
 } from './compact-log.ts'
 import type { Arm, LogEntry, LogStats, LogTokens, TokenUse } from './compact-log.ts'
 import { corrections, fmtAgo, isFresh, lessonsKey, makeRecap, mergeLessons, RECAP_PROMPT, recapKey } from './recap.ts'
 import type { Recap } from './recap.ts'
 import { fmtContext, statusLinePercent } from '../scripts/context-logic.mjs'
+import { handoffBridgePath, makeBridgeRecord } from '../scripts/precompact-logic.mjs'
 import { statusLine } from './status.ts'
 import { BOARD_OPEN } from './board.ts'
 import type { BoardTab } from './board.ts'
@@ -49,6 +50,10 @@ async function readContext($: any) {
 }
 let isRunning = false
 
+// One pre-write per conversation key: the key is added before the fork and never removed, so a failure is not retried.
+const attempted = new Set<string>()
+let prewriting = false
+
 // The decision log: writes run one after another on one chain, so a pending→outcome patch and the next
 // turn's append cannot overwrite each other. The turn never waits on it; a failing store is only counted.
 const stats: LogStats = { evaluated: 0, byDecision: {}, logWriteErrors: 0 }
@@ -60,7 +65,7 @@ const PROC = Date.now().toString(36)
 let turnEnded = true
 
 // What the session.compact hook made of smart-compact's own /compact; the runner logs it.
-let ownResult: { outcome: string; tokens?: LogTokens } | undefined
+let ownResult: { outcome: string; tokens?: LogTokens; reusedId?: string } | undefined
 
 const count = (decision: string) => {
   const kind = decision.split(':').slice(0, decision.startsWith('skipped:') ? 2 : 1).join(':')
@@ -80,7 +85,7 @@ function writeLog($: any, change: (list: LogEntry[]) => Promise<LogEntry[]>) {
 }
 
 // One stored entry; returns its id so the recapping entry's outcome can be patched in later.
-function logDecision($: any, percent: number | null | undefined, threshold: number, decision: string, outcome = decision) {
+function logDecision($: any, percent: number | null | undefined, threshold: number, decision: string, outcome = decision, extra: Partial<LogEntry> = {}) {
   count(decision)
   const id = `${PROC}-${++logSeq}`
   writeLog($, async list => {
@@ -89,7 +94,11 @@ function logDecision($: any, percent: number | null | undefined, threshold: numb
     try {
       session = String(await $.session.id())
     } catch {}
-    return appendLog(list, { id, ts, session, percent: percent ?? null, threshold, decision, outcome, arm: armNow() })
+    let project: string | undefined
+    try {
+      project = String(await $.session.root())
+    } catch {}
+    return appendLog(list, { id, ts, session, percent: percent ?? null, threshold, decision, outcome, arm: armNow(), ...(project ? { project } : {}), ...extra })
   })
   return id
 }
@@ -102,13 +111,16 @@ const readLog = async ($: any) => {
   }
 }
 
-// Patches the ring entry; a compaction is also kept in the compaction list the per-arm totals read.
-function logOutcome($: any, id: string, outcome: string, tokens?: LogTokens, extra: Partial<LogEntry> = {}) {
+// Patches the ring entry; a compaction is also kept in the compaction list the per-arm totals read. Every compaction
+// takes on the cost of the pre-writes pending in its project here; reusedId is the pre-write it used, not a discard.
+function logOutcome($: any, id: string, outcome: string, tokens?: LogTokens, extra: Partial<LogEntry> = {}, reusedId?: string) {
   writeLog($, async list => {
     const patched = list.map(e => (e.id === id ? { ...e, outcome, ...(tokens ? { tokens } : {}), ...extra } : e))
-    const entry = patched.find(e => e.id === id)
-    if (entry) await $.store.set(COMPACTIONS_KEY, recordCompaction(asCompactions(await $.store.get(COMPACTIONS_KEY)), entry))
-    return patched
+    const found = patched.find(e => e.id === id)
+    if (!found) return patched
+    const charged = chargePending(patched, found, reusedId)
+    await $.store.set(COMPACTIONS_KEY, recordCompaction(asCompactions(await $.store.get(COMPACTIONS_KEY)), charged.entry))
+    return charged.ring.map(e => (e.id === id ? charged.entry : e))
   })
 }
 
@@ -120,12 +132,14 @@ async function readCompactions($: any) {
   }
 }
 
-// The handoff kept for this project; its Corrections join the lessons.
-async function keepRecap($: any, text: string) {
+// The handoff kept for this project; its Corrections join the lessons. A pre-write also keeps the conversation key it
+// covered and its ring entry id; a recap stored without them still reads.
+async function keepRecap($: any, text: string, meta: { key?: string; sessionId?: string; prewriteId?: string } = {}) {
   try {
     const root = await $.session.root()
     const now = (await $.clock.now()) as number
-    await $.store.set(recapKey(root), makeRecap(text, now, await $.session.id()))
+    const recap = makeRecap(text, now, meta.sessionId ?? (await $.session.id()))
+    await $.store.set(recapKey(root), { ...recap, ...(meta.key ? { key: meta.key } : {}), ...(meta.prewriteId ? { prewriteId: meta.prewriteId } : {}) })
     const kept = ((await $.store.get(lessonsKey(root))) as string[] | undefined) ?? []
     const fresh = corrections(text)
     if (fresh.length > 0) await $.store.set(lessonsKey(root), mergeLessons(kept, fresh))
@@ -169,9 +183,9 @@ function logTokens(recap?: Usage, done?: { usage?: Usage; tokensBefore?: number;
 }
 
 // smart-compact's own result goes to its runner; an auto-compact gets a log entry of its own.
-async function settle($: any, kind: HandoffFor, threshold: number, outcome: string, tokens?: LogTokens) {
+async function settle($: any, kind: HandoffFor, threshold: number, outcome: string, tokens?: LogTokens, reusedId?: string) {
   if (kind === 'own') {
-    ownResult = { outcome, tokens }
+    ownResult = { outcome, tokens, reusedId }
     return
   }
   // the hook saw this one: the next turn end is not an unreported compaction
@@ -180,7 +194,7 @@ async function settle($: any, kind: HandoffFor, threshold: number, outcome: stri
   try {
     percent = (await readContext($)).percent ?? null
   } catch {}
-  logOutcome($, logDecision($, percent, threshold, 'auto-compact', 'pending'), outcome, tokens)
+  logOutcome($, logDecision($, percent, threshold, 'auto-compact', 'pending'), outcome, tokens, {}, reusedId)
 }
 
 // One fork over the transcript; kept as the project's recap, its Corrections added to the lessons.
@@ -191,9 +205,11 @@ async function recapNow($: any): Promise<{ text: string; usage?: Usage } | { rea
   return { text: r.text, usage: r.usage }
 }
 
-async function storedRecap($: any): Promise<Recap | undefined> {
+type StoredRecap = Recap & { key?: string; prewriteId?: string }
+
+async function storedRecap($: any): Promise<StoredRecap | undefined> {
   try {
-    const r = (await $.store.get(recapKey(await $.session.root()))) as Recap | undefined
+    const r = (await $.store.get(recapKey(await $.session.root()))) as StoredRecap | undefined
     return isFresh(r, (await $.clock.now()) as number) ? r : undefined
   } catch {
     return undefined
@@ -213,6 +229,57 @@ async function keepGuidedRecap($: any) {
   if (text) await keepRecap($, text)
 }
 
+// The bridge file the PreCompact command hook reads. Written only when HOME, the session id and the last row's uuid are
+// there and that uuid is found on a line of the session's transcript (lineCount is that line's 1-based number);
+// anything unproven writes nothing. Never throws.
+async function writeBridge($: any, key: string, text: string, sessionId: string, rows: readonly { uuid?: string }[]) {
+  try {
+    const home = (await $.env.get('HOME')) as string | undefined
+    const lastUuid = rows[rows.length - 1]?.uuid
+    if (!home || !sessionId || typeof lastUuid !== 'string' || !lastUuid) return
+    const root = String(await $.session.root())
+    const lines = String(await $.fs.read(`${home}/.claude/projects/${root.replace(/[^A-Za-z0-9]/g, '-')}/${sessionId}.jsonl`)).split('\n')
+    let at = -1
+    for (let i = lines.length - 1; i >= 0 && at < 0; i--) {
+      try {
+        if (JSON.parse(lines[i]!)?.uuid === lastUuid) at = i
+      } catch {}
+    }
+    if (at < 0) return
+    const ts = (await $.clock.now()) as number
+    await $.fs.write(handoffBridgePath(home, root), JSON.stringify(makeBridgeRecord({ key, sessionId, ts, text, lastUuid, lineCount: at + 1 })))
+  } catch {}
+}
+
+// One fork over the conversation as it stands, ahead of the threshold. Success: ring entry `prewritten`, the recap kept
+// with its key, the bridge written if proven. Failure: `prewrite-failed:<reason>`. Never throws.
+async function prewriteNow($: any, raw: number | null, threshold: number, key: string, rows: readonly { uuid?: string }[]) {
+  prewriting = true
+  try {
+    const r = await $.model.fork({ prompt: RECAP_PROMPT })
+    if (!r.isAnswered) {
+      logDecision($, raw, threshold, 'prewrite', `prewrite-failed:${String(r.reason)}`, { recapCalls: 1, recapTokens: 0, discardedPrecomputes: 0 })
+      return
+    }
+    const used = tokenUse(r.usage)
+    const id = logDecision($, raw, threshold, 'prewrite', PREWRITE_OUTCOME, {
+      recapCalls: 1,
+      recapTokens: used ? used.input + used.output : 0,
+      discardedPrecomputes: 0,
+    })
+    let sessionId = ''
+    try {
+      sessionId = String(await $.session.id())
+    } catch {}
+    await keepRecap($, r.text, { key, sessionId: sessionId || undefined, prewriteId: id })
+    await writeBridge($, key, r.text, sessionId, rows)
+  } catch (err) {
+    logDecision($, raw, threshold, 'prewrite', `prewrite-failed:${firstLine(err)}`, { recapCalls: 1, recapTokens: 0, discardedPrecomputes: 0 })
+  } finally {
+    prewriting = false
+  }
+}
+
 // At each main-loop turn end: fills in the after-tokens of the last compaction, and logs a compaction no hook
 // reported (the engine's, where the session.compact hook is bypassed) from the drop in context tokens.
 function noteTurnTokens($: any, percent: number | undefined, threshold: number, tokens: number | undefined) {
@@ -226,8 +293,31 @@ function noteTurnTokens($: any, percent: number | undefined, threshold: number, 
   } else if (tokensDropped(lastTokens, tokens)) {
     const id = logDecision($, percent ?? null, threshold, 'auto-compact', 'pending')
     logOutcome($, id, 'compacted:engine', undefined, { tokensBefore: lastTokens, tokensAfter: tokens, recapCalls: 0 })
+    // the engine's summary is what the model sees now; unreadable, the stored pre-written handoff stays
+    if (enabledOf(liveOptions)) void keepGuidedRecap($)
   }
   lastTokens = tokens
+}
+
+// Near the threshold, once per conversation key, off the turn. Fails closed: rows that cannot be read mean no fork.
+async function startPrewrite($: any, e: { agentId?: string }, raw: number, threshold: number) {
+  try {
+    const rows = (await $.session.messages()) as { handle?: string; uuid?: string }[]
+    const key = precomputeKey(rows)
+    const allowed = prewriteAllowed({
+      enabled: enabledOf(liveOptions),
+      agentId: e.agentId,
+      surfaces: (await $.session.surfaces()).length,
+      inFlight: isRunning || prewriting,
+      percent: raw,
+      threshold,
+      key,
+      attempted,
+    })
+    if (!rows.length || !allowed) return
+    attempted.add(key)
+    void prewriteNow($, raw, threshold, key, rows)
+  } catch {}
 }
 
 export const register = (on: On, options: PluginOptions) => {
@@ -321,7 +411,11 @@ export const register = (on: On, options: PluginOptions) => {
     noteTurnTokens($, raw, threshold, tokens)
     if (!enabledOf(options)) return count('skipped:off'), result
     const percent = raw ?? 0
-    if (percent < threshold) return logDecision($, raw, threshold, 'below'), result
+    if (percent < threshold) {
+      logDecision($, raw, threshold, 'below')
+      if (raw !== undefined && raw >= threshold - PREWRITE_MARGIN) await startPrewrite($, e, raw, threshold)
+      return result
+    }
 
     startRecapThenCompact($, raw, percent, threshold)
     return result
@@ -333,8 +427,8 @@ export const register = (on: On, options: PluginOptions) => {
   // does a handoff that cannot be made; our mark never reaches the summarizer as instructions.
   on('session.compact', async ($, e, next) => {
     const found = handoffFor(e)
-    // a precompute keeps the engine's own; off, the engine compacts alone
-    const kind = found === 'precompute' || !enabledOf(options) ? null : found
+    // off, the engine compacts alone: an auto-compact is logged in the off arm, nothing else is touched
+    const kind = enabledOf(options) ? found : found === 'auto' ? found : null
     const rows = e.messages ?? []
     if (!kind || !rows.length) return next(e)
     const engine = async (outcome: string) => {
@@ -343,11 +437,20 @@ export const register = (on: On, options: PluginOptions) => {
       await settle($, kind, thresholdOf(options), done.skip ? `skip:${done.skip}` : outcome, tokens)
       return done
     }
+    if (!enabledOf(options)) return engine('compacted')
     const window = (await $.session.usage()).context?.window
     if (!window) return engine('compacted')
+    const tailOf = () => rows.slice(tailStart(rows, tailBudget(window, thresholdOf(options))))
+    // a fresh stored handoff stands in for the fork
+    const stored = await storedRecap($)
+    if (stored && typeof stored.key === 'string' && handoffFresh(stored as { key: string }, rows)) {
+      const tail = tailOf()
+      await settle($, kind, thresholdOf(options), `compacted:handoff+${tail.length}`, undefined, stored.prewriteId)
+      return { messages: [{ role: 'user' as const, text: RECAP_HEADER + stored.text, toolUses: [] }, ...tail] }
+    }
     const recap = await recapNow($)
     if ('reason' in recap) return engine(`recap-failed:${recap.reason}`)
-    const tail = rows.slice(tailStart(rows, tailBudget(window, thresholdOf(options))))
+    const tail = tailOf()
     await settle($, kind, thresholdOf(options), `compacted:recap+${tail.length}`, logTokens(recap.usage))
     return { messages: [{ role: 'user' as const, text: RECAP_HEADER + recap.text, toolUses: [] }, ...tail] }
   }).catch(($, e, next) => next(e))
@@ -418,7 +521,7 @@ function startRecapThenCompact($: any, raw: number | null | undefined, percent: 
     lastTokens = undefined
     pendingAfter = extra.tokensAfter === undefined ? { id, outcome, tokensBefore } : undefined
     $.ui.toast(outcome.startsWith('compacted') ? 'smart-compact: handed off and compacted' : `smart-compact: ${outcome}`)
-    logOutcome($, id, outcome, own?.tokens, extra)
+    logOutcome($, id, outcome, own?.tokens, extra, own?.reusedId)
   }
   void run().catch(err => logOutcome($, id, `error:${firstLine(err)}`)).finally(() => {
     $.ui.status(statusLine({}))
