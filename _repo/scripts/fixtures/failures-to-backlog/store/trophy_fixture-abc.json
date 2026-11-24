@@ -1,0 +1,33 @@
+{
+  "trophy.other": ["not a failure list"],
+  "trophy.failures": [
+    {"ts": 1, "day": "2026-11-03", "kind": "bug", "reason": "mcp_error", "plugin": "knowledge", "skill": "search", "version": "1.0.1", "cc": "2.1.300", "session": "s-1",
+     "local": {"text": "<tool_use_error>profile demo-profile · account 123456789012 · region xx-test-1\nsecond line is ignored"}},
+    {"ts": 2, "day": "2026-11-01", "kind": "bug", "reason": "mcp_error", "plugin": "knowledge", "skill": "search", "version": "1.0.0", "cc": "2.1.300", "session": "s-2",
+     "local": {"text": "<tool_use_error>profile demo-profile · account 123456789012 · region xx-test-1"}},
+    {"ts": 3, "day": "2026-11-02", "kind": "bug", "reason": "mcp_error", "plugin": "knowledge", "skill": "search", "version": "1.0.0", "cc": "2.1.301", "session": "s-3",
+     "local": {"text": "<tool_use_error>profile demo-profile · account 123456789012 · region xx-test-1"}},
+    {"ts": 4, "day": "2026-11-02", "kind": "bug", "reason": "is_error", "plugin": "trophy", "tool": "list", "version": "0.5.0", "cc": "2.1.300", "session": "s-4",
+     "local": {"text": "failed to read /tmp/alpha/one.txt on port 8080"}},
+    {"ts": 5, "day": "2026-11-04", "kind": "bug", "reason": "is_error", "plugin": "trophy", "tool": "list", "version": "0.5.0", "cc": "2.1.300", "session": "s-5",
+     "local": {"text": "failed to read /opt/beta/two.txt on port 8080"}},
+    {"ts": 6, "day": "2026-11-05", "kind": "report", "reason": "user_report", "plugin": "teams", "skill": "plan", "version": "2.0.0", "cc": "2.1.300", "session": "s-6",
+     "local": {"text": "\n  \n", "note": "~/notes/todo.md is missing"}},
+    {"ts": 7, "day": "2026-11-05", "kind": "bug", "reason": "crash", "plugin": "harness", "skill": "run", "version": "3.0.0", "cc": "2.1.300", "session": "s-7",
+     "local": {"text": "session 123e4567-e89b-12d3-a456-426614174000 lost"}},
+    {"ts": 8, "day": "2026-11-05", "kind": "bug", "reason": "bad_hash", "plugin": "harness", "tool": "Bash", "version": "3.0.0", "cc": "2.1.300", "session": "s-8",
+     "local": {"text": "hash 0123456789abcdef0123456789abcdef is bad"}},
+    {"ts": 9, "day": "2026-11-06", "kind": "bug", "reason": "unknown", "version": "1.0.0", "cc": "2.1.300", "session": "s-9",
+     "local": {}},
+    {"ts": 10, "kind": "report", "reason": "r_missing", "plugin": "demo", "skill": "thing", "session": "s-10",
+     "local": {"note": "only a note"}},
+    {"ts": 11, "day": "2026-11-07", "kind": "bug", "reason": "too_long", "plugin": "demo", "skill": "long", "version": "1.0.0", "cc": "2.1.300", "session": "s-11",
+     "local": {"text": "qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq"}},
+    {"ts": 12, "day": "2026-11-02", "kind": "outcome", "reason": "subgoal_failed", "session": "s-12",
+     "local": {"slug": "—", "subgoal": "U1", "path": "/synthetic/project"}},
+    {"ts": 13, "day": "2026-11-03", "kind": "outcome", "reason": "goal_failed", "session": "s-13",
+     "local": {"slug": "—", "path": "/synthetic/project"}},
+    null,
+    "junk"
+  ]
+}
