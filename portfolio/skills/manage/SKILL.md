@@ -103,10 +103,10 @@ the snapshot. A round always builds (the user's standing word: "결과물도 검
    **Whose eyes first:** when noah tools are attached (`noah_persona`, `noah_search`), read the user's
    values and career stances before scoring (persona-values-and-drives, the `career` domain: what
    they want to be hired for, what they refuse to claim) and cite the note in 이유; without noah, the
-   `확정사실.md` quotes stand in. Read each item as the user would lead with it: a turning point that
-   shows their judgment — a plan of theirs changed in review, a flaw of their own written down, a limit
-   measured before redesigning, a condition under which their fix stops working — over a correct
-   supporting decision; and what the target reader (a B2C, traffic-facing team) would ask about.
+   `확정사실.md` quotes stand in. Each A item's `> 장면:` line (material step 1b, verified there) is
+   what it leads with: the 대표 is that scene, and the 이유 says first what it shows about how the
+   person judges — the user's own table reads "본인 안이 리뷰에서 바뀐 경위", "본인 설계 결함 공개",
+   "역전 조건 공개". An A item still in `noScene` goes back to material 1b before it is selected.
    Picked by signal (`references/principles.md` § Composition),
    each item scored on four questions in its 이유: does it help this person (a number that reads
    badly — 149 routine on-call requests — is written `안 씀: 149건` in the 이유 and shown nowhere, not as
