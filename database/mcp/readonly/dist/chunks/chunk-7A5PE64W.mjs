@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 // database-readonly MCP server, bundled by build.mjs — do not edit; edit the sources and run npm run build.
-// sources: 0f598961112e8f4a
+// sources: 2828b65317574d22
 import { createRequire as __cr } from 'node:module'; const require = __cr(import.meta.url);
 import {
   piiMatcher
-} from "./chunk-HUUJICVI.mjs";
+} from "./chunk-WTCPNGGB.mjs";
 
 // vendors/sql.mjs
 var DIALECTS = {
@@ -28,7 +28,7 @@ function scan(sql, d = DIALECTS.mysql) {
       const third = sql[i + 2];
       if (d.execComment && (third === "!" || third === "M" && sql[i + 3] === "!"))
         return { error: "executable comment /*! ... */ is not allowed (the server runs its content)" };
-      if (third === "+") return { error: "optimizer hint /*+ ... */ is not allowed (can change session settings)" };
+      if (third === "+") return { error: "optimizer hint /*+ ... */ is not allowed (can change session settings); resend the same query without the /*+ ... */ hint" };
       let depth = 1;
       let j = i + 2;
       while (depth > 0) {

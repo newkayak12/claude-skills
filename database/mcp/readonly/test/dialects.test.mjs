@@ -65,6 +65,18 @@ test('postgres: unterminated dollar quote and hint comments rejected', () => {
   no(pg, 'SELECT /*+ Set(statement_timeout 0) */ 1', 'comment/literal');
 });
 
+test('optimizer hint refusal tells the caller to resend without the hint', () => {
+  for (const [check, sql] of [
+    [pg, 'SELECT /*+ Set(statement_timeout 0) */ 1'],
+    [maria, 'SELECT /*+ MAX_EXECUTION_TIME(1) */ 1'],
+    [ora, 'SELECT /*+ FULL(t) */ 1 FROM dual'],
+  ]) {
+    const r = check(sql);
+    assert.equal(r.ok, false);
+    assert.match(r.message, /resend the same query without the \/\*\+ \.\.\. \*\/ hint/);
+  }
+});
+
 test('oracle: reads pass', () => {
   for (const sql of [
     'SELECT 1 FROM dual',

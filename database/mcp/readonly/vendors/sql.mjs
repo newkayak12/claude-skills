@@ -35,7 +35,7 @@ export function scan(sql, d = DIALECTS.mysql) {
       const third = sql[i + 2];
       if (d.execComment && (third === '!' || (third === 'M' && sql[i + 3] === '!')))
         return { error: 'executable comment /*! ... */ is not allowed (the server runs its content)' };
-      if (third === '+') return { error: 'optimizer hint /*+ ... */ is not allowed (can change session settings)' };
+      if (third === '+') return { error: 'optimizer hint /*+ ... */ is not allowed (can change session settings); resend the same query without the /*+ ... */ hint' };
       let depth = 1;
       let j = i + 2;
       while (depth > 0) {

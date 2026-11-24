@@ -1,19 +1,19 @@
 #!/usr/bin/env node
 // database-readonly MCP server, bundled by build.mjs — do not edit; edit the sources and run npm run build.
-// sources: 0f598961112e8f4a
+// sources: 2828b65317574d22
 import { createRequire as __cr } from 'node:module'; const require = __cr(import.meta.url);
 import {
   DIALECTS,
   TABLE_NAME,
   checkStatement,
   shape
-} from "./chunk-25G6II45.mjs";
+} from "./chunk-7A5PE64W.mjs";
 import {
   __commonJS,
   __require,
   __toESM,
   piiMatcher
-} from "./chunk-HUUJICVI.mjs";
+} from "./chunk-WTCPNGGB.mjs";
 
 // node_modules/postgres-array/index.js
 var require_postgres_array = __commonJS({

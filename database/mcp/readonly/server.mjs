@@ -40,6 +40,7 @@ const DB_TOOLS = [
     description:
       'Run one read-only SQL statement (SELECT or WITH; also SHOW/DESCRIBE/EXPLAIN on MySQL and MariaDB, ' +
       'SHOW/EXPLAIN/TABLE/VALUES on PostgreSQL) on the active profile. ' +
+      'Optimizer hints (/*+ ... */) are refused: send the query without them. ' +
       'Returns rows as JSON, elapsedMs, truncated (true when the row cap cut the result) and profile.',
     annotations: READ_ONLY,
     inputSchema: { type: 'object', properties: { sql: { type: 'string', description: 'a single SQL statement' } }, required: ['sql'] },

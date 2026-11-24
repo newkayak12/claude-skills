@@ -25,10 +25,10 @@ compatibility:
 3. **Schema.** Unknown tables or columns → `list_tables`, then `describe_table` (postgres: `schema.table` allowed).
 4. **Query.** One statement per `query`, with a row limit (`LIMIT`; Oracle `FETCH FIRST n ROWS ONLY`).
    Allowed: SELECT, WITH; plus SHOW/DESCRIBE/EXPLAIN on MySQL/MariaDB, SHOW/EXPLAIN/TABLE/VALUES on
-   PostgreSQL; Oracle SELECT/WITH only.
+   PostgreSQL; Oracle SELECT/WITH only. Never write `/*+ ... */` optimizer hints: the server refuses them.
    `truncated: true` means the row cap cut the result — say so. On prod the cap is 200 rows and 10 s:
    aggregate there instead of paging through rows.
-5. **Rejected.** `rejected [rule]` is the read-only guard; do not rephrase around it. Writes are not
+5. **Rejected.** `rejected [rule]` is the read-only guard; do not rephrase around it. A refused `/*+ ... */` hint → resend once without the hint, not again with it. Writes are not
    possible through this server.
 6. **Personal data.** Leave name, phone, address, post code and email columns out of the SELECT list.
    The server drops them anyway and lists them under `hidden` — say which were hidden; do not try to

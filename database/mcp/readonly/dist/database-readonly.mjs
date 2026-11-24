@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // database-readonly MCP server, bundled by build.mjs — do not edit; edit the sources and run npm run build.
-// sources: 0f598961112e8f4a
+// sources: 2828b65317574d22
 import { createRequire as __cr } from 'node:module'; const require = __cr(import.meta.url);
 import {
   DEFAULT_PORT,
@@ -16,7 +16,7 @@ import {
   resolveConfig,
   resolveValue,
   toInt
-} from "./chunks/chunk-HUUJICVI.mjs";
+} from "./chunks/chunk-WTCPNGGB.mjs";
 
 // node_modules/ajv/dist/compile/codegen/code.js
 var require_code = __commonJS({
@@ -17260,10 +17260,10 @@ function createAudit({ dir = configDir(), max = 5 * 1024 * 1024, onError = () =>
 // server.mjs
 import { basename, dirname, join as join3 } from "node:path";
 var VENDORS = {
-  mysql: () => import("./chunks/mysql-L57GI2N6.mjs"),
-  mariadb: () => import("./chunks/mariadb-VA5IA3N6.mjs"),
-  postgres: () => import("./chunks/postgres-CX2COL6Z.mjs"),
-  oracle: () => import("./chunks/oracle-7UY4GWZK.mjs")
+  mysql: () => import("./chunks/mysql-5UVYK5TG.mjs"),
+  mariadb: () => import("./chunks/mariadb-B2FVIB6R.mjs"),
+  postgres: () => import("./chunks/postgres-43YTEIKU.mjs"),
+  oracle: () => import("./chunks/oracle-US2M2R2B.mjs")
 };
 var LABEL = { mysql: "MySQL", mariadb: "MariaDB", postgres: "PostgreSQL", oracle: "Oracle" };
 var READ_ONLY = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
@@ -17278,7 +17278,7 @@ var log = (...a) => process.stderr.write(`[database-readonly-mcp] ${a.join(" ")}
 var DB_TOOLS = [
   {
     name: "query",
-    description: "Run one read-only SQL statement (SELECT or WITH; also SHOW/DESCRIBE/EXPLAIN on MySQL and MariaDB, SHOW/EXPLAIN/TABLE/VALUES on PostgreSQL) on the active profile. Returns rows as JSON, elapsedMs, truncated (true when the row cap cut the result) and profile.",
+    description: "Run one read-only SQL statement (SELECT or WITH; also SHOW/DESCRIBE/EXPLAIN on MySQL and MariaDB, SHOW/EXPLAIN/TABLE/VALUES on PostgreSQL) on the active profile. Optimizer hints (/*+ ... */) are refused: send the query without them. Returns rows as JSON, elapsedMs, truncated (true when the row cap cut the result) and profile.",
     annotations: READ_ONLY,
     inputSchema: { type: "object", properties: { sql: { type: "string", description: "a single SQL statement" } }, required: ["sql"] }
   },
