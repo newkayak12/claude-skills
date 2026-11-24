@@ -127,7 +127,10 @@ context or in a figure either; `claims` flags it on any page citing the item), w
    results page), run `claims` on it, then hand only that chapter, its cited items, `확정사실.md` and
    the workspace's rubric (`판정기준.md` when it exists, else the rules below) to a separate reviewer
    subagent that did not write it; it returns rule-numbered findings, the writer revises, and the
-   chapter is done when the reviewer has none left. Assemble after the last chapter, then review the
+   chapter is done when the reviewer has none left. The first round walks every rubric rule against
+   every page and lists all it finds at once; later rounds check the edits only. Three rounds at most
+   — what is still open after the third goes to `docs/확인할-것.md` (bench18 took nine rounds, each
+   finding something finer). Assemble after the last chapter, then review the
    whole once for what spans chapters: contents vs titles, one cover archetype, appendix size,
    figure forms by page role (user, 2026-11-24: "작은 단위로 작성-퇴고 나중에 모아서 진행").
    Each page that carries a figure or a reason cites its items on one line under its heading, `글감: <id>, <id>` (a ledger item is
