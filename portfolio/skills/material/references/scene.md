@@ -17,12 +17,14 @@ skill judged differently (2026-11-24: 2, 8 and 11 failures on the same 27 items)
 | P5 | A check they found could be silently wrong | 01/A4: INSERT IGNORE turns "Data too long" into a warning |
 | P6 | A measured result that proves their decision | 05/A4: they moved where users wait; p95 21.5s → 1.7s is the scene, the decision plus its measured effect |
 | P7 | Their role and reasoning in an incident or review | 03/A1: as the incident owner they narrowed the cause to two layers |
+| P9 | A design decision of their own, with its reason and what it costs | 04/A4: tenancy written as "not strictly isolated", the APIPath exclusion and why. A plan they withdrew themselves (02/A4) is P1 |
 | P8 | The problem itself restated by them | 05/A3: their 2026-11-07 correction — the point was moving the serialization point, not the rejection message |
 
 ## Weak pass — keep the item A, write `(weak)` after the scene
 
 - A team decision where the line states the person's own part in it.
 - The quote is the curator's narration, but it points to a document the person wrote.
+- When a pass row also fits, the pass row wins: weak is only for a scene no P row covers.
 
 ## Fail — fix the scene, never drop the item for it
 
@@ -30,7 +32,7 @@ skill judged differently (2026-11-24: 2, 8 and 11 failures on the same 27 items)
 |---|---|---|
 | F1 | It says what the system does, no decision | find their decision in the item; if none, propose regrade to B |
 | F2 | Work volume or a task line (a 91-API survey) | propose regrade to B |
-| F3 | The source is someone else's (`_참고_타인작성`), or names a ticket or document (CL-244) with no line saying the person wrote it or made the call | a question asking who wrote it; keep A. Not F3: the item itself states the count or decision as theirs (02/A1 "내가 다시 셌다") |
+| F3 | The source is someone else's (`_참고_타인작성`), or names a ticket or document (CL-244) with no line saying the person wrote it or made the call | a question asking who wrote it; keep A. Not F3: the item itself states the work as theirs (02/A1 "본인 기여는 집계·분류·대조"); the curator's narration counts as that line only when it names the person ("작성자 본인") |
 | F4 | A later 정정 rejects the title or premise | **not a failure**: write the scene from the latest 정정 block (P8); the stale title is a question |
 
 A number 확정사실 bans never fails a scene: the scene is written without it (P4).
