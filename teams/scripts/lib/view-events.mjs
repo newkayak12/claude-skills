@@ -206,16 +206,10 @@ export function phaseOfEvent(e, pkgIds = new Set()) {
 // The recorded hand-offs of each Phase, newest first, `limit` per Phase: { plan: [...], build: [...], ... }.
 // Not the EPIC-wide newest five: a Phase's list is its own.
 // A Phase hand-off carries what the Phase page draws beside the shared fields, only as recorded:
-// story (the card the event names), a verdict's score and reason, and where the verdict sends the
-// card (the graph's own flow: an accepted card integrates, a rejected one goes back to its implementer);
-// a question is TeamLeader -> you with the question as `reason`.
+// story (the card the event names); a question is TeamLeader -> you with the question as `reason`.
+// A verdict is not a hand-off here: the Phase's Decisions list holds it (decisionsView), once.
 function phaseExtra(e, phase) {
   const story = phase === 'build' && cardLabel(e) ? { story: cardLabel(e) } : {};
-  if (e.event === 'verdict') {
-    const reason = typeof e.reason === 'string' && e.reason.trim() ? { reason: clip(e.reason, 120) } : {};
-    const flow = e.stage === 'accept' && (e.verdict === 'accept' || e.verdict === 'reject') ? { to_role: e.verdict === 'accept' ? 'integrate' : 'implementer' } : {};
-    return { ...story, ...(Number.isFinite(e.score) ? { score: e.score } : {}), ...reason, ...flow };
-  }
   if (e.event === 'asked') return { ...story, from: 'TeamLeader', what: '', reason: clip(e.question, 60), to: 'you', to_key: 'partyYou' };
   return story;
 }
@@ -224,6 +218,7 @@ export function phaseHandoffs(lines, { pkgIds = [], limit = 5 } = {}) {
   const ids = new Set(pkgIds.map(String));
   const out = Object.fromEntries(PHASES.map((p) => [p, []]));
   for (const e of parsed(lines)) {
+    if (e.event === 'verdict') continue;
     const h = EVENTS[e.event]?.hand?.(e);
     const phase = h ? phaseOfEvent(e, ids) : null;
     if (phase && out[phase]) out[phase].push({ ts: e.ts, time: hhmm(e.ts), ...h, ...phaseExtra(e, phase) });

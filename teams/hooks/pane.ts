@@ -66,9 +66,10 @@ export function askBandShown(asks: readonly unknown[] | undefined, cardShown: bo
 
 // ---- F2 page stack ----
 
-export type PageName = 'HOME' | 'FLOOR' | 'PHASE' | 'STORY' | 'LOG' | 'STORY_REPORT' | 'EPIC_REPORT' | 'ANSWER'
-// where the pane is: an EPIC (null on HOME), a STORY (STORY, LOG, STORY_REPORT, ANSWER of a STORY), a Phase 1-6 (PHASE)
-export type Page = { name: PageName; epic: string | null; story: string | null; phase: number | null }
+export type PageName = 'HOME' | 'FLOOR' | 'PHASE' | 'ENTRY' | 'STORY' | 'LOG' | 'STORY_REPORT' | 'EPIC_REPORT' | 'ANSWER'
+// where the pane is: an EPIC (null on HOME), a STORY (STORY, LOG, STORY_REPORT, ANSWER of a STORY), a Phase 1-6 (PHASE, ENTRY);
+// `entry` is the row id of a PHASE hand-off or decision an ENTRY page shows (set on ENTRY only)
+export type Page = { name: PageName; epic: string | null; story: string | null; phase: number | null; entry?: string }
 export const HOME: Page = { name: 'HOME', epic: null, story: null, phase: null }
 
 // The engine sends F2 labels by their dotted name (F2.log.attemptStart); the table holds f2LogAttemptStart. Other text passes through.
@@ -78,7 +79,7 @@ export function f2Key(dotted: string): string {
 }
 
 // w s move (scroll on a page of text), d and Enter open, a goes back, n jumps to the next flag, q closes, l is the language.
-// Esc is the host's (closeOnEscape) except in answer mode (pageEsc). Letters are text while answering, a `/` holds all keys.
+// Esc is the host's (closeOnEscape) on HOME only; on every other page the pane takes it as back (pageEsc). Letters are text while answering, a `/` holds all keys.
 export type PageKey =
   | { kind: 'move'; by: 1 | -1 } | { kind: 'open' } | { kind: 'back' } | { kind: 'nextFlag' } | { kind: 'close' } | { kind: 'lang' } | null
 
@@ -100,10 +101,15 @@ export type RowRef =
   | { type: 'flag'; epic: string; story: string | null; ask: boolean }
   | { type: 'phase'; epic: string; phase: number }
   | { type: 'storyRow'; epic: string; story: string; row: 'log' | 'report' | 'answer' | 'other' }
+  // a Running row of a PHASE page: a driver opens its STORY; the judge (or a worker with no STORY of its own) stays on the Phase
+  | { type: 'worker'; epic: string; phase: number; story: string | null; judge: boolean }
+  // a hand-off or decision row of a PHASE page: `entry` is its row id
+  | { type: 'entry'; epic: string; phase: number; entry: string }
 
 export type Opened = { kind: 'page'; page: Page } | { kind: 'unfold'; epic: string } | null
 
-const pageOf = (name: PageName, epic: string | null, story: string | null = null, phase: number | null = null): Page => ({ name, epic, story, phase })
+const pageOf = (name: PageName, epic: string | null, story: string | null = null, phase: number | null = null, entry?: string): Page =>
+  entry === undefined ? { name, epic, story, phase } : { name, epic, story, phase, entry }
 
 // d / Enter on a row. Nothing to open (or no row) is null.
 export function openFrom(row: RowRef | null): Opened {
@@ -122,6 +128,10 @@ export function openFrom(row: RowRef | null): Opened {
       if (row.row === 'report') return { kind: 'page', page: pageOf('STORY_REPORT', row.epic, row.story) }
       if (row.row === 'answer') return { kind: 'page', page: pageOf('ANSWER', row.epic, row.story) }
       return null
+    case 'worker':
+      if (row.judge || row.story === null) return { kind: 'page', page: pageOf('PHASE', row.epic, null, row.phase) }
+      return { kind: 'page', page: pageOf('STORY', row.epic, row.story) }
+    case 'entry': return { kind: 'page', page: pageOf('ENTRY', row.epic, null, row.phase, row.entry) }
   }
 }
 
@@ -130,17 +140,18 @@ export function backOf(p: Page, from: Page | null): Page | null {
   switch (p.name) {
     case 'FLOOR': case 'STORY': return HOME
     case 'PHASE': case 'EPIC_REPORT': return pageOf('FLOOR', p.epic)
+    case 'ENTRY': return pageOf('PHASE', p.epic, null, p.phase)
     case 'LOG': case 'STORY_REPORT': return pageOf('STORY', p.epic, p.story)
     case 'ANSWER': return from ?? HOME
     default: return null
   }
 }
 
-// pages of text scroll with w s; the others move the selected row
-export const scrollsPage = (p: Page): boolean => p.name === 'PHASE' || p.name === 'LOG' || p.name === 'STORY_REPORT' || p.name === 'EPIC_REPORT'
+// pages of text scroll with w s; the others (PHASE included: its rows are selectable) move the selected row
+export const scrollsPage = (p: Page): boolean => p.name === 'LOG' || p.name === 'STORY_REPORT' || p.name === 'EPIC_REPORT'
 
-// one selection and one scroll offset per level, a level being one page of one EPIC / STORY / Phase
-export const levelOf = (p: Page): string => `${p.name}:${p.epic ?? ''}:${p.story ?? ''}:${p.phase ?? ''}`
+// one selection and one scroll offset per level, a level being one page of one EPIC / STORY / Phase (/ entry)
+export const levelOf = (p: Page): string => `${p.name}:${p.epic ?? ''}:${p.story ?? ''}:${p.phase ?? ''}${p.entry === undefined ? '' : `:${p.entry}`}`
 
 export type PageNav = {
   page: Page
@@ -178,10 +189,18 @@ export function reconcileEpic(nav: PageNav, listed: readonly string[]): PageNav 
   return e === null || listed.includes(e) ? nav : { ...nav, page: HOME, from: null }
 }
 
-// Esc: in answer mode it cancels the draft and the pane stays; anywhere else the host closes the pane
+// Esc: on HOME the pane closes; on every other page it goes back (`a`) and the pane stays. In answer mode that also cancels the draft.
 export function pageEsc(nav: PageNav, dropped = false): StepResult {
-  if (nav.page.name !== 'ANSWER') return { nav, closed: true, hint: null }
-  return { nav: { ...nav, page: backOf(nav.page, nav.from)!, from: null }, closed: false, hint: dropped ? 'draftDropped' : null }
+  if (nav.page.name === 'HOME') return { nav, closed: true, hint: null }
+  return { nav: { ...nav, page: backOf(nav.page, nav.from) ?? HOME, from: null }, closed: false, hint: nav.page.name === 'ANSWER' && dropped ? 'draftDropped' : null }
+}
+
+// What the hook on `ui.close` does with a close: only the person's (Esc, the close mark) is the pane's; on HOME it passes (the pane
+// closes), on ANSWER it cancels the draft and goes back, on any other page it goes back. Any other origin passes.
+export type EscRoute = 'pass' | 'answer' | 'back'
+export function escRoute(page: PageName, origin: string): EscRoute {
+  if (origin !== 'person' || page === 'HOME') return 'pass'
+  return page === 'ANSWER' ? 'answer' : 'back'
 }
 
 // One key on the current page. `l` is the language (the caller toggles it) and `q` closes; the rest move, open, go back or jump.

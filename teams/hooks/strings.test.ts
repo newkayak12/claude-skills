@@ -4,6 +4,7 @@ import { DASH_WORD_KEYS } from '../scripts/lib/view-dashboard.mjs'
 import { ENGINE_WORD_KEYS } from '../scripts/lib/view-events.mjs'
 import { LANE_KEYS, NOW_KINDS, SUBJECT_KEY_OF, SUBJECT_KEYS, SUMMARY_WORD_KEYS, TASK_STATES, TICKET_STATES } from '../scripts/lib/view-summary.mjs'
 import { STAGE_KEYS } from '../scripts/lib/view-stages.mjs'
+import { ACTIVITY_KEYS } from '../scripts/lib/view-activity.mjs'
 import { latinOutside } from './lang-allow'
 import { STRINGS, SUBJECT_KEY } from './mod'
 
@@ -30,9 +31,20 @@ test('STRINGS: en and ko hold equal {name} sets per key', () => {
 
 test('STRINGS: engine keys the node hands over are all in the table', () => {
   const en = STRINGS.en as Record<string, string>
-  const all = [...ENGINE_WORD_KEYS, ...DASH_WORD_KEYS, ...SUMMARY_WORD_KEYS]
+  const all = [...ENGINE_WORD_KEYS, ...DASH_WORD_KEYS, ...SUMMARY_WORD_KEYS, ...ACTIVITY_KEYS]
   expect(all.length > 0).toBe(true)
   for (const key of all) expect(key in en ? key : `engine key missing in STRINGS.en: ${key}`).toBe(key)
+})
+
+test('STRINGS: every activity key has an en and a ko phrase with the same {name} set, ko inside the allow-list', () => {
+  const en = STRINGS.en as Record<string, string>
+  const ko = STRINGS.ko as Record<string, string>
+  expect(ACTIVITY_KEYS.length).toBe(9)
+  for (const key of ACTIVITY_KEYS) {
+    expect([key, typeof en[key] === 'string' && en[key]!.length > 0, typeof ko[key] === 'string' && ko[key]!.length > 0]).toEqual([key, true, true])
+    expect([key, names(en[key]!) + '']).toEqual([key, names(ko[key]!) + ''])
+    expect([key, latinOutside(ko[key]!.replace(/\{\w+\}/g, ''), [])]).toEqual([key, []])
+  }
 })
 
 // Each place mod.tsx builds a key from an engine value: `${prefix}${Cap(value)}`. A value the engine can emit with no key draws raw English.
@@ -82,11 +94,13 @@ test('latinOutside: id tokens are data, a bare prefix is not', () => {
 
 // F2-AC-50/51: every F2 key and the engine-composed reason/actor keys are in both tables, and the Korean holds no word off the allow-list
 const F2_GAP_KEYS = ['actorHuman', 'proposalSize', 'proposalSizeFlow', 'resplitAreas', 'resplit', 'replanIds', 'reasonNeverDispatched', 'reasonState']
-test('STRINGS: the F2 keys and the F4-gap keys exist in en and ko, 91 + 8, ko inside the allow-list', () => {
+test('STRINGS: the F2 keys and the F4-gap keys exist in en and ko, 95 + 8, ko inside the allow-list', () => {
   const en = STRINGS.en as Record<string, string>
   const ko = STRINGS.ko as Record<string, string>
   const f2 = Object.keys(en).filter((k) => /^f2[A-Z]/.test(k))
-  expect(f2.length).toBe(91) // 84 + f2FloorStepOf, f2FloorStoriesAgents, f2EpicVerdict, f2EpicRunning, f2EpicStories, f2EpicGate, f2FloorReportHintS
+  expect(f2.length).toBe(95) // 84 + f2FloorStepOf, f2FloorStoriesAgents, f2EpicVerdict, f2EpicRunning, f2EpicStories, f2EpicGate, f2FloorReportHintS, f2PageEntry, f2EntryTimes, f2FootPhase, f2FootEntry
+  for (const k of ['f2PageEntry', 'f2EntryTimes', 'f2FootPhase', 'f2FootEntry']) expect(k in en && k in ko ? k : `missing: ${k}`).toBe(k)
+  expect([en.f2EntryTimes, ko.f2EntryTimes]).toEqual(['×{n}', '×{n}'])
   for (const k of [...f2, ...F2_GAP_KEYS]) {
     expect(k in en && k in ko ? k : `missing: ${k}`).toBe(k)
     expect([k, latinOutside(ko[k]!.replace(/\{\w+\}/g, ''), [])]).toEqual([k, []])

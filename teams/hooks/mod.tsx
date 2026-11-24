@@ -2,10 +2,10 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
 import type { Dash, DecisionsPayload, ReportPayload, StatusInfo, SummaryTask, SummaryTaskEntry, TeamsEvent, TeamsView } from '../types'
-import { HOME, askBandShown, carriesInput, fallbackSelection, levelOf, pageEsc, pageKey, pageStep, paneSlash, reconcileEpic, selectedOf, statusAnswer } from './pane'
+import { HOME, askBandShown, carriesInput, escRoute, fallbackSelection, levelOf, pageEsc, pageKey, pageStep, paneSlash, reconcileEpic, selectedOf, statusAnswer } from './pane'
 import type { Page, PageKey, PageNav, RowRef, StepCtx, StepResult } from './pane'
-import { HOME_PLANS, PAGE_ROWS, PHASE_KEYS, clipText, clipWords, crumbFit, costText, epicElapsed, floorRows, footerPlan, KEYS_CHROME, homeHeader, homeRows, isEnded, logLines, needsOf, pageLines, phaseLines, renderLines, rowIdsOf, since, storyGrid, storyLabel, storyNow, storyReportLines, storyRows, storyThreads, storyTop, width, windowOf } from './teams-draw'
-import type { DecisionX, Line, PageOpts, PageRow, PhaseEntry, StoryPayload, StoryReport } from './teams-draw'
+import { HOME_PLANS, PAGE_ROWS, PHASE_KEYS, clipText, clipWords, crumbFit, costText, entryLines, epicElapsed, floorRows, footerPlan, KEYS_CHROME, homeHeader, homeRows, isEnded, logLines, needsOf, pageLines, phaseModel, plain, renderLines, rowIdsOf, since, storyGrid, storyLabel, storyNow, storyReportLines, storyRows, storyThreads, storyTop, width, windowItems, windowOf } from './teams-draw'
+import type { DecisionX, Line, PageOpts, PageRow, PhaseEntry, PhaseItem, StoryPayload, StoryReport } from './teams-draw'
 
 // the person's unread message rows (view-bus.mjs `unread.notice`, listed as status `notices`): `text` is the band row, already clipped by the
 // engine. Absent = none. Widened here because ../types is not this package's to edit.
@@ -139,8 +139,13 @@ const en = {
   f2AnswerDesktopOnly: 'answer on a desktop', f2AnswerAccepted: 'Answer sent', f2AnswerRefused: 'Not accepted: {reason}', f2AnswerFailed: 'Could not run the answer tool: {reason}',
   f2BtnUp: '▲', f2BtnDown: '▼', f2BtnOpen: 'open', f2BtnBack: 'back', f2BtnFlag: '⚑', f2BtnClose: 'close',
   f2FlagTitle: 'Needs you {n}', f2FlagAge: '{m} waiting', f2FlagDriverSilent: 'no output for {m} (driver stopped?)',
-  f2FootHome: 'w s move · d ⏎ open (EPIC → Floor · STORY → detail) · n next ⚑ · q close', f2FootFloor: 'w s move · d ⏎ Phase detail · a back · n next ⚑ · q close',
-  f2FootStory: 'w s move · d ⏎ open · a back · n next ⚑ · q close', f2FootScroll: 'w s scroll · a back · n next ⚑ · q close',
+  f2FootHome: 'w s move/click · d ⏎ open (EPIC → Floor · STORY → detail) · n next ⚑ · q close', f2FootFloor: 'w s move/click · d ⏎ Phase detail · a back (Esc) · n next ⚑ · q close',
+  f2FootStory: 'w s move/click · d ⏎ open · a back (Esc) · n next ⚑ · q close', f2FootScroll: 'w s scroll · a back (Esc) · n next ⚑ · q close',
+  f2FootPhase: 'w s move/click · d ⏎ open · a back (Esc) · n next ⚑ · q close', f2FootEntry: 'a back (Esc) · n next ⚑ · q close',
+  f2PageEntry: 'Entry', f2EntryTimes: '×{n}',
+  // what a worker is doing, one phrase per ACTIVITY_KEYS value (view-activity.mjs); the {…} words are the engine's plain words
+  actJudging: 'judging {what}', actTesting: 'testing {suite}', actEditing: 'editing {file}', actReading: 'reading {what}', actSubagent: 'asking a {kind} subagent',
+  actEngine: '{verb}', actRunning: 'running a command', actThinking: 'thinking', actStage: '{stage}',
   f2FootAnswer: 'Input mode: letters go in as typed · empty ⏎ cancel',
   f2FloorPhaseOf: 'Phase {n}/6', f2FloorStepOf: '{stage} · {k}/{n}', f2FloorDecisionsN: 'decisions {n}', f2FloorReportHint: 'EPIC report opens here', f2FloorReportHintS: 'report opens here',
   f2FloorStoriesAgents: 'STORY {s} / subagent {a}', f2EpicVerdict: 'Verdict', f2EpicRunning: 'running', f2EpicStories: 'STORY {accepted}/{total}', f2EpicGate: 'gate {score}/{threshold}',
@@ -223,8 +228,12 @@ export const STRINGS: Record<'en' | 'ko', Record<keyof typeof en, string>> = {
     f2AnswerDesktopOnly: '데스크톱에서 답해 주세요', f2AnswerAccepted: '답을 보냈습니다', f2AnswerRefused: '받지 못했습니다: {reason}', f2AnswerFailed: '답변 도구를 실행하지 못했습니다: {reason}',
     f2BtnUp: '▲', f2BtnDown: '▼', f2BtnOpen: '열기', f2BtnBack: '뒤로', f2BtnFlag: '⚑', f2BtnClose: '닫기',
     f2FlagTitle: '내 차례 {n}', f2FlagAge: '{m} 대기', f2FlagDriverSilent: '응답 없음 {m} (드라이버 멈춤?)',
-    f2FootHome: 'w s 이동 · d ⏎ 열기 (EPIC → FLOOR · STORY → 상세) · n 다음 ⚑ · q 닫기', f2FootFloor: 'w s 이동 · d ⏎ Phase 상세 · a 뒤로 · n 다음 ⚑ · q 닫기',
-    f2FootStory: 'w s 이동 · d ⏎ 열기 · a 뒤로 · n 다음 ⚑ · q 닫기', f2FootScroll: 'w s 스크롤 · a 뒤로 · n 다음 ⚑ · q 닫기',
+    f2FootHome: 'w s 이동·클릭 · d ⏎ 열기 (EPIC → FLOOR · STORY → 상세) · n 다음 ⚑ · q 닫기', f2FootFloor: 'w s 이동·클릭 · d ⏎ Phase 상세 · a 뒤로 (Esc) · n 다음 ⚑ · q 닫기',
+    f2FootStory: 'w s 이동·클릭 · d ⏎ 열기 · a 뒤로 (Esc) · n 다음 ⚑ · q 닫기', f2FootScroll: 'w s 스크롤 · a 뒤로 (Esc) · n 다음 ⚑ · q 닫기',
+    f2FootPhase: 'w s 이동·클릭 · d ⏎ 열기 · a 뒤로 (Esc) · n 다음 ⚑ · q 닫기', f2FootEntry: 'a 뒤로 (Esc) · n 다음 ⚑ · q 닫기',
+    f2PageEntry: '항목', f2EntryTimes: '×{n}',
+    actJudging: '{what} 판정 중', actTesting: '{suite} 테스트 중', actEditing: '{file} 수정 중', actReading: '{what} 읽는 중', actSubagent: '{kind} subagent 호출 중',
+    actEngine: '{verb}', actRunning: '명령 실행 중', actThinking: '생각 중', actStage: '{stage}',
     f2FootAnswer: '입력 모드: 글자가 그대로 들어감 · 빈 ⏎ 취소',
     f2FloorPhaseOf: 'Phase {n}/6', f2FloorStepOf: '{stage} · {k}/{n}', f2FloorDecisionsN: '결정 {n}', f2FloorReportHint: 'EPIC 보고서는 여기서 열림', f2FloorReportHintS: '보고서는 여기서 열림',
     f2FloorStoriesAgents: 'STORY {s} / 서브에이전트 {a}', f2EpicVerdict: '판정', f2EpicRunning: '진행 중', f2EpicStories: 'STORY {accepted}/{total}', f2EpicGate: 'gate {score}/{threshold}',
@@ -333,7 +342,8 @@ async function setAnswering($: EngineInterface, on: boolean): Promise<void> {
     // the pane keeps its last flags
   }
 }
-// The pane's page decides whether a draft lives: leaving ANSWER drops it and the typed text.
+// The pane's page decides whether a draft lives: leaving ANSWER drops it and the typed text. Every other page keeps closeOnEscape: the
+// host then raises the person's Esc as `ui.close`, and the hook below turns it into back (a host without closeOnEscape would hand Esc to the prompt).
 async function settleAnswer($: EngineInterface, pg: Page): Promise<void> {
   if (pg.name === 'ANSWER') return setAnswering($, true)
   if (draft !== null) {
@@ -354,6 +364,14 @@ async function leaveAnswer($: EngineInterface, { dropped = true }: { dropped?: b
 async function openPane($: EngineInterface) {
   if (!(await $.ui.panes()).some(p => p.id === PANE) && (await read($, page)).name === 'ANSWER') await leaveAnswer($)
   return $.ui.open(openArgs())
+}
+// The person's Esc on a page that is not HOME: back, as `a` does, the pane stays open
+async function escBack($: EngineInterface): Promise<void> {
+  const r = pageEsc(await readNav($))
+  await writeNav($, r.nav)
+  const to = r.nav.page.epic
+  if (to !== null && to !== (await read($, epic))) await update($, epic, () => to)
+  await fetchPage($, r.nav.page)
 }
 
 // The English words the engine writes as a subject (view-summary.mjs SUBJECT_KEY_OF; strings.test.ts keeps the two equal): the pane
@@ -468,7 +486,7 @@ async function fetchPage($: EngineInterface, pg: Page): Promise<void> {
   }
   try {
     const story = pg.story === null ? '' : storyLabel(pg.story)
-    if (pg.name === 'PHASE') {
+    if (pg.name === 'PHASE' || pg.name === 'ENTRY') {
       const payload = await last(['--format', 'decisions']) as DecisionsPayload | null
       if (payload !== null) await update($, decisions, () => ({ task_id: task, payload }))
     } else if (pg.name === 'STORY' || pg.name === 'LOG') {
@@ -800,7 +818,8 @@ export const register: Register = on => {
             // a page of an EPIC that left the listing goes back to HOME, so no stale page stays drawn
             // and a selected row that left its page's list falls to the nearest listed row, kept here (a draw writes no state)
             const nav = reconcileEpic(await readNav($), ids)
-            const rowIds = rowIdsOf(nav.page, list, nav.unfolded)
+            const held = await read($, decisions)
+            const rowIds = rowIdsOf(nav.page, list, nav.unfolded, held !== null && held.task_id === nav.page.epic ? (held.payload.entries as DecisionX[]) : null)
             const level = levelOf(nav.page)
             const kept = selectedOf(nav, rowIds, levelIds.get(level) ?? rowIds)
             levelIds.set(level, rowIds)
@@ -887,12 +906,15 @@ export const register: Register = on => {
     return { text: statusAnswer(run, paneOpened, surfaces, placed?.isPlaced === true) }
   })
 
-  // The person's close (Esc, the close mark) while answering cancels the draft and the pane stays; the next one closes it. Another
-  // origin (this plugin's own close, an unload) passes. Whether the host sends Esc here or hands it back to the prompt once
-  // closeOnEscape is dropped is unchecked without a live session.
+  // The person's close (Esc, the close mark) on a page that is not HOME goes back (answering: cancels the draft too) and the pane stays;
+  // on HOME it passes and closes. Another origin (this plugin's own close, an unload) passes. Esc reaches here because the pane keeps
+  // closeOnEscape on every page but ANSWER (the type docs: without it Esc returns the keys to the prompt); that the live host does so
+  // is unchecked without a live session.
   on('ui.close', { id: PANE }, async ($, e, next) => {
-    if (e.origin.kind !== 'person' || (await read($, page)).name !== 'ANSWER') return next(e)
-    await leaveAnswer($)
+    const route = escRoute((await read($, page)).name, e.origin.kind)
+    if (route === 'pass') return next(e)
+    if (route === 'answer') await leaveAnswer($)
+    else await escBack($)
     return { value: undefined } as never
   }).catch(($, e, next) => next(e))
 
@@ -950,28 +972,27 @@ export const register: Register = on => {
     const thread = decHeld !== null && decHeld.task_id === pg.epic ? (decHeld.payload.entries as DecisionX[]) : null
     const opts: PageOpts = { say, wo, fixed: fixedWord, verdictOf: v => s(VERDICT_WORD[v ?? ''] ?? 'vReject'), frame: await read($, frame), now }
     const phaseKey = PHASE_KEYS[Math.min(5, Math.max(0, (pg.phase ?? 1) - 1))]!
+    // the Phase page's rows are its workers, hand-offs and decisions; the model is built twice, once to know them and once with the pointer on the selected one
+    const phaseOf = (sel: string | null): PhaseItem[] | null => (pg.name === 'PHASE' && entry !== undefined ? phaseModel(entry as PhaseEntry, phaseKey, thread, opts, inner, sel) : null)
+    const phaseItems0 = phaseOf(null)
     const rows: PageRow[] = pg.name === 'HOME' ? [...home.flags, ...home.body] : pg.name === 'FLOOR' && entry !== undefined ? floorRows(entry, say)
-      : pg.name === 'STORY' && entry !== undefined && storyId !== null ? storyRows(entry, storyId, sd, doc, opts) : []
+      : pg.name === 'STORY' && entry !== undefined && storyId !== null ? storyRows(entry, storyId, sd, doc, opts)
+        : phaseItems0 !== null ? phaseItems0.flatMap(i => (i.row === undefined ? [] : [i.row])) : []
     const rowIds = rows.map(r => r.id)
     const level = levelOf(pg)
     const sel = selectedOf(stored, rowIds, levelIds.get(level) ?? rowIds)
     const nav: PageNav = sel === null ? stored : { ...stored, sel: { ...stored.sel, [level]: sel } }
     const selRow = rows.find(r => r.id === sel)
     const ref: RowRef | null = selRow?.ref ?? null
-    // the text pages: Phase detail, Log and the STORY Report are lines windowed by the scroll offset of their level
+    // the text pages: Log and the STORY Report are lines windowed by the scroll offset of their level
     const docLines: Line[] | null = entry === undefined ? null
-      : pg.name === 'PHASE' ? phaseLines(entry as PhaseEntry, phaseKey, thread, opts, inner)
-        : pg.name === 'LOG' ? logLines(sd, opts, inner)
-          : pg.name === 'STORY_REPORT' ? storyReportLines(doc, say, inner) : null
+      : pg.name === 'LOG' ? logLines(sd, opts, inner)
+        : pg.name === 'STORY_REPORT' ? storyReportLines(doc, say, inner) : null
     const windowed = docLines === null ? null : windowOf(docLines, stored.scroll[level] ?? 0, PAGE_ROWS)
     const ctx: StepCtx = { ids: rowIds, row: ref, flags: home.flags.map(f => f.id), maxScroll: windowed?.max ?? 0 }
     const hinted = await read($, flagHint)
-    // one key or Button press: the page stack moves, the EPIC the data call is for follows the page
-    const act = async (key: Exclude<PageKey, null>): Promise<void> => {
-      if (hinted) await update($, flagHint, () => false)
-      if (await read($, draftHint)) await update($, draftHint, () => false)
-      if (key.kind === 'lang') return toggleLang($)
-      const r: StepResult = pageStep(nav, key, ctx)
+    // what one key or Button press did to the page stack: the EPIC the data call is for follows the page
+    const settle = async (r: StepResult, before: PageNav): Promise<void> => {
       if (r.closed) {
         await $.ui.close({ id: PANE })
         return
@@ -979,9 +1000,26 @@ export const register: Register = on => {
       await writeNav($, r.nav)
       const to = r.nav.page.epic
       if (to !== null && to !== (await read($, epic))) await update($, epic, () => to)
-      if (JSON.stringify(r.nav.page) !== JSON.stringify(nav.page)) await fetchPage($, r.nav.page)
+      if (JSON.stringify(r.nav.page) !== JSON.stringify(before.page)) await fetchPage($, r.nav.page)
       if (r.hint === 'noFlag') await update($, flagHint, () => true)
     }
+    const act = async (key: Exclude<PageKey, null>): Promise<void> => {
+      if (hinted) await update($, flagHint, () => false)
+      if (await read($, draftHint)) await update($, draftHint, () => false)
+      if (key.kind === 'lang') return toggleLang($)
+      await settle(pageStep(nav, key, ctx), nav)
+    }
+    // a click on a row: it is selected, then opened as `d` opens it
+    const press = async (row: PageRow): Promise<void> => {
+      if (hinted) await update($, flagHint, () => false)
+      if (await read($, draftHint)) await update($, draftHint, () => false)
+      const picked: PageNav = { ...nav, sel: { ...nav.sel, [level]: row.id } }
+      await settle(pageStep(picked, { kind: 'open' }, { ...ctx, row: row.ref }), picked)
+    }
+    // a selectable row is one whole-row Button (its tints give way to the Button's own)
+    const buttonRows = (lines: readonly Line[], rs: readonly PageRow[]) => (
+      <Box flexDirection="column">{lines.map((l, i) => <Button key={rs[i]!.id} plain label={plain(l)} onPress={() => press(rs[i]!)} />)}</Box>
+    )
     const onKey = async (text: string) => {
       const key = pageKey(text)
       if (key !== null) await act(key)
@@ -1046,6 +1084,7 @@ export const register: Register = on => {
     const epicName = entry ? `${entry.key} · ${entry.title}` : ''
     const crumbs = pg.name === 'FLOOR' ? [epicName, s('f2PageFloor')]
       : pg.name === 'PHASE' ? [epicName, s('f2PageFloor'), phaseLabel(pg.phase ?? 1)]
+      : pg.name === 'ENTRY' ? [epicName, phaseLabel(pg.phase ?? 1), s('f2PageEntry')]
       : pg.name === 'EPIC_REPORT' ? [epicName, s('f2PageFloor'), phaseLabel(6)]
       : pg.name === 'STORY' ? [epicName, storyName]
       : pg.name === 'LOG' ? [epicName, storyName, s('f2PageLog')]
@@ -1108,19 +1147,32 @@ export const register: Register = on => {
           {nFlag > 0 && (
             <Box flexDirection="column">
               {compact
-                ? renderLines(ui, [[{ t: flagPicked ? '▸ ' : '  ', tint: 'claude' }, ...home.flagLine.map((seg, i, all) => i < all.length - 1 ? seg : { ...seg, t: clipText(seg.t, Math.max(0, inner - 2 - all.slice(0, -1).reduce((n, x) => n + width(x.t), 0))) })]], 'g')
-                : <Box flexDirection="column"><Text color="warning" bold>{`⚑ ${s('f2FlagTitle', { n: nFlag })}`}</Text>{renderLines(ui, lines.slice(0, nFlag), 'f')}</Box>}
+                ? (
+                  // one Button for the whole section: it opens the selected flag, else the first
+                  <Button key="flags" plain label={plain([{ t: flagPicked ? '▸ ' : '  ' }, ...home.flagLine.map((seg, i, all) => i < all.length - 1 ? seg : { ...seg, t: clipText(seg.t, Math.max(0, inner - 2 - all.slice(0, -1).reduce((n, x) => n + width(x.t), 0))) })])}
+                    onPress={() => press(home.flags.find(f => f.id === sel) ?? home.flags[0]!)} />
+                )
+                : <Box flexDirection="column"><Text color="warning" bold>{`⚑ ${s('f2FlagTitle', { n: nFlag })}`}</Text>{buttonRows(lines.slice(0, nFlag), rows.slice(0, nFlag))}</Box>}
               {rule('r2')}
             </Box>
           )}
-          {renderLines(ui, lines.slice(nFlag), 'e')}
+          {buttonRows(lines.slice(nFlag), rows.slice(nFlag))}
         </Box>
       )
     } else {
       let page$
       if (entry === undefined) page$ = <Text dimColor>{s('loading')}</Text>
-      else if (pg.name === 'FLOOR') page$ = renderLines(ui, pageLines(rows, sel, inner, HOME_PLANS), 'p')
-      else if (windowed !== null) {
+      else if (pg.name === 'FLOOR') page$ = buttonRows(pageLines(rows, sel, inner, HOME_PLANS), rows)
+      else if (pg.name === 'PHASE') {
+        // Running, Handed over and Decisions: each worker, hand-off and decision a Button; the window keeps the selected row in view
+        const items = phaseOf(sel) ?? []
+        const at = items.findIndex(i => i.row !== undefined && i.row.id === sel)
+        const shown = windowItems(items, at < 0 ? 0 : at - PAGE_ROWS + 1)
+        page$ = <Box flexDirection="column">{shown.map((i, n) => (i.row === undefined ? <Box key={`t${n}`}>{renderLines(ui, [i.line], `t${n}`)}</Box> : <Button key={i.row.id} plain label={plain(i.line)} onPress={() => press(i.row!)} />))}</Box>
+      } else if (pg.name === 'ENTRY') {
+        // one hand-off or decision of the Phase, the fields it carries
+        page$ = renderLines(ui, entryLines(entry as PhaseEntry, phaseKey, pg.entry, thread, opts, inner), 'n')
+      } else if (windowed !== null) {
         // Log waits for its payload; Phase detail and the Report draw their sections (a dim – where nothing is recorded)
         page$ = pg.name === 'LOG' && sd === null ? <Text dimColor>{s('loading')}</Text> : renderLines(ui, windowed.lines, 't')
       } else if (pg.name === 'STORY') {
@@ -1135,7 +1187,7 @@ export const register: Register = on => {
             {working.length > 0 && <Box flexDirection="column">{rule('r3')}{renderLines(ui, working, 'c')}</Box>}
             {threads.length > 0 && <Box flexDirection="column">{rule('r5')}{renderLines(ui, threads, 'm')}</Box>}
             {rule('r4')}
-            {renderLines(ui, pageLines(rows, sel, inner, HOME_PLANS), 'd')}
+            {buttonRows(pageLines(rows, sel, inner, HOME_PLANS), rows)}
           </Box>
         )
       } else if (pg.name === 'EPIC_REPORT') {
@@ -1208,7 +1260,7 @@ export const register: Register = on => {
     const selEpic = ref !== null && (ref.type === 'epic' || ref.type === 'story') ? listed.find(t => t.task_id === ref.epic) : undefined
     const foldHint = pg.name !== 'HOME' || selEpic === undefined || !isEnded(selEpic) ? ''
       : nav.unfolded[selEpic.task_id] === true ? s('f2FoldRefold') : ref?.type === 'epic' ? s('f2FoldUnfold') : ''
-    const foot = pg.name === 'HOME' ? 'f2FootHome' : pg.name === 'FLOOR' ? 'f2FootFloor' : pg.name === 'STORY' ? 'f2FootStory' : pg.name === 'ANSWER' ? 'f2FootAnswer' : 'f2FootScroll'
+    const foot = pg.name === 'HOME' ? 'f2FootHome' : pg.name === 'FLOOR' ? 'f2FootFloor' : pg.name === 'STORY' ? 'f2FootStory' : pg.name === 'PHASE' ? 'f2FootPhase' : pg.name === 'ENTRY' ? 'f2FootEntry' : pg.name === 'ANSWER' ? 'f2FootAnswer' : 'f2FootScroll'
     const footText = [s(foot), foldHint].filter(Boolean).join(' · ')
     const footHint = footerPlan({ steps: 0, open: '', close: '', hint: footText, marker }, inner, pg.name === 'ANSWER' ? 0 : KEYS_CHROME).hint
     const footer = compact ? (

@@ -49,7 +49,7 @@ function agentsOfStream(path) {
     for (const c of content) {
       if (e.type === 'assistant' && c && c.type === 'tool_use' && (c.name === 'Task' || c.name === 'Agent')) {
         const i = c.input || {};
-        calls.set(c.id, { id: c.id, kind: String(i.subagent_type || 'agent'), model: String(i.model || e.message.model || '') || null, done: false });
+        calls.set(c.id, { id: c.id, kind: String(i.subagent_type || 'agent'), model: String(i.model || '') || null, done: false });
       } else if (e.type === 'user' && c && c.type === 'tool_result' && calls.has(c.tool_use_id)) calls.get(c.tool_use_id).done = true;
     }
   }

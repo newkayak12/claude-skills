@@ -66,7 +66,13 @@ export function markOf(state, doing = '') {
 const ITEM_WORD = { ...FIXED, acting: 'working', you: 'needs you' };
 const itemMarkOf = (state) => ({ icon: MARKS[state], word: ITEM_WORD[state], word_key: state });
 
-// facts: { stories: { [id]: { live, doing, cost_usd, cost_estimated, run_file } }, judge: { live, doing }, ledger: [lines] }
+// A live worker's activity in words (view-activity.mjs: a key and its vars) and the model it runs on, only as recorded.
+const activityFields = (f) => ({
+  ...(f.doing_key ? { doing_key: f.doing_key, doing_vars: f.doing_vars || {} } : {}),
+  ...(f.model ? { model: f.model } : {}),
+});
+
+// facts: { stories: { [id]: { live, doing, doing_key, doing_vars, model, cost_usd, cost_estimated, run_file } }, judge: { live, doing, doing_key, doing_vars, model }, ledger: [lines] }
 // The STORY's own numbers (view-summary.mjs metrics()) carried on its item; null for a desk with none.
 const NUMBERS = ['attempt', 'max_attempts', 'judge', 'cost_usd', 'retry_cost_usd', 'wall_ms', 'out_of_retries'];
 const numbersOf = (s) => (s ? Object.fromEntries(NUMBERS.map((k) => [k, s[k] ?? null])) : null);
@@ -89,7 +95,8 @@ export function floorOf(model, facts = {}, { now = Date.now(), metrics: given = 
     const doing = state === 'acting' || state === 'you' ? (f.doing || '') : '';
     // minutes (integer) only on a stalled worker: its own stream's, else the task-level newest sign of life
     const minutes = state === 'stalled' ? (Number.isInteger(f.minutes) ? f.minutes : taskMinutes) : null;
-    workers.push({ id, phase, state, doing, ...markOf(state, doing), ...(Number.isInteger(minutes) ? { minutes } : {}), ...(Number.isInteger(f.subagents) ? { subagents: f.subagents } : {}), ...(state === 'acting' || state === 'you' ? at : {}) });
+    const live = state === 'acting' || state === 'you';
+    workers.push({ id, phase, state, doing, ...markOf(state, doing), ...(Number.isInteger(minutes) ? { minutes } : {}), ...(Number.isInteger(f.subagents) ? { subagents: f.subagents } : {}), ...(live ? { ...at, ...activityFields(f) } : {}) });
     if (mark === 'done' || mark === 'pending') return;
     const itemState = mark === 'failed' && state !== 'you' ? 'failed' : state;
     items.push({
@@ -131,7 +138,7 @@ export function floorOf(model, facts = {}, { now = Date.now(), metrics: given = 
   const judge = facts.judge || {};
   const judgeState = judge.live ? 'acting' : 'idle';
   const judgeDoing = judge.live ? (judge.doing || '') : '';
-  workers.push({ id: 'judge', phase: 'gate', state: judgeState, doing: judgeDoing, ...markOf(judgeState, judgeDoing) });
+  workers.push({ id: 'judge', phase: 'gate', state: judgeState, doing: judgeDoing, ...markOf(judgeState, judgeDoing), ...(judge.live ? activityFields(judge) : {}) });
   const pkgIds = cardsOf(m).map((x) => String(x.c.id).split(':')[0]);
   // steps: the S worker's counts ride on the step it works in, 0 elsewhere
   const sw = workers.find((w) => w.id === 'S');

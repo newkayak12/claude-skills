@@ -121,8 +121,9 @@ test('F2-AC-44: participants come from the driver streams (Agent and Task calls,
   try {
     const p = json(f, 'story').participants;
     assert.equal(p.source, 'stream');
-    assert.deepEqual(p.total, [{ kind: 'reviewer', model: 'opus', n: 2 }, { kind: 'agent', model: 'claude-opus-5-5', n: 1 }]);
-    assert.deepEqual(p.live, [{ kind: 'agent', model: 'claude-opus-5-5', n: 1 }, { kind: 'reviewer', model: 'opus', n: 1 }]);
+    // an Agent or Task call with no model input carries no model: it does not inherit its parent's message model
+    assert.deepEqual(p.total, [{ kind: 'reviewer', model: 'opus', n: 2 }, { kind: 'agent', model: null, n: 1 }]);
+    assert.deepEqual(p.live, [{ kind: 'agent', model: null, n: 1 }, { kind: 'reviewer', model: 'opus', n: 1 }]);
     // a restart's stream of the same desk joins it
     write(join(f.dir, 'drivers', 'dispatch_P1_1.restart1.stream.jsonl'), agentCall('c1', { subagent_type: 'planner', model: 'sonnet' }) + '\n');
     assert.equal(json(f, 'story').participants.total.reduce((a, r) => a + r.n, 0), 4);

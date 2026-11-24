@@ -833,12 +833,13 @@ test('F2-AC-48: hand-offs are per Phase, each with its own newest five; a STORY 
     ...[0, 1, 2, 3, 4, 5, 6].map((i) => L({ ts: 5000 + i, event: 'verdict', node_id: 'accept:P1:2', subgoal_id: 'P1', verdict: 'accept' })),
   ];
   const f = floorOf({ task_id: 't', state: 'running', ticket: { key: 'E-t' }, packages: [{ id: 'P1', title: 'a', dispatch: { state: 'running', started_at: 1 }, child: { max_retries: 2 } }] }, { ledger }, { now: 0 });
-  assert.equal(f.phase_handoffs.build.length, 5, 'Build keeps its own newest five');
-  assert.equal(f.phase_handoffs.plan.length, 1);
-  assert.equal(f.phase_handoffs.plan[0].what, 'verdict sound');
+  // a verdict is the Phase's Decisions row, not a hand-off: Build holds the question only, Plan nothing
+  assert.deepEqual(f.phase_handoffs.build.map((h) => h.what), ['asks you']);
+  assert.deepEqual(f.phase_handoffs.plan, []);
   assert.equal(f.phase_handoffs.integrate.length, 1);
   assert.deepEqual(f.phase_handoffs.qa, []);
-  assert.equal(f.handoffs.length, 5, 'the EPIC-wide list is unchanged');
+  assert.equal(f.handoffs.length, 5, 'the EPIC-wide list is unchanged and keeps its verdicts');
+  assert.ok(f.handoffs.every((h) => h.what === 'verdict accept'));
 });
 
 test('F2-AC-2: an acting worker carries node, role and elapsed_ms from its running node; a waiting one is the TeamLeader\'s; absent where unrecorded', () => {
@@ -860,7 +861,7 @@ test('F2-AC-2: an acting worker carries node, role and elapsed_ms from its runni
   assert.deepEqual(['node', 'role', 'elapsed_ms'].map((k) => k in stalled.workers[0]), [false, false, false]);
 });
 
-test('F2-AC-2: Phase hand-offs carry story, a verdict\'s score, reason and next role, and a question is TeamLeader to you; the EPIC-wide list keeps its fields', () => {
+test('F2-AC-2: Phase hand-offs carry story and a question is TeamLeader to you, no verdict; the EPIC-wide list keeps its verdicts and fields', () => {
   const L = (o) => JSON.stringify({ task_id: 'E-t', ...o });
   const ledger = [
     L({ ts: 1000, event: 'verdict', node_id: 'accept:P1:1', stage: 'accept', subgoal_id: 'P1', verdict: 'accept', score: 91, reason: null }),
@@ -871,12 +872,11 @@ test('F2-AC-2: Phase hand-offs carry story, a verdict\'s score, reason and next 
   ];
   const f = floorOf({ task_id: 't', state: 'running', ticket: { key: 'E-t' }, packages: [{ id: 'P1', title: 'a', dispatch: { state: 'running', started_at: 1 }, child: { max_retries: 2 } }, { id: 'P2', title: 'b', dispatch: { state: 'running', started_at: 1 }, child: { max_retries: 2 } }] }, { ledger }, { now: 0 });
   const b = f.phase_handoffs.build;
-  assert.deepEqual(b.map((h) => h.story), ['P2', 'P2', 'P1']);
-  assert.deepEqual([b[2].score, b[2].to_role, 'reason' in b[2]], [91, 'integrate', false]);
-  assert.deepEqual([b[1].score, b[1].reason, b[1].to_role], [61, 'AC 3 missing', 'implementer']);
+  assert.deepEqual(b.map((h) => h.story), ['P2']);
+  assert.deepEqual(b.map((h) => ['score', 'to_role'].filter((k) => k in h)), [[]], 'no verdict fields in a Phase hand-off');
   assert.deepEqual([b[0].from, b[0].what, b[0].reason, b[0].to, b[0].to_key], ['TeamLeader', '', 'How many retries?', 'you', 'partyYou']);
-  // a manager verdict and an integration record no story and no flow
-  assert.deepEqual([f.phase_handoffs.plan[0].story, f.phase_handoffs.plan[0].to_role, f.phase_handoffs.integrate[0].story], [undefined, undefined, undefined]);
+  // a manager verdict is not a hand-off; an integration records no story
+  assert.deepEqual([f.phase_handoffs.plan, f.phase_handoffs.integrate[0].story], [[], undefined]);
   assert.deepEqual(Object.keys(f.handoffs.find((h) => h.what === 'verdict reject')).sort(), ['from', 'time', 'to', 'what', 'what_key', 'what_vars']);
 });
 
@@ -991,6 +991,59 @@ test('S steps: an L task entry has no steps key', () => {
     lTask(w, { pkgs: [{ id: 'P1', streamAgeMs: 1000 }] });
     const t = summary(w).tasks[0];
     assert.equal('steps' in t, false);
+  } finally { w.cleanup(); }
+});
+
+// ---------- card 179: what a worker is doing in words, and the model it really runs on ----------
+
+const init = (model) => JSON.stringify({ type: 'system', subtype: 'init', model, session_id: 'abcdef12' });
+const asstModel = (model, blocks, id = 'am1') => JSON.stringify({ type: 'assistant', message: { id, model, content: blocks } });
+const toolUse = (name, input, id = 'tu1') => ({ type: 'tool_use', id, name, input });
+
+test('card 179: an acting or waiting worker carries doing_key, doing_vars and model; an idle or done one carries none', () => {
+  const m = { task_id: 't', state: 'running', ticket: { key: 'E-t' }, packages: [
+    { id: 'P1', title: 'a', dispatch: { state: 'running', started_at: 1 }, child: { max_retries: 2 } },
+    { id: 'P2', title: 'b', dispatch: { state: 'running', started_at: 1 }, child: { max_retries: 2 } },
+  ] };
+  const acts = { doing_key: 'actEditing', doing_vars: { file: 'a.mjs' }, model: 'claude-opus-4' };
+  const f = floorOf(m, { stories: { P1: { live: true, doing: 'x', ...acts }, P2: { live: false, ...acts } }, judge: { live: true, doing: '', doing_key: 'actJudging', doing_vars: { what: 'the gate' }, model: 'claude-sonnet-4' } }, { now: 0 });
+  const by = Object.fromEntries(f.workers.map((w) => [w.id, w]));
+  assert.deepEqual([by.P1.doing_key, by.P1.doing_vars, by.P1.model], ['actEditing', { file: 'a.mjs' }, 'claude-opus-4']);
+  assert.deepEqual(['doing_key', 'doing_vars', 'model'].map((k) => k in by.P2), [false, false, false]);
+  assert.deepEqual([by.judge.doing_key, by.judge.doing_vars, by.judge.model], ['actJudging', { what: 'the gate' }, 'claude-sonnet-4']);
+  // no activity recorded for a live desk (no stream yet): nothing is invented
+  const none = floorOf(m, { stories: { P1: { live: true } } }, { now: 0 });
+  assert.deepEqual(['doing_key', 'doing_vars', 'model'].map((k) => k in none.workers[0]), [false, false, false]);
+});
+
+test('card 179: floorFacts reads each desk\'s tail as an activity and its stream\'s model; doing stays the text', () => {
+  const w = world();
+  try {
+    const running = (id, stage) => [node(`${stage}:U1:1`, stage, [], { state: 'running', subgoal_id: 'U1' })];
+    const l = lTask(w, { pkgs: [
+      { id: 'P1', streamAgeMs: 1000, lines: [init('claude-opus-4-1'), asstModel('claude-opus-4-1', [toolUse('Edit', { file_path: '/r/teams/hooks/pane.ts' })])], child: { nodes: running('P1', 'implement') } },
+      { id: 'P2', streamAgeMs: 1000, lines: [init('claude-sonnet-4-5'), asstModel('claude-sonnet-4-5', [toolUse('Bash', { command: 'cd /r/teams && claude plugin test .' })]), JSON.stringify({ type: 'tool_progress', tool_name: 'Bash', tool_use_id: 'tu1', elapsed_time_seconds: 60 })], child: { nodes: running('P2', 'implement') } },
+      { id: 'P3', streamAgeMs: 1000, lines: [asstModel('claude-haiku-4-5', [{ type: 'text', text: 'looking' }])], child: { nodes: running('P3', 'gate') } },
+      { id: 'P4', streamAgeMs: 3000, lines: [init('claude-opus-4-1'), asstModel('claude-opus-4-1', [toolUse('mcp__teams__team_run', {})])], child: { nodes: running('P4', 'implement') } },
+    ] });
+    // P4 restarted on another model: the newest stream of the desk names it
+    write(join(l.dir, 'drivers', 'dispatch_P4_1.restart1.stream.jsonl'), [init('claude-sonnet-4-5'), asstModel('claude-sonnet-4-5', [toolUse('Read', { file_path: '/r/a.mjs' })])].join('\n') + '\n', 500);
+    // the judge is working on a stream of its own
+    write(join(l.dir, 'drivers', 'judge_P1_1.stream.jsonl'), [init('claude-sonnet-4-5'), asstModel('claude-sonnet-4-5', [toolUse('Read', { file_path: '/r/a.mjs' })])].join('\n') + '\n', 1000);
+    const { facts, floor } = entryOf(w, l.id);
+    const s = facts.stories;
+    assert.deepEqual([s.P1.doing_key, s.P1.doing_vars, s.P1.model], ['actEditing', { file: 'pane.ts' }, 'claude-opus-4-1']);
+    assert.match(s.P1.doing, /Edit/, 'the string doing is unchanged');
+    assert.deepEqual([s.P2.doing_key, s.P2.doing_vars, s.P2.model], ['actTesting', { suite: 'teams suite' }, 'claude-sonnet-4-5']);
+    assert.deepEqual([s.P3.doing_key, s.P3.model], ['actJudging', 'claude-haiku-4-5'], 'no init line: the last assistant message names the model');
+    assert.match(s.P3.doing_vars.what, /P3/);
+    assert.equal(s.P4.model, 'claude-sonnet-4-5');
+    assert.equal(facts.judge.doing_key, 'actJudging');
+    assert.equal(facts.judge.model, 'claude-sonnet-4-5');
+    const by = Object.fromEntries(floor.workers.map((x) => [x.id, x]));
+    assert.deepEqual([by.P1.doing_key, by.P1.model, by.judge.model], ['actEditing', 'claude-opus-4-1', 'claude-sonnet-4-5']);
+    for (const x of floor.workers) for (const v of Object.values(x.doing_vars || {})) assert.doesNotMatch(String(v), /tool_progress|mcp__|^(Bash|Edit|Read|Agent)$/);
+    assert.equal(by.P4.doing_key, 'actEngine', 'the activity is the tail of the driver\'s own log; only the model follows the newest stream');
   } finally { w.cleanup(); }
 });
 

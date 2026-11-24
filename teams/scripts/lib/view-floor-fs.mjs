@@ -1,7 +1,7 @@
 // The reads behind the floor part of `view.mjs --once --format summary`: which tasks of a cwd are
 // listed, and the file facts view-floor.mjs turns into items and workers (a card's current action
 // from its stream, its cost, the graph run file it can open). Read-only; every read fails soft.
-import { existsSync, readFileSync, readdirSync, statSync, realpathSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, statSync, realpathSync, openSync, readSync, closeSync } from 'node:fs';
 import { basename, join, resolve } from 'node:path';
 import { readLogTail, renderStreamLine } from '../../mcp/tasklog.mjs';
 import { graphRunPath } from '../../mcp/harnessrun.mjs';
@@ -10,6 +10,7 @@ import { findDriverStreams, collectDriverCosts, collectNodeCosts } from '../benc
 import { collectTask, driverLive, stallMsOf, minutesSince } from './view-collect.mjs';
 import { summarize, cardsOf, waitingCount } from './view-summary.mjs';
 import { floorOf } from './view-floor.mjs';
+import { activityOf } from './view-activity.mjs';
 import { participantsOf } from './view-story.mjs';
 import { repoMatcher } from './view-repo.mjs';
 import { openTasks, statSig } from './view-index.mjs';
@@ -101,6 +102,54 @@ function doingOf(log) {
   return t.length > DOING_MAX ? t.slice(0, DOING_MAX - 1) + '…' : t;
 }
 
+// ---------- activity and model: the tail and head of a stream, parsed here ----------
+const ACT_TAIL = 40;
+const HEAD_BYTES = 64 * 1024;
+
+const recordsOf = (log) => {
+  const { lines, missing } = readLogTail(log, ACT_TAIL);
+  return missing ? [] : lines.map((l) => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
+};
+
+// The model a stream's `system init` line names: the last one in its first 64 KB (`claude -p` writes it first).
+function headModel(path) {
+  let fd;
+  try { fd = openSync(path, 'r'); } catch { return null; }
+  try {
+    const buf = Buffer.alloc(HEAD_BYTES);
+    const n = readSync(fd, buf, 0, HEAD_BYTES, 0);
+    let model = null;
+    for (const l of buf.subarray(0, n).toString('utf8').split('\n')) {
+      if (!l.includes('"init"')) continue;
+      try { const e = JSON.parse(l); if (e.type === 'system' && e.subtype === 'init' && e.model) model = String(e.model); } catch { /* a cut or foreign line */ }
+    }
+    return model;
+  } finally { closeSync(fd); }
+}
+
+// The model a stream really ran on: the last system init (tail, then head), else its last assistant message's.
+function modelOf(path, records) {
+  for (let i = records.length - 1; i >= 0; i--) if (records[i].type === 'system' && records[i].subtype === 'init' && records[i].model) return String(records[i].model);
+  const init = headModel(path);
+  if (init) return init;
+  for (let i = records.length - 1; i >= 0; i--) if (records[i].type === 'assistant' && records[i].message && records[i].message.model) return String(records[i].message.model);
+  return null;
+}
+
+// The newest stream of `log`'s desk (its restarts and attempts share the desk), else `log` itself.
+function newestStream(taskDir, log) {
+  const g = group(basename(log));
+  let best = log;
+  let at = mtimeOf(log) ?? -1;
+  for (const e of ls(join(taskDir, 'drivers'))) {
+    if (!e.name.endsWith('.stream.jsonl') || group(e.name) !== g) continue;
+    const p = join(taskDir, 'drivers', e.name);
+    const t = mtimeOf(p) ?? -1;
+    if (t > at) { best = p; at = t; }
+  }
+  return best;
+}
+
 const runFile = (cwd, runId) => {
   if (!cwd || !runId) return null;
   const p = join(cwd, '.teams_output', 'broker', 'runs', `${runId}.json`);
@@ -116,8 +165,16 @@ export function floorFacts(m, tasksDir, taskId, { now = Date.now(), raw: given, 
   const raw = given || readJson(join(dir, 'task.json')) || {};
   const limit = stallMsOf(raw);
   const doing = sig ?(log) => byStat('doing', log, () => doingOf(log)) : doingOf;
+  // what the worker does in words (the tail of `log` at its node's `stage`) and the model its newest stream ran on
+  const records = (log) => (sig ? byStat('tail', log, () => recordsOf(log)) : recordsOf(log));
+  const activity = (log, stage, id) => {
+    const recs = records(log);
+    const newest = newestStream(dir, log);
+    const model = modelOf(newest, newest === log ? recs : records(newest));
+    return { ...activityOf(recs, stage, { id }), ...(model ? { model } : {}) };
+  };
   const stories = {};
-  const desk = (id, driver, childCwd, childRunId, file, childNodes) => {
+  const desk = (id, driver, childCwd, childRunId, file, childNodes, stage) => {
     const log = driver && driver.log;
     const live = !!driver && driverLive({ ...driver, log }, now, limit);
     // a worker whose own stream went silent past the threshold: whole minutes since it was last written
@@ -125,6 +182,7 @@ export function floorFacts(m, tasksDir, taskId, { now = Date.now(), raw: given, 
     const silent = !live && at != null && now - at > limit;
     stories[id] = {
       live, doing: live ? doing(log) : '', run_file: file,
+      ...(live && log ? activity(log, stage, id) : {}),
       ...(silent ? { silent: true, minutes: minutesSince(now, at) } : {}),
       // a package desk's open Agent calls while its driver works (the size-S desk has no dispatch stream)
       ...(childNodes ? { subagents: live ? participantsOf(dir, id, childNodes, { live }).live.reduce((s, a) => s + a.n, 0) : 0 } : {}),
@@ -143,13 +201,16 @@ export function floorFacts(m, tasksDir, taskId, { now = Date.now(), raw: given, 
   } else {
     for (const { c } of cardsOf(m)) {
       const ch = c.child;
-      desk(String(c.id), ch && ch.driver, ch && ch.cwd, ch && ch.run_id, ch ? runFile(ch.cwd, ch.run_id) : null, (ch && ch.nodes) || []);
+      // the node the card works in now: a judged accept, else the child run's running node
+      const inner = ((ch && ch.nodes) || []).find((n) => n.state === 'running' || n.state === 'waiting_human');
+      const stage = c.accept && (c.accept.state === 'running' || c.accept.judging_since) ? 'accept' : inner && inner.stage;
+      desk(String(c.id), ch && ch.driver, ch && ch.cwd, ch && ch.run_id, ch ? runFile(ch.cwd, ch.run_id) : null, (ch && ch.nodes) || [], stage);
     }
   }
   let judge = { live: false, doing: '' };
   const judgeLogs = ls(join(dir, 'drivers')).filter((e) => e.name.startsWith('judge_') && e.name.endsWith('.stream.jsonl'))
     .map((e) => join(dir, 'drivers', e.name)).map((p) => ({ p, t: mtimeOf(p) || 0 })).sort((a, b) => b.t - a.t);
-  if (judgeLogs.length && now - judgeLogs[0].t <= JUDGE_FRESH_MS) judge = { live: true, doing: doing(judgeLogs[0].p) };
+  if (judgeLogs.length && now - judgeLogs[0].t <= JUDGE_FRESH_MS) judge = { live: true, doing: doing(judgeLogs[0].p), ...activity(judgeLogs[0].p, 'gate', '') };
   const ledgerPath = join(dir, 'ledger.jsonl');
   return { stories, judge, ledger: sig ? byStat('ledger', ledgerPath, () => readLogTail(ledgerPath, 500).lines) : readLogTail(ledgerPath, 500).lines };
 }

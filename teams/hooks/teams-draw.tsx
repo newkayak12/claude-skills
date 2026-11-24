@@ -481,9 +481,11 @@ type Vars = Record<string, string | number>
 // an engine word by its key: the table's word, else the raw value the engine sent
 export type Wo = (key: string, fallback: string, vars?: Vars) => string
 // fields the engine sends beside ../types: the Phase of a worker and its hand-offs (view-floor), the keys of a decision (view-status)
-export type PhaseWorker = SummaryWorker & { phase?: string }
+// doing_key / doing_vars: what the worker is doing as an ACTIVITY_KEYS key and plain words (view-activity.mjs); model: the raw id of its stream
+export type PhaseWorker = SummaryWorker & { phase?: string; doing_key?: string; doing_vars?: Record<string, string>; model?: string | null }
 export type PhaseEntry = SummaryTaskEntry & { phase_handoffs?: Record<string, Handoff[]> }
-export type DecisionX = Decision & { phase?: string; actor_key?: string; text_key?: string; text_vars?: Vars; reason_key?: string; reason_vars?: Vars }
+// times: a node's same verdict recorded n times, shown once (view-status.mjs decisionsView; only when n > 1)
+export type DecisionX = Decision & { phase?: string; actor_key?: string; text_key?: string; text_vars?: Vars; reason_key?: string; reason_vars?: Vars; times?: number }
 export type LogRow = { ts: number; time: string; node: string | null; state: string; what_key: string; numbers: Record<string, string | number | null>; note: string | null }
 type FlowCell = { state: Mark; score?: number; threshold?: number | null; reason?: string }
 // the bus as view-bus.mjs hands it over (card 126): one thread per sub-topic, messages newest last; a payload without the key has none
@@ -535,86 +537,184 @@ function table(rows: readonly (readonly Cell[])[], tints: readonly (readonly Dim
 
 // A worker the page lists as running (acting, waiting on a person, stalled). `⏸ 23m` only for the engine's stalled verdict with
 // whole minutes; a stalled worker without them reads as idle, so no ⏸ is drawn from nothing (F2-AC-42).
-// `detail` (Phase detail): STORY · node · role · what · elapsed, the node, role and elapsed as the engine sent them (blank when it sent none)
-function runningRows(workers: readonly SummaryWorker[], o: PageOpts, detail = false): StoryCells[] {
+// `detail` (Phase detail): STORY · node · role · what · model · elapsed, the node (a table word), role, model and elapsed as the engine
+// sent them (blank when it sent none). The what-cell is the worker's activity phrase from the table (doing_key + doing_vars); a worker
+// with none says its state word, never the raw `doing` text.
+export const shortModel = (m: string | null | undefined): string => {
+  const raw = String(m ?? '').trim()
+  return raw === '' ? '' : /(opus|sonnet|haiku)/i.exec(raw)?.[1]?.toLowerCase() ?? raw.replace(/^claude-/, '')
+}
+const activityWord = (w: PhaseWorker, o: PageOpts): string => {
+  const said = w.doing_key !== undefined && /^act[A-Z]/.test(w.doing_key) ? o.wo(w.doing_key, '', w.doing_vars) : ''
+  return said !== '' ? said : o.fixed(w.state)
+}
+const nodeWord = (node: string | undefined, o: PageOpts): string => (node === undefined || node === '' ? '' : o.wo(`sgStage${cap(node)}`, o.wo(`stage${cap(node)}`, node)))
+export function runningRows(workers: readonly PhaseWorker[], o: PageOpts, detail = false): StoryCells[] {
   const live = workers.filter(w => w.state === 'acting' || w.state === 'you' || w.state === 'stalled')
   return workerCells(live, o.frame, o.fixed).map((c, i) => {
     const w = live[i]!
-    const row: StoryCells = w.state !== 'stalled' ? c
+    const what = w.state === 'stalled' ? c.cells[3]! : activityWord(w, o)
+    const row: StoryCells = w.state !== 'stalled' ? { cells: [c.cells[0]!, c.cells[1]!, c.cells[2]!, what], tints: c.tints }
       : !Number.isInteger(w.minutes) ? { cells: [ICON.idle, '', w.id, c.cells[3]!], tints: [TINT.idle, TINT.idle, undefined, 'dim'] }
         : { cells: [ICON.stalled, '', w.id, o.say('f2RowStalledMinutes', { m: w.minutes! })], tints: [TINT.stalled, TINT.stalled, undefined, 'error'] }
     if (!detail) return row
-    const [icon, spin, id, what] = row.cells as [string, string, string, string]
+    const [icon, spin, id, text] = row.cells as [string, string, string, string]
     const [t0, t1, t2, t3] = row.tints
     const here = w.state !== 'stalled'
     return {
-      cells: [icon, spin, id, here ? w.node ?? '' : '', here ? w.role ?? '' : '', what, here ? since(w.elapsed_ms ?? null) : ''],
-      tints: [t0, t1, t2, 'dim', 'dim', t3, 'dim'],
+      cells: [icon, spin, id, here ? nodeWord(w.node, o) : '', here ? w.role ?? '' : '', text, shortModel(w.model), here ? since(w.elapsed_ms ?? null) : ''],
+      tints: [t0, t1, t2, 'dim', 'dim', t3, 'dim', 'dim'],
     }
   })
 }
 
+// a Phase hand-off's what: a verdict's score as its own phrase, else the engine's word
+const handoffWhat = (h: Handoff, base: string, o: PageOpts): string => {
+  const v = h.what_key === 'handVerdict' ? h.what_vars?.v : undefined
+  return h.score !== undefined && (v === 'accept' || v === 'reject') ? o.say(v === 'accept' ? 'f2PhaseAccept' : 'f2PhaseReject', { score: h.score }) : base
+}
 // a Phase hand-off as one row: time · STORY · who · what (a verdict's score, its reason) · to whom (a verdict's next role)
 function phaseFeed(feed: readonly Handoff[], o: PageOpts): string[][] {
   const base = handoffCells(feed, (key, vars, raw) => o.wo(key, raw, vars))
   return base.map((b, i) => {
     const h = feed[i]!
-    const v = h.what_key === 'handVerdict' ? h.what_vars?.v : undefined
-    const what = h.score !== undefined && (v === 'accept' || v === 'reject') ? o.say(v === 'accept' ? 'f2PhaseAccept' : 'f2PhaseReject', { score: h.score }) : b[2]!
     const why = h.reason === undefined ? '' : `"${oneLine(h.reason)}"`
-    return [b[0]!, h.story ?? '', b[1]!, [what, why].filter(Boolean).join(' '), h.to_role !== undefined ? `→ ${h.to_role}` : b[3]!]
+    return [b[0]!, h.story ?? '', b[1]!, [handoffWhat(h, b[2]!, o), why].filter(Boolean).join(' '), h.to_role !== undefined ? `→ ${h.to_role}` : b[3]!]
   })
 }
 
-// the thread of one Phase: time · who · what and score · node · why, with the verdict's own lines under it. Who and why come by
-// their keys when the engine sent them (a person's answer is `actorHuman`), so a Korean render holds no engine English.
-function decisionLines(entries: readonly DecisionX[], o: PageOpts, inner: number): Line[] {
+// one decision as the thread draws it: time · who · what and score (×n when the node said it n times) · node · why, with the verdict's own lines
+// under it. Who and why come by their keys when the engine sent them (a person's answer is `actorHuman`), so a Korean render holds no engine English.
+type DecisionParts = { time: string; actor: string; label: string; node: string; why: string; tint: Dim; subs: string[] }
+function decisionParts(d: DecisionX, o: PageOpts): DecisionParts {
   const { wo } = o
-  const main = entries.map((d): { cells: string[]; tints: Dim[]; subs: string[] } => {
-    const actorKey = d.actor_key ?? (d.actor === 'human' ? 'actorHuman' : undefined)
-    const actor = actorKey === undefined ? d.actor ?? '—' : wo(actorKey, d.actor ?? '—')
-    const label = d.kind === 'verdict' ? o.verdictOf(d.verdict ?? null) : wo(`kind${cap(d.kind)}`, d.kind)
-    const score = d.score !== null && d.score !== undefined ? ` ${d.score}%` : ''
-    const why = d.text_key !== undefined ? wo(d.text_key, d.text ?? '', d.text_vars)
-      : d.reason_key !== undefined ? wo(d.reason_key, d.reason ?? '', d.reason_vars)
-        : d.reason ?? d.text ?? d.title ?? ''
-    const subs = [
-      ...(d.blocking ?? []).map(x => `${o.say('lineBlocking')}: ${x}`), ...(d.problems ?? []).map(x => `${o.say('lineProblems')}: ${x}`),
-      ...(d.gaps ?? []).map(x => `${o.say('lineGaps')}: ${x}`), ...(d.evidence ? [`${o.say('lineEvidence')}: ${d.evidence}`] : []),
-    ]
-    const tint: Dim = d.verdict === 'reject' || d.kind === 'defect' ? 'error' : d.kind === 'answer' || d.kind === 'decision' ? 'warning' : undefined
-    return { cells: [d.time ?? '', actor, `${label}${score}`, d.node ?? d.card ?? '', oneLine(why)], tints: ['dim', undefined, tint, 'dim', undefined], subs }
-  })
-  const widths = columnWidths(main.map(m => m.cells), inner - INDENT.t.length, 2, [4, 3], 4)
-  return main.flatMap(m => [
-    [INDENT, ...rowLine(m.cells, widths, 2, m.tints)] as Line,
-    ...m.subs.map((t): Line => [INDENT, { t: `  ${t}`, dim: true }]),
-  ])
+  const actorKey = d.actor_key ?? (d.actor === 'human' ? 'actorHuman' : undefined)
+  const actor = actorKey === undefined ? d.actor ?? '—' : wo(actorKey, d.actor ?? '—')
+  const kind = d.kind === 'verdict' ? o.verdictOf(d.verdict ?? null) : wo(`kind${cap(d.kind)}`, d.kind)
+  const score = d.score !== null && d.score !== undefined ? ` ${d.score}%` : ''
+  const times = d.times !== undefined && d.times > 1 ? ` ${o.say('f2EntryTimes', { n: d.times })}` : ''
+  const why = d.text_key !== undefined ? wo(d.text_key, d.text ?? '', d.text_vars)
+    : d.reason_key !== undefined ? wo(d.reason_key, d.reason ?? '', d.reason_vars)
+      : d.reason ?? d.text ?? d.title ?? ''
+  const subs = [
+    ...(d.blocking ?? []).map(x => `${o.say('lineBlocking')}: ${x}`), ...(d.problems ?? []).map(x => `${o.say('lineProblems')}: ${x}`),
+    ...(d.gaps ?? []).map(x => `${o.say('lineGaps')}: ${x}`), ...(d.evidence ? [`${o.say('lineEvidence')}: ${d.evidence}`] : []),
+  ]
+  const tint: Dim = d.verdict === 'reject' || d.kind === 'defect' ? 'error' : d.kind === 'answer' || d.kind === 'decision' ? 'warning' : undefined
+  return { time: d.time ?? '', actor, label: `${kind}${score}${times}`, node: d.node ?? d.card ?? '', why: oneLine(why), tint, subs }
+}
+
+// The Phase's own rows, by one rule shared with rowIdsOf: its live workers (`w:<id>`), its hand-offs, five at most (`h:<i>`) and the
+// decisions the engine tagged with the Phase (`d:<i>`)
+const LIVE_STATES = new Set(['acting', 'you', 'stalled'])
+const phaseWorkers = (t: PhaseEntry, phase: string): PhaseWorker[] => (t.workers as PhaseWorker[]).filter(w => (w.phase ?? 'build') === phase && LIVE_STATES.has(w.state))
+export const phaseThread = (decisions: readonly DecisionX[] | null, phase: string): DecisionX[] => (decisions === null ? [] : decisions.filter(d => d.phase === phase))
+export const phaseFeedOf = (t: PhaseEntry, phase: string): Handoff[] => (t.phase_handoffs?.[phase] ?? []).slice(0, 5)
+export function phaseRowIds(t: PhaseEntry, phase: string, decisions: readonly DecisionX[] | null): string[] {
+  return [...phaseWorkers(t, phase).map(w => `w:${w.id}`), ...phaseFeedOf(t, phase).map((_, i) => `h:${i}`), ...phaseThread(decisions, phase).map((_, i) => `d:${i}`)]
+}
+
+// A line of the Phase page, and the row it is when it is one (the pane draws a row as a Button)
+export type PhaseItem = { line: Line; row?: PageRow }
+const POINT: Seg = { t: `${POINTER} `, tint: 'claude' }
+function phaseSection(rows: PageRow[], sel: string | null, inner: number, shrink: number[], drop: number[] = []): PhaseItem[] {
+  if (rows.length === 0) return [{ line: none }]
+  const widths = columnWidths(rows.map(r => r.cells.map(cellText)), inner - INDENT.t.length, 2, shrink, 4, drop)
+  return rows.map(r => ({ row: r, line: [r.id === sel ? POINT : INDENT, ...rowLine(r.cells, widths, 2, r.tints)] }))
 }
 
 // Phase detail: Running, Handed over, Decisions (this Phase), in that order. The hand-offs are the Phase's own (the engine's
 // phase_handoffs), the decisions the engine tagged with this Phase (`phase`), and the Phase's own counts from phases[] on its
-// FLOOR row (acting, you, stalled, decisions) only when present; nothing recorded is a dim –.
-export function phaseLines(t: PhaseEntry, phase: (typeof PHASE_KEYS)[number], decisions: readonly DecisionX[] | null, o: PageOpts, inner: number): Line[] {
+// FLOOR row (acting, you, stalled, decisions) only when present; nothing recorded is a dim –. A worker, hand-off or decision is a row
+// of its own: a driver opens its STORY, a hand-off or decision opens its ENTRY.
+export function phaseModel(t: PhaseEntry, phase: (typeof PHASE_KEYS)[number], decisions: readonly DecisionX[] | null, o: PageOpts, inner: number, sel: string | null): PhaseItem[] {
   const { say } = o
-  const mine = (t.workers as PhaseWorker[]).filter(w => (w.phase ?? 'build') === phase)
-  const running = runningRows(mine, o, true)
-  const feed = phaseFeed(t.phase_handoffs?.[phase] ?? [], o)
-  const thread = decisions === null ? [] : decisions.filter(d => d.phase === phase)
+  const no = PHASE_KEYS.indexOf(phase) + 1
+  const live = phaseWorkers(t, phase)
+  const cells = runningRows(live, o, true)
+  const running = live.map((w, i): PageRow => {
+    const item = t.items.find(x => storyLabel(x.key) === w.id)
+    return {
+      id: `w:${w.id}`, block: 'run', cells: cells[i]!.cells, tints: cells[i]!.tints,
+      ref: { type: 'worker', epic: t.task_id, phase: no, story: item?.key ?? null, judge: w.id === 'judge' || w.role === 'judge' },
+    }
+  })
+  const handoffs = phaseFeedOf(t, phase)
+  const feed = phaseFeed(handoffs, o).map((cs, i): PageRow => ({
+    id: `h:${i}`, block: 'hand', cells: cs, tints: ['dim', 'dim', undefined, undefined, undefined], ref: { type: 'entry', epic: t.task_id, phase: no, entry: `h:${i}` },
+  }))
+  const thread = phaseThread(decisions, phase).map(d => decisionParts(d, o))
+  const dwidths = columnWidths(thread.map(d => [d.time, d.actor, d.label, d.node, d.why]), inner - INDENT.t.length, 2, [4, 3], 4)
   const pc = t.phases?.find(p => p.key === phase)
   const counts = pc === undefined ? [] : [
     pc.acting > 0 ? `${pc.acting} ${say('wordActing')}` : '', pc.you > 0 ? `⚑ ${pc.you}` : '', pc.stalled > 0 ? `${ICON.stalled} ${pc.stalled}` : '',
     typeof pc.decisions === 'number' ? say('f2FloorDecisionsN', { n: pc.decisions }) : '',
   ].filter(Boolean)
   return [
-    ...(counts.length === 0 ? [] : [[INDENT, { t: counts.join(' · '), dim: true }] as Line]),
-    head(say('f2PhaseRunning')),
-    ...(running.length === 0 ? [none] : table(running.map(r => r.cells), running.map(r => r.tints), inner, [5])),
-    head(say('f2PhaseHandoffs')),
-    ...(feed.length === 0 ? [none] : table(feed, feed.map(() => ['dim', 'dim', undefined, undefined, undefined]), inner, [3])),
-    head(say('f2PhaseDecisions')),
-    ...(thread.length === 0 ? [none] : decisionLines(thread, o, inner)),
+    ...(counts.length === 0 ? [] : [{ line: [INDENT, { t: counts.join(' · '), dim: true }] as Line }]),
+    { line: head(say('f2PhaseRunning')) },
+    // a narrow pane sheds the role, then the node, then the model before the what-cell is cut to nothing
+    ...phaseSection(running, sel, inner, [5], [4, 3, 6]),
+    { line: head(say('f2PhaseHandoffs')) },
+    ...phaseSection(feed, sel, inner, [3]),
+    { line: head(say('f2PhaseDecisions')) },
+    ...(thread.length === 0 ? [{ line: none }] : thread.flatMap((d, i): PhaseItem[] => {
+      const row: PageRow = {
+        id: `d:${i}`, block: 'dec', cells: [d.time, d.actor, d.label, d.node, d.why], tints: ['dim', undefined, d.tint, 'dim', undefined],
+        ref: { type: 'entry', epic: t.task_id, phase: no, entry: `d:${i}` },
+      }
+      return [
+        { row, line: [row.id === sel ? POINT : INDENT, ...rowLine(row.cells, dwidths, 2, row.tints)] },
+        ...d.subs.map((x): PhaseItem => ({ line: [INDENT, { t: `  ${x}`, dim: true }] })),
+      ]
+    })),
   ]
+}
+
+// text cut at word boundaries into lines of at most `w` cells (a word wider than that is cut by clipText)
+function wrapWords(text: string, w: number): string[] {
+  const out: string[] = []
+  let cur = ''
+  for (const word of oneLine(text).split(' ').filter(Boolean)) {
+    const next = cur === '' ? word : `${cur} ${word}`
+    if (width(next) <= w) cur = next
+    else {
+      if (cur !== '') out.push(cur)
+      cur = width(word) <= w ? word : clipText(word, w)
+    }
+  }
+  return cur === '' ? out : [...out, cur]
+}
+
+// ENTRY: one hand-off or decision of a Phase, with the fields it carries and no others: what it is (with its score and ×n), when · who ·
+// where, the reason in full, then the verdict's own blocking / problems / gaps and a defect's evidence. A field the entry lacks is not drawn.
+export function entryLines(t: PhaseEntry, phase: (typeof PHASE_KEYS)[number], entryId: string | undefined, decisions: readonly DecisionX[] | null, o: PageOpts, inner: number): Line[] {
+  const meta = (parts: (string | null | undefined)[]): Line[] => (parts.filter(Boolean).length === 0 ? [] : [[{ t: parts.filter(Boolean).join(' · '), dim: true }]])
+  const text = (s: string, prefix = ''): Line[] => wrapWords(s, Math.max(8, inner - width(prefix))).map((l, i): Line => [{ t: i === 0 ? prefix + l : ' '.repeat(width(prefix)) + l }])
+  const at = Number(entryId?.slice(2))
+  if (entryId?.startsWith('d:') && Number.isInteger(at)) {
+    const d = phaseThread(decisions, phase)[at]
+    if (d !== undefined) {
+      const p = decisionParts(d, o)
+      return [[{ t: p.label, bold: true, tint: p.tint === 'dim' ? undefined : p.tint }], ...meta([p.time, p.actor === '—' ? '' : p.actor, p.node]), ...(p.why === '' ? [] : text(p.why)), ...p.subs.flatMap(x => text(x))]
+    }
+  }
+  if (entryId?.startsWith('h:') && Number.isInteger(at)) {
+    const h = phaseFeedOf(t, phase)[at]
+    if (h !== undefined) {
+      const c = handoffCells([h], (key, vars, raw) => o.wo(key, raw, vars))[0]!
+      return [[{ t: handoffWhat(h, c[2]!, o), bold: true }], ...meta([c[0], h.story, [c[1], h.to_role !== undefined ? `→ ${h.to_role}` : c[3]].filter(Boolean).join(' ')]), ...(h.reason === undefined ? [] : text(h.reason))]
+    }
+  }
+  return [[{ t: '–', dim: true }]]
+}
+
+// the lines of `items` from `at`, `rows` of them, a dim ▲ n / ▼ n line telling how many lie beyond (the Phase page keeps its selected row in view)
+export function windowItems(items: readonly PhaseItem[], at: number, rows = PAGE_ROWS): PhaseItem[] {
+  const max = Math.max(0, items.length - rows)
+  const from = Math.min(Math.max(0, at), max)
+  const below = items.length - from - rows
+  return [...(from > 0 ? [{ line: [{ t: `▲ ${from}`, dim: true }] as Line }] : []), ...items.slice(from, from + rows), ...(below > 0 ? [{ line: [{ t: `▼ ${below}`, dim: true }] as Line }] : [])]
 }
 
 // the line label of the STORY page, padded to one width
@@ -775,8 +875,12 @@ export function needsOf(needs: ReportPayload['needs'], wo: Wo): string[] {
 }
 
 // The row ids a page draws, from the listing alone (no words): what the tick keeps the selection against
-export function rowIdsOf(page: Page, listed: readonly SummaryTaskEntry[], unfolded: Record<string, boolean>): string[] {
+export function rowIdsOf(page: Page, listed: readonly SummaryTaskEntry[], unfolded: Record<string, boolean>, decisions: readonly DecisionX[] | null = null): string[] {
   const same: Say = key => key
+  if (page.name === 'PHASE') {
+    const found = listed.find(t => t.task_id === page.epic)
+    return found === undefined ? [] : phaseRowIds(found as PhaseEntry, PHASE_KEYS[Math.min(5, Math.max(0, (page.phase ?? 1) - 1))]!, decisions)
+  }
   if (page.name === 'STORY') {
     const found = listed.find(t => t.task_id === page.epic)
     return found === undefined || page.story === null ? [] : storyRows(found, storyLabel(page.story), null, null, { say: same, now: 0 }).map(r => r.id)

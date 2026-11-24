@@ -238,3 +238,38 @@ test('decisions: engine-composed words carry a key and numbers beside the Englis
   assert.deepEqual([replan.reason, replan.reason_key, replan.reason_vars], ['replan P1, P2', 'replanIds', { ids: 'P1, P2' }]);
   assert.deepEqual([answer.actor, answer.actor_key], ['human', 'actorHuman']);
 });
+
+test('card 179 D3: a node\'s repeated verdict (same node, verdict, score) is one entry with times, the newest; a retry between stays; another score stays apart', () => {
+  const v = (ts, score, reason, node = 'P1:gate') => ({ ts, event: 'verdict', node_id: node, stage: 'gate', actor: 'claude·opus', verdict: 'fail', score, reason });
+  const ledger = [
+    v(1, 61, 'reason A'),
+    { ts: 2, event: 'daemon_retry_opened', package_id: 'P1', attempt: 2, reason: 'tests red', failed_node: 'P1:gate' },
+    v(3, 61, 'reason B'),
+    v(4, 70, 'reason D'),
+    v(5, 61, 'reason C'),
+    v(6, 61, 'other node', 'P2:gate'),
+  ];
+  const task = { nodes: [{ node_id: 'P1:gate', stage: 'gate', state: 'failed', result: { gaps: ['AC 3 untested'] } }] };
+  const { entries } = decisionsView(task, ledger);
+  const p1 = entries.filter((e) => e.kind === 'verdict' && e.node === 'P1:gate');
+  assert.deepEqual(p1.map((e) => [e.score, e.reason, e.times]), [[70, 'reason D', undefined], [61, 'reason C', 3]]);
+  assert.equal(p1[1].ts, 5, 'the kept entry is the newest occurrence, at its own place in time');
+  assert.equal(entries.filter((e) => e.kind === 'retry').length, 1, 'the retry entry stays');
+  assert.equal(entries.filter((e) => e.node === 'P2:gate').length, 1, 'another node is never folded in');
+  assert.equal('times' in entries.find((e) => e.node === 'P2:gate'), false, 'a verdict seen once carries no times');
+  // the node's newest verdict takes its gaps (here the 61/C one)
+  assert.deepEqual(p1[1].gaps, ['AC 3 untested']);
+  assert.equal(p1[0].gaps, undefined);
+  // decisionCounts follows the collapsed list
+  const counts = decisionCounts(task, ledger.map((l) => JSON.stringify(l)));
+  assert.equal(counts.reduce((n, c) => n + c.decisions, 0), entries.length);
+});
+
+test('card 179 D3: the same score under another verdict word stays separate', () => {
+  const ledger = [
+    { ts: 1, event: 'verdict', node_id: 'critique', verdict: 'sound', score: 80 },
+    { ts: 2, event: 'verdict', node_id: 'critique', verdict: 'unsound', score: 80 },
+    { ts: 3, event: 'verdict', node_id: 'critique', verdict: 'sound', score: 80 },
+  ];
+  assert.deepEqual(decisionsView({}, ledger).entries.map((x) => [x.verdict, x.times]), [['unsound', undefined], ['sound', 2]]);
+});

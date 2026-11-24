@@ -3,7 +3,7 @@
 //   node --test teams/scripts/test-view-events.mjs
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { notableEvents, statusLine, handoffs, ENGINE_WORD_KEYS, PHASES, phaseOfEvent, phaseOfDecision, phaseDecisions, storyLog, STORY_LOG_KEYS } from './lib/view-events.mjs';
+import { notableEvents, statusLine, handoffs, phaseHandoffs, ENGINE_WORD_KEYS, PHASES, phaseOfEvent, phaseOfDecision, phaseDecisions, storyLog, STORY_LOG_KEYS } from './lib/view-events.mjs';
 
 const L = (o) => JSON.stringify(o);
 const ID = 'E-1a2b3c4d5e6f';
@@ -668,4 +668,21 @@ test('failure_classified maps to a failure_classified view event; via null when 
     { ts: 30, task_id: ID, kind: 'failure_classified', text: 'E-1a2b3c4d dispatch:P1:1: capacity', node_id: 'dispatch:P1:1', failure_kind: 'capacity', via: 'ledger', run: 'E-1a2b3c4d' },
     { ts: 31, task_id: ID, kind: 'failure_classified', text: 'E-1a2b3c4d gate:P2:1: below-threshold', node_id: 'gate:P2:1', failure_kind: 'below-threshold', via: null, run: 'E-1a2b3c4d' },
   ]);
+});
+
+test('card 179: a Phase hand-off list holds no verdict (Decisions holds it); asks, integrations and answers stay', () => {
+  const lines = [
+    L({ ts: 1000, event: 'verdict', task_id: ID, node_id: 'accept:P1:1', stage: 'accept', subgoal_id: 'P1', verdict: 'reject', score: 61, reason: 'gap' }),
+    L({ ts: 2000, event: 'verdict', task_id: ID, node_id: 'critique', verdict: 'sound' }),
+    L({ ts: 3000, event: 'asked', task_id: ID, key: `${ID}/P1`, question: 'which one?' }),
+    L({ ts: 4000, event: 'integrated', task_id: ID, merged: 2 }),
+    L({ ts: 5000, event: 'tm_submit_human', task_id: ID, node_id: 'critique', answer: 'go on' }),
+  ];
+  const out = phaseHandoffs(lines, { pkgIds: ['P1'] });
+  assert.ok(Object.values(out).flat().every((h) => h.what_key !== 'handVerdict' && !/^verdict /.test(h.what)));
+  assert.deepEqual(out.build.map((h) => h.reason), ['which one?']);
+  assert.deepEqual(out.plan.map((h) => h.what), ['go on']);
+  assert.equal(out.integrate.length, 1);
+  // the EPIC-wide list is another function and keeps its verdicts
+  assert.equal(handoffs(lines).filter((h) => h.what_key === 'handVerdict').length, 2);
 });

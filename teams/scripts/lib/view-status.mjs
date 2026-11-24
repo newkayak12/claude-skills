@@ -94,6 +94,7 @@ export function decisionsView(task, ledger, { card = null } = {}) {
   const pkgIds = [...pkgs.keys()];
   const out = [];
   const lastVerdict = new Map();
+  const sameVerdict = new Map();
   const filedSeen = new Set();
   for (const e of ledger || []) {
     if (!e || typeof e !== 'object') continue;
@@ -102,6 +103,12 @@ export function decisionsView(task, ledger, { card = null } = {}) {
     if (e.event === 'verdict') {
       const v = { ...base, kind: 'verdict', actor: e.actor || null, verdict: e.verdict || null, score: e.score ?? null, reason: e.reason || null };
       lastVerdict.set(e.node_id, v);
+      // a node judged again with the same verdict and score is one entry, the newest occurrence, counted in `times`
+      // (whatever lies between them and whatever the reason says); another verdict or score stays its own
+      const key = `${e.node_id}\0${v.verdict}\0${v.score}`;
+      const earlier = sameVerdict.get(key);
+      if (earlier) { out.splice(out.indexOf(earlier), 1); v.times = (earlier.times || 1) + 1; }
+      sameVerdict.set(key, v);
       out.push(v);
     } else if (e.event === 'node_finish' && PROPOSALS.has(e.stage) && e.state === 'done') {
       const n = nodes.get(e.node_id);
