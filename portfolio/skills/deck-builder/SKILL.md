@@ -119,16 +119,9 @@ Write a picture slot's art as an `.svg`, in the template's colors and at the fra
 pt size — both printed by `catalog`. It becomes source like the rest of the deck and is
 rasterized to PNG at build time.
 
-Pick each figure's form from what it has to show, not from habit: a before/after → paired bars or a
-two-column contrast; a sequence over time → a timeline or sequence diagram; a distribution or a
-count → a chart; a choice among options → a comparison table with the chosen row marked; a
-structure → boxes and arrows. List every figure's form before drawing; when more than half of a
-deck's figures are box-and-arrow, redraw the ones another form says better (user, 2026-11-22:
-"도식화가 천편일률적이다 (다른 방향으로 표현할 수 있었을텐데)"). The list is by page role too: pages
-of the same role (each chapter's results page) never share one layout of forms — bench17 opened all
-four results pages with the same single stat card, and judges read them as one template (V2). Each
-results page's form comes from that chapter's own result: a before/after, a ratio, a timeline of
-what was caught, a count against its total.
+Pick each figure's form from what it shows, and list every figure's form by page before drawing:
+no more than half box-and-arrow, and same-role pages (results) never one shared layout. The form
+table and why: `references/generated-art.md` § Choosing a form.
 
 A tech-stack table names technologies, not settings or features (`AWS ALB`, never `ALB 헬스체크`).
 
