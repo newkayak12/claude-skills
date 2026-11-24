@@ -678,6 +678,7 @@ ahead of the order above.
      6. **Bus + wiki** (`bus.mjs`, `wiki.mjs`, `wikibridge.mjs`): read/append cost, Codex roots.
      7. **Cost, budget, capacity** (`drivercost.mjs`, `taskmanager-budget.mjs`, `capacity-reset.mjs`, `livecap.mjs`): estimate vs final within 5%, stop at budget, park on limits.
      Plus the test suite itself: wall time and the load flakes above.
+   - Also (2026-11-24): tasks whose drivers died with the session (E-531fddcf, E-10db37d0) sat under "⚑ Needs you" as stalled with "no output for 51m" while held back on purpose; a task the person holds shows as held, and after a session restart the engine resumes its drivers itself.
    - Also (2026-11-24, E-de2a5672): a STORY driver asked the person for evidence the engine holds (server process count, ledger lines, cost by stage) and sat idle 9+ min; the engine answers such asks itself from its own files. A STORY ask is answerable through an MCP tool (today only `scripts/answer.mjs`, with `decisions[].chose`).
    - Acceptance: per Task, a number before and after on the same input (time, tokens, CPU or cost) and no behaviour lost (`node --test teams/scripts/test-*.mjs`, `cd teams && claude plugin test .` counts); the EPIC report lists every engine's delta; a Task with no gain says so.
 
