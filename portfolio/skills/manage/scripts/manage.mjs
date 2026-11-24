@@ -515,6 +515,12 @@ export function selection(root) {
     if (!byProject.has(p)) byProject.set(p, [])
     byProject.get(p).push(r)
   }
+  // a weak scene (`> 장면: … (weak)`) is still an A item: 부록, never 제외 (three runs split 02/A3,
+  // 02/A5 and 04/A2 between 부록 and 제외; the user kept all three in 부록, 2026-11-24)
+  for (const r of rows.filter(r => r.use === '제외' && items.has(r.id))) {
+    const scene = (items.get(r.id).text.match(/^>\s*장면\s*[:：].*$/m) || [''])[0]
+    if (/\(weak\)/.test(scene)) bad.push(`${r.id}: its scene is a weak pass — a weak A item goes to 부록, not 제외`)
+  }
   for (const [p, rs] of byProject) {
     const measured = rs.some(r => {
       const held = heldOf(r)

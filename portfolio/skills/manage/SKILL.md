@@ -111,6 +111,11 @@ the snapshot. A round always builds (the user's standing word: "결과물도 검
    in words, the item stays where its scene puts it (the user kept 05/A5 in the body with its
    numbers out). An item whose scene is still an open question is selected on its latest 정정, not excluded.
    `selection` flags a project whose 본문 items state no measured result: that project goes to 부록.
+   A weak scene goes to 부록, never 제외 (`selection` flags it). When a chapter has more passing items
+   than its pages can lead, the surplus goes to 부록 — never 제외 by the writer — and which ones lead
+   is one question to the user (`questions --add`), since only they know which of their work to show
+   (three runs split 01/A5, A6, A7 among 본문, 부록 and 제외; the user's reason for A7 — "사내 활동은
+   안쓰는게 낫고" — is in no workspace file).
    Picked by signal (`references/principles.md` § Composition),
    each item scored on four questions in its 이유: does it help this person (a number that reads
    badly — 149 routine on-call requests — is written `안 씀: 149건` in the 이유 and shown nowhere, not as

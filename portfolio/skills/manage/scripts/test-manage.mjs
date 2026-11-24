@@ -453,6 +453,15 @@ test('selection: a project whose 본문 items state no measured result is flagge
   assert.deepEqual(selection(root).problems.map(p => p.split(':')[0]), ['01_이관/A1'], 'held figures do not count')
 })
 
+test('selection: an item whose scene is a weak pass goes to 부록, never 제외', () => {
+  const root = mkdtempSync(join(tmpdir(), 'manage-weak-'))
+  mkdirSync(join(root, 'sources', '02_출고'), { recursive: true })
+  writeFileSync(join(root, 'sources/02_출고/A5_조사.md'), '# 조사\n> 장면: 사용하지 않는 API를 남기기로 했다 — "Deprecated" (weak)\n')
+  writeFileSync(join(root, 'sources/02_출고/A6_표.md'), '# 표\n> 장면: 결함을 한 표에 적었다 — "남은 위험"\n')
+  writeFileSync(join(root, 'sources/선정.md'), '| 글감 | 쓰임 | 쪽 | 이유 | 대표 |\n|---|---|---|---|---|\n| 02_출고/A5 | 제외 | | x | |\n| 02_출고/A6 | 제외 | | x | |\n')
+  assert.deepEqual(selection(root).problems.map(p => p.split(':')[0]), ['02_출고/A5'])
+})
+
 test('keep-render copies the previews under the deck version with one review row per page', () => {
   const root = mkdtempSync(join(tmpdir(), 'manage-render-'))
   assert.throws(() => keepRender(root, 'v1.0.0'), /no previews/)
