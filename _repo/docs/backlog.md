@@ -345,6 +345,14 @@ toasts).
 
 ### Repo and rules
 
+179. **Local failure records become backlog cards without copy-paste**
+   - Why: user, 2026-11-24, pasting a trophy Failures row (database · query, mcp_error ×17, "optimizer hint /*+ ... */ is not allowed"): "이런거 왜 자동 수집 안되는거야?". Telemetry sends only fixed codes and counts (by design); the error text stays local and reaches the maintainer only when pasted.
+   - Acceptance: a repo-only script (`_repo/scripts/`) reads the local trophy failure records, groups by plugin · skill/tool · reason · text, and adds or updates one backlog card per group with count, versions and the first line of text (no paths, prompts or ids); a re-run updates counts instead of duplicating; a test on fixture records. Nothing is sent anywhere.
+
+180. **database:query stops sending optimizer hints the server refuses**
+   - Why: 2026-11-24, trophy Failures: `database · query` mcp_error ×17 in one day on 0.9.2 (Claude Code 2.1.330), all "rejected [comment/literal]: optimizer hint /*+ ... */ is not allowed (can change session settings)". The model kept retrying hinted SQL (cause unverified: the skill and tool description do not say hints are refused, or the refusal text does not say to drop the hint).
+   - Acceptance: the skill and the query tool description say hints are refused; the refusal message tells the caller to resend without the hint; a test on the message; a real run asking for a hinted query sends one unhinted query.
+
 ### Subagents and parallel runs — use and clean up (user, 2026-10-17)
 
 ### teams plugin bugs
