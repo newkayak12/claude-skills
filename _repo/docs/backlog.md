@@ -664,15 +664,6 @@ ahead of the order above.
       `node -e '[1,2].map(x => x*2)'` runs, not refused (the earlier refusal not reproduced).
     - Acceptance (left): the user approves the 190/110 captures.
 
-179. **The teams pane answers "what is it doing" by itself: clickable rows, detail pages, richer and accurate facts — before 178, kept light**
-   - Why: user, 2026-11-24, on the Phase detail page (E-531fddcf FLOOR › 2 Build: "Running ● P1 gate judge tool_progress mcp__teams__team_run 660s"): "UI클릭 과 상세화면 등 Interaction 성격이 더 강하면 좋겠고 더 풍부한 정보와 뭐함? 이렇게 안물어봐도 알 수 있게 했으면 좋겠음 그리고 표시 정확도도 필요함 178 앞에 넣어줘 (가볍게 진행해줘 너무 느리니까)". Seen: the running row shows raw internals (tool_progress, mcp__teams__team_run, 660s) instead of what is being checked; Handed-over and Decisions rows repeat the same verdicts; nothing on the row can be clicked to open it.
-   - Model column: 2026-11-25 the pane showed every node on opus while ps had one opus and one sonnet driver (user: "teams왜 다 opus로하는거지?"); show the model each node actually ran on.
-   - Acceptance (light: one size-S pass, no new pages beyond what is listed):
-     - Every row is a Button that opens its detail (STORY, node, decision, hand-off) on all four surfaces; Esc/a returns.
-     - A running row says in words what it does now and on what ("judging P1's gate: 3 of 5 criteria checked", "running tests: teams suite") from the driver stream's last tool call and the node's stage, with elapsed time; no raw tool names or internal stage keys.
-     - Accuracy: every number on the pane (elapsed, cost, attempts, counts, phase) matches the engine's own status for the same moment; a test compares pane values to `tm_status` on fixtures.
-     - Demo renders at 190 and 110 approved; `cd teams && claude plugin test .` counts.
-
 180. **failures-to-backlog.mjs files only plugin defects: caller errors are dropped, aws errors keep their message**
    - Why: 2026-11-25 dry run grouped 20 failure kinds; 16 were the caller's own query or login (ER_BAD_FIELD_ERROR, ER_PARSE_ERROR, ER_QUERY_TIMEOUT, collation mix, "profile is not logged in", whitelist/hint refusals, interrupted calls). The aws ones carry only the reply's header line (`profile apn2-north · account … · region …`, `aws/mcp/readonly/contract.mjs:17`), so the real error is lost.
    - Acceptance: a dry run on the same records lists no caller errors; an aws record shows the line after the header; `node --test _repo/scripts/test-failures-to-backlog.mjs` covers both, counts reported.
@@ -681,7 +672,7 @@ ahead of the order above.
    - Why: 2026-11-23 trophy record, database 0.9.2: `database login: op read failed (1)` (`database/mcp/readonly/config.mjs`). The person cannot tell a missing item or field from a signed-out `op`.
    - Acceptance: the message names the item/field it read and whether `op` is signed out, with the next step; database readonly tests pass with counts.
 
-178. **teams engines get faster, cheaper and steadier — one EPIC, one Task per engine** — before card 120
+178. **teams engines get faster, cheaper and steadier — one EPIC, one Task per engine** — before card 120 — in E-bb14bb4b
    - Why: user, 2026-11-24: "백로그 [전체 스킬 점검] 전에 Teams 각 엔진 성능, 효율성 개선 및 동작 향상(엔진 당 Epic아래 Task 하나씩으로 배정". Seen in the 2026-11-22/23 runs: a fresh driver still starts at ~33.5k tokens (card 130); size-S tasks run 40–150 min under load; the S engine ended two finished runs `blocked` (E-943c979a, E-c15ff128); a real L run lost its bus exchange to a permission gap (E-92c82150); the full teams suite takes 10–20 min and flakes under load (bus-wake, S1 harness driver, view-once perf).
    - 2026-11-24 trophy record: a driver sent `tm_submit` to `ask:story-P3:1` while it was waiting_human ("is waiting_human, not pending") — the driver should wait on the answer, not submit.
    - Shape: one size-L EPIC; one Task (STORY) per engine, each with its own measured before/after:
