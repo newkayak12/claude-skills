@@ -4583,6 +4583,90 @@ test('card 125 S floor demo renders', () => {
   for (const [name, lines] of last) console.log(`=== ${name} ===\n${lines.join('\n')}\n=== end ===`)
 })
 
+// ---- card 125 width at the live pane: 110 -> inner 44, 190 -> inner 79 ----
+const LIVE = { 110: 52, 190: 87 } as const // terminal columns -> the cols argument whose pane matches the live capture
+const W110_SHOTS: { name: string; lines: string[] }[] = []
+const W110_PHASES = ['Plan', 'Build', 'Integrate', 'Qa', 'Gate', 'Report'] as const // the f2PhaseName<Key> suffixes
+const W110_EST = (): Data => P_FIXTURE({
+  tasks: P_TASKS({ cost: { usd: 10.86, turns: 40, estimated: true }, you: { count: 0, items: [], cards: [] }, workers: [], phases: P_PHASES.map(p => ({ ...p, you: 0, stalled: 0 })) }),
+})
+const W110_FOOT = {
+  HOME: { en: { 110: 'd ⏎ open · n next ⚑ · q close', 190: 'w s move · d ⏎ open · n next ⚑ · q close' }, ko: { 110: 'd ⏎ 열기 · n 다음 ⚑ · q 닫기', 190: STRINGS.ko.f2FootHome } },
+  FLOOR: { en: { 110: 'd ⏎ Phase detail · a back · q close', 190: STRINGS.en.f2FootFloor }, ko: { 110: 'd ⏎ Phase 상세 · a 뒤로 · q 닫기', 190: STRINGS.ko.f2FootFloor } },
+  STORY: { en: { 110: 'd ⏎ open · a back · q close', 190: STRINGS.en.f2FootStory }, ko: { 110: 'd ⏎ 열기 · a 뒤로 · q 닫기', 190: STRINGS.ko.f2FootStory } },
+  SCROLL: { en: { 110: 'a back · n next ⚑ · q close', 190: STRINGS.en.f2FootScroll }, ko: { 110: 'a 뒤로 · n 다음 ⚑ · q 닫기', 190: STRINGS.ko.f2FootScroll } },
+} as const
+const W110_CASES = [
+  { size: 'L-FLOOR', data: P_FIXTURE, page: FLOOR_PAGE, shot: 'wfloorl' },
+  { size: 'L-FLOOR-est', data: W110_EST, page: FLOOR_PAGE, shot: '' },
+  { size: 'S-FLOOR', data: S_FLOOR, page: FLOOR_PAGE, shot: 'wfloors' },
+  { size: 'HOME', data: P_FIXTURE, page: HOME_PAGE, shot: 'whome' },
+  { size: 'FOOT-FLOOR', data: P_FIXTURE, page: FLOOR_PAGE, shot: '', foot: 'FLOOR' },
+  { size: 'FOOT-PHASE', data: PAGES_FIXTURE, page: PHASE_BUILD, shot: 'wphase', foot: 'SCROLL' },
+  { size: 'FOOT-STORY', data: PAGES_FIXTURE, page: STORY_S2, shot: 'wstory', foot: 'STORY' },
+  { size: 'FOOT-LOG', data: PAGES_FIXTURE, page: LOG_S2, shot: 'wlog', foot: 'SCROLL' },
+] as const
+for (const c of W110_CASES) {
+  for (const surface of SURFACES) {
+    for (const lang of ['en', 'ko'] as const) {
+      for (const term of [110, 190] as const) {
+        const size = c.size
+        test(`card 125 width: ${size} ${surface} ${lang} at ${term}`, async ($, on) => {
+          const t = STRINGS[lang]
+          const { lines } = await homeLines($, on, LIVE[term], c.data(), surface, lang === 'en' ? undefined : 'korean', { page: c.page })
+          // the render is kept before anything is asserted, so a red run still names the cut
+          if (surface === 'terminal' && c.shot !== '') W110_SHOTS.push({ name: `demo-${c.shot}${lang}-${term}`, lines })
+          const body = lines.slice(1, -1).join('\n')
+          const row = (re: RegExp) => lines.find(l => re.test(l))
+          const wholeName = (name: string) => new RegExp(`(^|\\s)${name}( |$)`, 'm')
+          if (c.size === 'L-FLOOR' || c.size === 'L-FLOOR-est') {
+            W110_PHASES.forEach((p, i) => expect(lines.join('\n')).toMatch(new RegExp(`[✔●○✘] +${i + 1} ${t[`f2PhaseName${p}` as keyof typeof t]}( |$)`, 'm')))
+            expect(lines[0]).toContain(`${t.f2FloorPhaseOf.replace('{n}', '2')} ${t.f2PhaseNameBuild}`)
+            expect(lines[0]).toContain(c.size === 'L-FLOOR' ? '$2.47' : '~$10.86')
+            const report = row(new RegExp(`6 ${t.f2PhaseNameReport}`))!
+            expect(report).toContain(lang === 'en' ? 'EPIC report' : 'EPIC 보고서')
+            if (term === 190 || c.size === 'L-FLOOR-est') expect(report).toContain(t.f2FloorReportHint)
+          }
+          if (c.size === 'S-FLOOR') {
+            for (const w of lang === 'en' ? ['Plan', 'Implement', 'Test', 'Gate', 'Report'] : ['계획', '구현', '테스트', '게이트', '보고']) expect(body).toMatch(wholeName(w))
+            expect(lines[0]).toContain(lang === 'en' ? 'Test · 3/5' : '테스트 · 3/5')
+            expect(lines[0]).toContain('$1.20')
+            const report = row(lang === 'en' ? /(^|\s)Report( |$)/ : /(^|\s)보고( |$)/)!
+            expect(report).toContain(t.f2FloorReportHintS)
+            expect(report).not.toContain('EPIC')
+          }
+          if (c.size === 'HOME') {
+            expect(lines[0]).toContain('$6.12')
+            const epic = row(/E-3f9a2c11/)!
+            expect(epic).toBeDefined()
+            // mobile draws the compact EPIC row (phase name only); Build n/m and STORY n/m are the full row's
+            if (carriesInput(surface)) {
+              expect(epic).toContain('Build 3/6')
+              expect(epic).toContain('STORY 1/4')
+              expect(lines.at(-1)).toContain(lang === 'en' ? 'n next ⚑' : 'n 다음 ⚑')
+              expect(lines.at(-1)).toContain(lang === 'en' ? 'q close' : 'q 닫기')
+            }
+          }
+          if ('foot' in c && carriesInput(surface)) {
+            expect(lines.at(-1)).toContain(W110_FOOT[c.foot][lang][term])
+            if (term === 110) expect(lines.at(-1)).not.toContain(lang === 'en' ? 'w s move' : 'w s 이동')
+          }
+          // the STORY/PHASE/LOG pages are not this card's: their own boxes fill the pane (sound() below holds them to cols - 4)
+          for (const l of lines) expect(width(l)).toBeLessThanOrEqual(LIVE[term] - (c.size === 'FOOT-STORY' ? 4 : 8))
+          sound(lines, LIVE[term])
+        })
+      }
+    }
+  }
+}
+
+test('card 125 width demo renders', () => {
+  const last = new Map(W110_SHOTS.map(s => [s.name, s.lines]))
+  expect(last.size).toBe(24)
+  for (const name of last.keys()) expect(name).toMatch(/^demo-[a-z]+-\d+$/)
+  for (const [name, lines] of last) console.log(`=== ${name} ===\n${lines.join('\n')}\n=== end ===`)
+})
+
 // ---- card 126 (F1-US-6): the bus threads on the STORY page and the person's unread notice in the band. Fictional data. ----
 const THREAD_LONG = 'Use the fixtures on the integration branch and do not copy them into the package, because the schema freeze starts after the gate passes and a copy would drift'
 const THREADS_S2 = [

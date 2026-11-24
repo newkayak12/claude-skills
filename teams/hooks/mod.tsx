@@ -1002,11 +1002,12 @@ export const register: Register = on => {
     const heldReport = pg.name === 'EPIC_REPORT' ? await read($, report) : null
     const epicP = (heldReport?.task_id === pg.epic ? heldReport : cardHeld?.task_id === pg.epic ? cardHeld : null)?.payload ?? null
     const epicVerdictWord = epicP === null ? '' : s(epicP.verdict === 'finished' ? 'cardFinished' : epicP.verdict === 'blocked' ? 'cardBlocked' : 'f2EpicRunning')
-    const rightWide = entry === undefined ? ''
-      : pg.name === 'FLOOR'
-        ? [entry.step_head !== undefined
+    const floorParts = entry === undefined || pg.name !== 'FLOOR' ? []
+      : [entry.step_head !== undefined
           ? entry.step_head.k === undefined ? say(`sgStage${cap(entry.step_head.key)}`) : s('f2FloorStepOf', { stage: say(`sgStage${cap(entry.step_head.key)}`), k: entry.step_head.k, n: entry.step_head.n ?? 0 })
-          : `${s('f2FloorPhaseOf', { n: phaseAt + 1 })} ${say(`f2PhaseName${cap(PHASE_KEYS[Math.min(phaseAt, 5)]!)}`)}`, since(epicElapsed(entry, now)), entry.cost.usd > 0 ? costText(entry.cost.usd, entry.cost.estimated === true) : ''].filter(Boolean).join(' · ')
+          : `${s('f2FloorPhaseOf', { n: phaseAt + 1 })} ${say(`f2PhaseName${cap(PHASE_KEYS[Math.min(phaseAt, 5)]!)}`)}`, since(epicElapsed(entry, now)), entry.cost.usd > 0 ? costText(entry.cost.usd, entry.cost.estimated === true) : '']
+    const rightWide = entry === undefined ? ''
+      : pg.name === 'FLOOR' ? floorParts.filter(Boolean).join(' · ')
         : pg.name === 'PHASE' ? [ledger !== undefined && ledger.wall_ms > 0 ? since(ledger.wall_ms) : '', ledgerUsd > 0 ? costText(ledgerUsd, false) : ''].filter(Boolean).join(' · ')
           : pg.name === 'STORY' && item !== undefined
             ? [sd?.flow.find(f => f.state === 'running')?.key ?? '', item.try === null ? '' : s('f2RowRetrying', { n: item.try, max: item.max ?? '-' }), costText(item.cost_usd ?? item.metrics?.cost_usd ?? null, item.cost_estimated), since(storyMs)].filter(Boolean).join(' · ')
@@ -1017,7 +1018,9 @@ export const register: Register = on => {
                   ? [epicVerdictWord, epicP.failed > 0 ? s('cardFailed', { n: epicP.failed }) : ''].filter(Boolean).join(' · ')
                   : pg.name === 'ANSWER' && askCard?.since != null ? `⚑ ${s('f2FlagAge', { m: since(Math.max(0, now - askCard.since)) })}` : ''
     // narrow pane: the right sheds its last ` · ` part until the breadcrumb has 12 cells (or only one part is left), so it never wraps
+    // on FLOOR the elapsed part goes first, so the cost stays
     let floorRight = rightWide
+    if (pg.name === 'FLOOR' && inner - width(floorRight) - 2 < 12) floorRight = [floorParts[0], floorParts[2]].filter(Boolean).join(' · ')
     while (floorRight.includes(' · ') && inner - width(floorRight) - 2 < 12) floorRight = floorRight.slice(0, floorRight.lastIndexOf(' · '))
     const crumbRoom = inner - (floorRight === '' ? 0 : width(floorRight) + 2)
     const fittedCrumbs = crumbFit(crumbs, crumbRoom)
@@ -1037,13 +1040,13 @@ export const register: Register = on => {
           <Box>
             <Box flexShrink={0}><Text bold>teams</Text></Box>
             <Box flexShrink={1} marginLeft={2}><Text dimColor wrap="truncate-end">{left}</Text></Box>
-            <Box flexGrow={1} flexShrink={0} justifyContent="flex-end" marginLeft={2}><Text>{hd.right}</Text></Box>
+            <Box flexShrink={0}><Text>{' '.repeat(Math.max(2, inner - width('teams') - 2 - width(left) - width(hd.right)))}{hd.right}</Text></Box>
           </Box>
           {rule('r1')}
           {nFlag > 0 && (
             <Box flexDirection="column">
               {compact
-                ? renderLines(ui, [[{ t: flagPicked ? '▸ ' : '  ', tint: 'claude' }, ...home.flagLine]], 'g')
+                ? renderLines(ui, [[{ t: flagPicked ? '▸ ' : '  ', tint: 'claude' }, ...home.flagLine.map((seg, i, all) => i < all.length - 1 ? seg : { ...seg, t: clipText(seg.t, Math.max(0, inner - 2 - all.slice(0, -1).reduce((n, x) => n + width(x.t), 0))) })]], 'g')
                 : <Box flexDirection="column"><Text color="warning" bold>{`⚑ ${s('f2FlagTitle', { n: nFlag })}`}</Text>{renderLines(ui, lines.slice(0, nFlag), 'f')}</Box>}
               {rule('r2')}
             </Box>

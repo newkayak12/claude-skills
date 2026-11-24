@@ -96,7 +96,8 @@ export const tryText = (n: number | null, max: number | null) => (n === null ? '
 /* --- columns --- */
 
 // Widths of the columns of `rows` so that they, with `gap` between the non-empty ones, fit `total`. A column with no
-// text takes no room. Columns give way in `shrink` order, each down to `min`; whatever is left over is cut by the caller.
+// text takes no room. Columns give way in `shrink` order, each down to `min`; a row still too wide then loses the first
+// shrink column below `min` (to 0), so the caller has nothing left to cut.
 // With a `drop` list, a row still too wide after shrinking loses the next listed column whole (width 0, its gap goes with
 // it) and shrinks again with the freed room; the first shrink column (the title) keeps `titleMin` until every drop is
 // spent, and only then gives way toward `min`. A column cut to 1 cell would be a bare … and becomes 0.
@@ -123,6 +124,12 @@ export function columnWidths(
   let widths = plan(0, titleMin)
   for (let k = 1; k <= drop.length && !fits(widths); k++) widths = plan(k, titleMin)
   if (!fits(widths)) widths = plan(drop.length, min)
+  // a pane too narrow even then: the first shrink column goes on giving way below `min`, so no row is cut by the caller
+  const c0 = shrink[0]
+  if (c0 !== undefined && !fits(widths) && widths[c0]! > 0) {
+    const over = widths.reduce((n, w) => n + w, 0) + gap * Math.max(0, widths.filter(w => w > 0).length - 1) - total
+    widths[c0] = Math.max(0, widths[c0]! - over)
+  }
   return widths.map((w, c) => (w === 1 && (natural[c] ?? 0) > 1 ? 0 : w))
 }
 
@@ -198,7 +205,7 @@ type Dim = Tint | 'dim' | undefined
 export type PageRow = { id: string; block: string; ref: RowRef; cells: Cell[]; tints: Dim[] }
 // `named`: the shrink column holds `key · name`; its floor is `key · first word` + 1, computed from the rows, and below
 // every drop it floors at the key + 1 (key whole)
-export type BlockPlan = { shrink: number[]; drop?: number[]; titleMin?: number; named?: boolean }
+export type BlockPlan = { shrink: number[]; drop?: number[]; titleMin?: number; named?: boolean; narrow?: number[] }
 
 const POINTER = '▸'
 const MARK_ICON: Record<Mark, string> = { done: '✔', running: '●', pending: '○', failed: '✘' }
@@ -342,9 +349,9 @@ export function homeRows(listed: readonly SummaryTaskEntry[], o: HomeOpts): Home
       id: `e:${t.task_id}`, block: 'epic', ref,
       cells: [
         ' ', '▾', ICON[state], keyName, wt, compact ? (stage === undefined ? '' : phaseName(say, stage.key)) : railSegs(t.stages, say),
-        compact ? '' : [state === 'you' ? say('wordYou') : '', progressText(t.progress, say)].filter(Boolean).join(' · '), compact ? '' : `STORY ${t.done}/${t.total}`, since(epicElapsed(t, now)), [cost, after].filter(Boolean).join(' '),
+        compact ? '' : (state === 'you' ? say('wordYou') : ''), compact ? '' : progressText(t.progress, say), compact ? '' : `STORY ${t.done}/${t.total}`, since(epicElapsed(t, now)), [cost, after].filter(Boolean).join(' '),
       ],
-      tints: [undefined, 'claude', TINT[state], undefined, 'dim', compact ? 'claude' : undefined, 'dim', 'dim', 'dim', 'dim'],
+      tints: [undefined, 'claude', TINT[state], undefined, 'dim', compact ? 'claude' : undefined, 'dim', 'dim', 'dim', 'dim', 'dim'],
     }
   }
   for (const t of listed) {
@@ -365,15 +372,23 @@ export function homeRows(listed: readonly SummaryTaskEntry[], o: HomeOpts): Home
 }
 
 // the shrink and drop order of each column group: the title (cell 4) shrinks last; the STORY row sheds mini bar, then agents,
-// then the reason, then `try n/max` (so the score is never cut); the EPIC row (cell 3 = `key · name`, 4 = `⑂ wt`) sheds the
-// rail, F3's progress, the STORY count, cost, since, then ⑂; the key·name cell never goes below `key · first word` before that
+// then the reason, then `try n/max` (so the score is never cut); the EPIC row (cell 3 = `key · name`, 4 = `⑂ wt`, 5 rail,
+// 6 you-word, 7 progress, 8 STORY n/m, 9 since, 10 cost) sheds the rail, the you-word, cost, since, then ⑂; progress (Build n/m)
+// and the STORY count go only below inner 44 (`narrow`, NARROW_BELOW), where the first word is kept instead; the key·name cell never goes below `key · first word` before that, so at inner 44
+// the row shows the key without the title.
+// The FLOOR row (cell 2 = `n Name`) never cuts the Phase name: desks, decisions, elapsed and cost drop in that order, and the
+// who/Report hint (cell 5, kept at 20 cells, the size-S ko hint) is the only shrink column, so it is the last cell cut
 export const HOME_PLANS: Record<string, BlockPlan> = {
   flag: { shrink: [3, 2], drop: [5, 4], titleMin: 12 },
-  epic: { shrink: [3], drop: [5, 6, 7, 9, 8, 4], named: true },
+  epic: { shrink: [3], drop: [5, 6, 10, 9, 4], named: true, narrow: [5, 6, 7, 8, 10, 9, 4] },
   ended: { shrink: [3], drop: [6, 5, 4, 2], named: true },
   story: { shrink: [4], drop: [7, 10, 9, 6, 11], titleMin: 12 },
-  phase: { shrink: [2], drop: [9, 10, 6], titleMin: 10 },
+  phase: { shrink: [5], drop: [9, 10, 6, 3, 4], titleMin: 20 },
 }
+
+// below this inner width a plan's `narrow` drop order applies (EPIC: Build n/m and STORY n/m go before since and cost, so `key · first word`
+// stays); from here up the row keeps them and the name gives way to the key
+const NARROW_BELOW = 44
 
 // The lines of `rows`, one per row in order; each column group is aligned on its own widths, the selected row carries ▸
 export function pageLines(rows: readonly PageRow[], selected: string | null, inner: number, plans: Record<string, BlockPlan> = HOME_PLANS): Line[] {
@@ -389,7 +404,7 @@ export function pageLines(rows: readonly PageRow[], selected: string | null, inn
     const named = plan.named === true
     const titleMin = named ? texts.reduce((n, r) => Math.max(n, sep(r[at] ?? '') < 0 ? 0 : first(r[at]!) + 1), 0) : plan.titleMin
     const min = named ? texts.reduce((n, r) => Math.max(n, sep(r[at] ?? '') < 0 ? 0 : sep(r[at]!) + 1), 4) : 4
-    widthsOf.set(block, columnWidths(texts, inner, 2, plan.shrink, min, plan.drop, titleMin))
+    widthsOf.set(block, columnWidths(texts, inner, 2, plan.shrink, min, inner < NARROW_BELOW && plan.narrow !== undefined ? plan.narrow : plan.drop, titleMin))
   }
   return rows.map(r => rowLine(withPointer(r), widthsOf.get(r.block)!, 2, r.id === selected ? r.tints.map((x, c) => (c === 0 ? 'claude' : x)) : r.tints))
 }
@@ -414,6 +429,7 @@ export function homeHeader(listed: readonly SummaryTaskEntry[], now: number, say
 
 // FLOOR: the six Phases of one EPIC, one row each: mark · number and name · elapsed · cost · who works · decisions · ⚑ and ⏸ counts.
 // Elapsed and cost are the ledger's per-Phase numbers (metrics.stages), counts come from the engine's phases[]; absent, blank.
+// The name is never cut: at a narrow pane desks, decisions, elapsed and cost drop in that order (HOME_PLANS.phase), the hint last.
 const STEP_ID = { plan: 'p:1', implement: 'p:2', test: 'p:2t', gate: 'p:5', report: 'p:6' } as const
 export function floorRows(t: SummaryTaskEntry, say: Say): PageRow[] {
   // a size-S entry: its five steps (engine's `steps`), the running one reads `<stage> · k/n` from progress
@@ -798,6 +814,8 @@ export function footerPlan(parts: { steps: number; open: string; close: string; 
   const kept = [...segments]
   const detail = kept.findIndex(s => / \([^()]*\)$/.test(s))
   if (detail >= 0 && width(kept.join(' · ')) > room) kept[detail] = kept[detail]!.replace(/ \([^()]*\)$/, '')
+  // the movement key (`w s …`) is shared by every page, so it goes before any other segment
+  if (kept.length > 1 && width(kept.join(' · ')) > room && /^w s /.test(kept[0]!)) kept.shift()
   for (let i = kept.length - 1; i >= 0 && width(kept.join(' · ')) > room; i -= 1) {
     if (/((^|\s)[aq](?:\s|$))/.test(kept[i]!)) continue
     if (!keyed && i === 0) continue
