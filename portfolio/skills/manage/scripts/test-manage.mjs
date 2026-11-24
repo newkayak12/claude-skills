@@ -453,6 +453,16 @@ test('selection: a project whose 본문 items state no measured result is flagge
   assert.deepEqual(selection(root).problems.map(p => p.split(':')[0]), ['01_이관/A1'], 'held figures do not count')
 })
 
+test('selection: a bare arrow conclusion or a lock setting is not a measured result', () => {
+  const root = mkdtempSync(join(tmpdir(), 'manage-arrow-'))
+  mkdirSync(join(root, 'sources', '02_출고'), { recursive: true })
+  writeFileSync(join(root, 'sources/02_출고/A1_재집계.md'), '# 재집계\n## 사실\n- 커버리지는 14/149, 약 9% → 실제는 Jira의 약 10배\n## 보강\n- 구현 리뷰: 분산락 최대 5초 대기, 3초 유지\n')
+  writeFileSync(join(root, 'sources/선정.md'), '| 글감 | 쓰임 | 쪽 | 이유 | 대표 |\n|---|---|---|---|---|\n| 02_출고/A1 | 본문 | 9 | x | y |\n')
+  assert.deepEqual(selection(root).problems.map(p => p.split(':')[0]), ['02_출고/A1'])
+  writeFileSync(join(root, 'sources/02_출고/A1_재집계.md'), '# 재집계\n## 사실\n- p95가 21.5초 → 1.7초\n')
+  assert.deepEqual(selection(root).problems, [])
+})
+
 test('selection: an item whose scene is a weak pass goes to 부록, never 제외', () => {
   const root = mkdtempSync(join(tmpdir(), 'manage-weak-'))
   mkdirSync(join(root, 'sources', '02_출고'), { recursive: true })

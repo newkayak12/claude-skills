@@ -480,9 +480,11 @@ export function scaffold(root) {
 // a plan, draft or proposal line (or heading) states no outcome
 const PLAN_LINE = /초안|최초안|계획|예정|목표|제안|후보|가정|대안|Draft|DRAFT|RFC|반복 횟수|회 반복|테스트 케이스|~~/
 // a measured outcome: a duration, a rate, a share, or a before → after
-const MEASURED = /\d\s*(?:ms|초|분|req\/s|건\/s|TPS|RPS)(?![과기A-Za-z])|→|p9\d/i
+// a bare arrow is a conclusion, not a measurement (bench22b's B2B passed on "약 9% → Jira의 약 10배")
+const MEASURED = /\d\s*(?:ms|초|분|req\/s|건\/s|TPS|RPS)(?![과기A-Za-z])|\d[^→\n]{0,12}→\s*[^\n]{0,6}\d\s*(?:ms|초|분|%|건)|p9\d/i
 // lines that discuss rather than report: cautions, deck notes, history, settings
-const NOT_OUTCOME = /주의|덱 반영|이력|미측정|거짓|타임아웃|timeout|TTL|대기 시간 \d|유지 \d|설정/i
+// lock and wait settings are configuration, not an outcome (bench22b's B2B passed on "분산락 … 5초, 3초")
+const NOT_OUTCOME = /주의|덱 반영|이력|미측정|거짓|타임아웃|timeout|TTL|대기 시간 \d|유지 \d|설정|최대 \d+초 대기|leaseTime|waitTime|구현 리뷰/i
 
 export function selection(root) {
   let text = ''
