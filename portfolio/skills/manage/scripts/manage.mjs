@@ -485,6 +485,15 @@ export function selection(root) {
     .filter(c => c[0] && c[0] !== '글감')
     .map(([id, use, page, why, lead]) => ({ id, use, page, why, lead }))
   const bad = rows.filter(r => !['본문', '부록', '제외'].includes(r.use)).map(r => `${r.id}: 쓰임 "${r.use}" is not 본문 | 부록 | 제외`)
+  // a 본문 row is a lead item (grade A): a B or C item supports the page its A item leads, cited
+  // there, or goes to 부록 — the user's own table held 14 body rows, all A; skill builds held 25–27
+  // by giving every supporting decision its own row (2026-11-24)
+  for (const r of rows) {
+    const g = String(r.id).match(/\/([ABC])\d+/)
+    // the same holds for 부록: the user's table classified only the A items (27), so 부록 held 8, not 30
+    if ((r.use === '본문' || r.use === '부록') && g && g[1] !== 'A')
+      bad.push(`${r.id}: a ${r.use} row is a grade-A lead item — this ${g[1]} item supports the page its A item leads (cite it there) or is left out`)
+  }
   return { rows, problems: bad }
 }
 

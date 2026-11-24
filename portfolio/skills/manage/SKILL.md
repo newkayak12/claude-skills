@@ -96,9 +96,18 @@ the snapshot. A round always builds (the user's standing word: "결과물도 검
    `sources/material/`). Evidence order: `sources/` → the user's analysis notes they point to →
    the user. Search before asking; ask only what only the user can answer; everything else stays
    `[확인 필요: …]`.
-2. **Select.** Before any page is written, one row per item in `sources/선정.md`: 글감 · 쓰임
+2. **Select.** Before any page is written, one row per **grade-A** item in `sources/선정.md`: 글감 · 쓰임
    (`본문` | `부록` | `제외`) · 쪽 · 이유 · 대표 (the one problem, decision or result the item leads
-   with, in the material's words). Picked by signal (`references/principles.md` § Composition),
+   with, in the material's words). B and C items are not rows: they support the page their A item
+   leads, cited there (the user's own table: 27 A items → 14 본문, 8 부록; `selection` flags a B/C row).
+   **Whose eyes first:** when noah tools are attached (`noah_persona`, `noah_search`), read the user's
+   values and career stances before scoring (persona-values-and-drives, the `career` domain: what
+   they want to be hired for, what they refuse to claim) and cite the note in 이유; without noah, the
+   `확정사실.md` quotes stand in. Read each item as the user would lead with it: a turning point that
+   shows their judgment — a plan of theirs changed in review, a flaw of their own written down, a limit
+   measured before redesigning, a condition under which their fix stops working — over a correct
+   supporting decision; and what the target reader (a B2C, traffic-facing team) would ask about.
+   Picked by signal (`references/principles.md` § Composition),
    each item scored on four questions in its 이유: does it help this person (a number that reads
    badly — 149 routine on-call requests — is written `안 씀: 149건` in the 이유 and shown nowhere, not as
 context or in a figure either; `claims` flags it on any page citing the item), what strength does it show, what

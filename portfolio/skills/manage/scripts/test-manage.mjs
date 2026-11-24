@@ -433,6 +433,13 @@ test('selection reads the table; claims refuses an excluded item and lists only 
   assert.equal(selection(mkdtempSync(join(tmpdir(), 'manage-nosel-'))), null)
 })
 
+test('selection: a 본문 or 부록 row is a grade-A lead item; B and C items are not rows', () => {
+  const root = mkdtempSync(join(tmpdir(), 'manage-grade-'))
+  mkdirSync(join(root, 'sources'))
+  writeFileSync(join(root, 'sources/선정.md'), '| 글감 | 쓰임 | 쪽 | 이유 | 대표 |\n|---|---|---|---|---|\n| 01_이관/A1 | 본문 | 5 | x | y |\n| 01_이관/B3 | 본문 | 6 | x | y |\n| 01_이관/C2 | 부록 | 20 | x | y |\n| 01_이관/B4 | 제외 | | x | |\n')
+  assert.deepEqual(selection(root).problems.map(p => p.split(':')[0]), ['01_이관/B3', '01_이관/C2'])
+})
+
 test('keep-render copies the previews under the deck version with one review row per page', () => {
   const root = mkdtempSync(join(tmpdir(), 'manage-render-'))
   assert.throws(() => keepRender(root, 'v1.0.0'), /no previews/)
