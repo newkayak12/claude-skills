@@ -78,14 +78,14 @@ Trigger: "글감 원장 정리해줘". One item = one file `<grade><n>_<title>.m
 1b. **Pick the scene, then verify it.** Grade A means the item shows how this person judges, not
    that it looks good (user, 2026-11-24: "나한테 무슨 이득인가... 내가 납득이 안되는 부분이야").
    For each A item, write under its header `> 장면: <one line> — "<verbatim quote>" (<원자료 path +
-   heading>)`: the moment the person's own judgment shows — their plan changed in review and why,
-   a flaw of their own they wrote down, a limit they measured before redesigning, the condition
-   under which their fix stops working, a check they found could be silently wrong. A correct
-   decision with no such moment is graded B (it supports another page), never A. Then a separate
-   reviewer subagent, given only the item and its 원자료, checks each 장면: the quote is in the
-   source, the judgment is the person's (not a reviewer's or a teammate's), and the line says what
-   they decided, not what the system does; a failed 장면 is fixed or the item regraded with the
-   user's yes. `ledger` lists A items without a 장면 as `noScene`.
+   heading>)`, matched to one row of `references/scene.md` (pass P1–P8, weak, fail F1–F4) — the
+   writer reads it first, and a separate reviewer subagent gets that page pasted whole into its
+   prompt with only the item and its 원자료, and names the row behind each verdict (three runs judged
+   the same 27 items with 2, 8 and 11 failures when the bar was prose, 2026-11-24). A banned number
+   never fails a scene, and a later 정정 is the scene, not a failure (scene.md F4). Every scene changed
+   after review goes back to the reviewer before step 2. A scene that still fails keeps the item A
+   with `[확인 필요]` in docs/확인할-것.md, or regrades with the user's yes — never dropped by the
+   writer. `ledger` lists A items without a 장면 as `noScene`.
 2. `ledger-scaffold` for missing READMEs, `X_쓰지않을것.md` and project rows; ask the period for a new project.
 3. Raw material is read from the `analysis/` link (a read-only archive): read it, never write there; cite it as the `원자료:` path.
 4. `X_` files list topics not to use and why (interview attack risk): never made into items, never cited by `portfolio:manage` `claims`; a new such topic is appended to the project's `X_` file with its reason, from the user's words.

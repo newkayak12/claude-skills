@@ -440,6 +440,19 @@ test('selection: a 본문 or 부록 row is a grade-A lead item; B and C items ar
   assert.deepEqual(selection(root).problems.map(p => p.split(':')[0]), ['01_이관/B3', '01_이관/C2'])
 })
 
+test('selection: a project whose 본문 items state no measured result is flagged (plans, cautions and held figures do not count)', () => {
+  const root = mkdtempSync(join(tmpdir(), 'manage-measured-'))
+  mkdirSync(join(root, 'sources', '01_이관'), { recursive: true })
+  mkdirSync(join(root, 'sources', '02_출고'), { recursive: true })
+  writeFileSync(join(root, 'sources/01_이관/A1_전환.md'), '# 전환\n## 사실\n- 응답이 0.7초에서 0.3초로 줄었다\n')
+  writeFileSync(join(root, 'sources/02_출고/A1_재고.md'), '# 재고\n## 사실\n- 상태변경 89건(전체의 60%)\n## 주의\n- 효과는 미측정, 2.7초는 쓰지 않는다\n### 최초안\n- 목표 응답 1초\n')
+  const table = rows => '| 글감 | 쓰임 | 쪽 | 이유 | 대표 |\n|---|---|---|---|---|\n' + rows.join('\n') + '\n'
+  writeFileSync(join(root, 'sources/선정.md'), table(['| 01_이관/A1 | 본문 | 5 | x | y |', '| 02_출고/A1 | 본문 | 9 | x | y |']))
+  assert.deepEqual(selection(root).problems.map(p => p.split(':')[0]), ['02_출고/A1'])
+  writeFileSync(join(root, 'sources/선정.md'), table(['| 01_이관/A1 | 본문 | 5 | 안 씀: 0.7초, 0.3초 | y |']))
+  assert.deepEqual(selection(root).problems.map(p => p.split(':')[0]), ['01_이관/A1'], 'held figures do not count')
+})
+
 test('keep-render copies the previews under the deck version with one review row per page', () => {
   const root = mkdtempSync(join(tmpdir(), 'manage-render-'))
   assert.throws(() => keepRender(root, 'v1.0.0'), /no previews/)

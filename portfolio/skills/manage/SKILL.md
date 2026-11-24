@@ -107,6 +107,10 @@ the snapshot. A round always builds (the user's standing word: "결과물도 검
    what it leads with: the 대표 is that scene, and the 이유 says first what it shows about how the
    person judges — the user's own table reads "본인 안이 리뷰에서 바뀐 경위", "본인 설계 결함 공개",
    "역전 조건 공개". An A item still in `noScene` goes back to material 1b before it is selected.
+   A held-back number (`안 씀`) never moves an item out of the body by itself: when the scene stands
+   in words, the item stays where its scene puts it (the user kept 05/A5 in the body with its
+   numbers out). A scene marked `[확인 필요]` is selected on the item's latest 정정, not excluded.
+   `selection` flags a project whose 본문 items state no measured result: that project goes to 부록.
    Picked by signal (`references/principles.md` § Composition),
    each item scored on four questions in its 이유: does it help this person (a number that reads
    badly — 149 routine on-call requests — is written `안 씀: 149건` in the 이유 and shown nowhere, not as

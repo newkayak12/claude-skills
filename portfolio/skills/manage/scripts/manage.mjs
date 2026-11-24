@@ -477,6 +477,13 @@ export function scaffold(root) {
 }
 
 // sources/선정.md rows: 글감 · 쓰임 (본문 | 부록 | 제외) · 쪽 · 이유 · 대표.
+// a plan, draft or proposal line (or heading) states no outcome
+const PLAN_LINE = /초안|최초안|계획|예정|목표|제안|후보|가정|대안|Draft|DRAFT|RFC|반복 횟수|회 반복|테스트 케이스|~~/
+// a measured outcome: a duration, a rate, a share, or a before → after
+const MEASURED = /\d\s*(?:ms|초|분|req\/s|건\/s|TPS|RPS)(?![과기A-Za-z])|→|p9\d/i
+// lines that discuss rather than report: cautions, deck notes, history, settings
+const NOT_OUTCOME = /주의|덱 반영|이력|미측정|거짓|타임아웃|timeout|TTL|대기 시간 \d|유지 \d|설정/i
+
 export function selection(root) {
   let text = ''
   try { text = readFileSync(at(root, 'sources', '선정.md'), 'utf8') } catch { return null }
@@ -493,6 +500,28 @@ export function selection(root) {
     // the same holds for 부록: the user's table classified only the A items (27), so 부록 held 8, not 30
     if ((r.use === '본문' || r.use === '부록') && g && g[1] !== 'A')
       bad.push(`${r.id}: a ${r.use} row is a grade-A lead item — this ${g[1]} item supports the page its A item leads (cite it there) or is left out`)
+  }
+  // the body holds chapters with a measured result: a project whose 본문 items state no measured
+  // outcome (not held back with `안 씀:`, not a plan or draft line) goes to 부록 whole (three runs
+  // of one skill put the unfinished B2B project in the body 3, 0 and 0 times, 2026-11-24)
+  const items = readMaterial(root)
+  const heldOf = r => {
+    const m = String(r.why || '').match(/(?:안 씀|쓰지 않음)\s*[:：]\s*((?:[^;|.]|\.(?=\d))+)/)
+    return new Set(m ? figs(m[1]) : [])
+  }
+  const byProject = new Map()
+  for (const r of rows.filter(r => r.use === '본문' && r.id.includes('/') && items.has(r.id))) {
+    const p = r.id.split('/')[0]
+    if (!byProject.has(p)) byProject.set(p, [])
+    byProject.get(p).push(r)
+  }
+  for (const [p, rs] of byProject) {
+    const measured = rs.some(r => {
+      const held = heldOf(r)
+      return items.get(r.id).rows.some(x => !/근거 없음/.test(x.evidence) && !PLAN_LINE.test(x.evidence) && !PLAN_LINE.test(x.head || '')
+        && MEASURED.test(x.evidence) && !NOT_OUTCOME.test(x.head || '') && !NOT_OUTCOME.test(x.evidence) && x.figs.some(f => !held.has(f)))
+    })
+    if (!measured) for (const r of rs) bad.push(`${r.id}: project ${p} states no measured result in its 본문 items — the body holds chapters with one; put the project in 부록`)
   }
   return { rows, problems: bad }
 }
@@ -1039,7 +1068,7 @@ export function claims(text, items, settledLines = [], sel = null, confirmed = [
     const banned = new Set(confirmed.flatMap(c => c.banned || []))
     // a plan, draft or proposal line states no outcome (bench17 was offered a rejected rollout plan's
     // 25/50/75% and a test loop's 10000회 as results, 2026-11-22)
-    const PLAN = /초안|최초안|계획|예정|목표|제안|후보|가정|대안|Draft|DRAFT|RFC|반복 횟수|회 반복|테스트 케이스|~~/
+    const PLAN = PLAN_LINE
     // a figure the selection keeps off the deck (`안 씀: 149건` in the item's 이유): never offered, and
     // a problem wherever a page citing the item shows it, its figures included (bench17 p18 drew
     // "149건" although its own selection row said not to lead with it; user: "정상적으로 온콜이
