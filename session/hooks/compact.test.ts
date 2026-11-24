@@ -783,6 +783,73 @@ test('D1 an engine compaction seen from the token drop opens the next epoch', as
   expect(w.forks()).toBe(2)
 })
 
+const mutableUsage = (get: () => number) => () => ({ value: { startedAt: 0, context: { window: 100, tokens: get(), percent: get() }, rateLimits: [] } })
+
+test('D1 a compacted:guided at the turn end opens the next epoch, so one more pre-write happens', async ($, on) => {
+  let tokens = 75
+  const w = logWorld(on, { usage: mutableUsage(() => tokens), convo: () => cur })
+  cur = convo('ga', 8)
+  on('command.run', { command: 'compact' }, () => ((tokens = 8), { value: undefined }) as never)
+  await $.turn.complete(TURN)
+  await until(() => w.log().some(l => l.outcome === 'unobserved'), 'unobserved')
+  await $.turn.complete(TURN)
+  await until(() => w.log().some(l => l.outcome === 'compacted:guided'), 'guided at turn end')
+  await quiet()
+  const before = w.forks()
+  tokens = 67
+  await bandTurns($, w, ['ga2', 'ga3'], t => convo(t))
+  expect(w.forks() - before).toBe(1)
+})
+
+test('D1 the own /compact guided path opens the next epoch', async ($, on) => {
+  let tokens = 75
+  const w = logWorld(on, { usage: mutableUsage(() => tokens), convo: () => cur })
+  cur = convo('gb', 8)
+  on('command.run', { command: 'compact' }, () => {
+    cur = [{ handle: 'gbx', uuid: 'gbx-u', role: 'user', text: '1. Goal: ship', toolUses: [] }]
+    tokens = 10
+    return { value: undefined } as never
+  })
+  await $.turn.complete(TURN)
+  await until(() => w.log().some(l => l.outcome === 'compacted:guided'), 'own guided')
+  await quiet()
+  const before = w.forks()
+  tokens = 67
+  await bandTurns($, w, ['gb2', 'gb3'], t => convo(t))
+  expect(w.forks() - before).toBe(1)
+})
+
+test('D1 a settle with a recap-failed outcome opens a new epoch', async ($, on) => {
+  const w = logWorld(on, { usage: at(67), convo: () => cur, fork: UNANSWERED })
+  await bandTurns($, w, ['rf1'], t => convo(t))
+  expect(w.forks()).toBe(1)
+  await compactWith($, { trigger: 'auto', messages: ROWS })
+  await until(() => w.log().some(l => l.outcome?.startsWith('recap-failed:')), 'recap-failed')
+  const before = w.forks()
+  await bandTurns($, w, ['rf2', 'rf3'], t => convo(t))
+  expect(w.forks() - before).toBe(1)
+})
+
+test('D1 a settle with a skip outcome keeps the epoch, so no second pre-write happens', async ($, on) => {
+  const w = logWorld(on, { usage: at(67), convo: () => cur, fork: UNANSWERED, compact: () => ({ skip: 'nothing new' }) })
+  await bandTurns($, w, ['sk1'], t => convo(t))
+  expect(w.forks()).toBe(1)
+  await compactWith($, { trigger: 'auto', messages: ROWS })
+  await until(() => w.log().some(l => l.outcome?.startsWith('skip:')), 'skip')
+  const before = w.forks()
+  await bandTurns($, w, ['sk2', 'sk3'], t => convo(t))
+  expect(w.forks() - before).toBe(0)
+})
+
+test('D1 a conversation-key change inside one epoch does not re-arm', async ($, on) => {
+  const w = logWorld(on, { usage: at(67), convo: () => cur, fork: answered })
+  await bandTurns($, w, ['kc1', 'kc2', 'kc3', 'kc4'], t => convo(t, 4))
+  await settled(w)
+  expect(w.forks()).toBe(1)
+  await bandTurns($, w, ['kc5'], t => convo(t, 6))
+  expect(w.forks()).toBe(1)
+})
+
 test('D1 one pre-write followed by two compactions counts its discard once', async ($, on) => {
   const w = logWorld(on, { usage: WINDOW_1000, fork: answered, convo: () => cur })
   const pw = { ...PW, id: 'pw1' }
