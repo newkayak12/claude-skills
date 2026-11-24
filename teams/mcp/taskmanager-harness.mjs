@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { graphRunPath, harnessVerdict, taskTag } from './harnessrun.mjs';
 import { baseline as scopeBaseline, inScope, ownVerdict } from './scope.mjs';
 import { loadRun, runState, saveRun } from './graph.mjs';
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { touchMarker } from './engage.mjs';
 import { driverExitInfo, driverStderrTail, driverUsageLimitText, nextSpawnAttempt, spawnChildDriver, taskState } from './taskmanager-drivers.mjs';
 import { excludeMarkers, git, noDriver } from './taskmanager-worktree.mjs';
@@ -217,6 +217,10 @@ function terminalBlockedRun(run) {
   try { return terminalBlocked(JSON.parse(readFileSync(graphRunPath(run.cwd, run.run_id), 'utf8'))); } catch { return null; }
 }
 
+function reportCopyFresh(h) {
+  try { return statSync(h.report_path).mtimeMs >= h.opened_at; } catch { return false; }
+}
+
 // Keeps the harness driver alive: a usage-limit death parks on waiting_capacity (no restart
 // spent), any other death is respawned with a resume prompt naming the recorded run, up to the
 // restart budget - unless the run is terminal-blocked on a failed report and unchanged, which
@@ -231,9 +235,22 @@ export function serviceHarnessRun(task) {
   const v = run ? harnessVerdict(run, task.goal_threshold) : null;
   if (v && v.finished && !h.finished_at) { h.finished_at = Date.now(); h.accepted = !!v.accept; }
   if (h.finished_at && h.accepted === undefined && v && v.finished) h.accepted = !!v.accept;
+  // The report-copy finish (card 129, E-943c979a): a fallback-route driver that finished its run
+  // wrote no 05-report.md, but its harness-report.md copy is fresh. Only a dead driver finishes it
+  // (a live one may still commit), and never a budget-killed run (it keeps its budget reason).
+  // It is read before the usage-limit check and the restart budget, so no park, restart or
+  // harness_driver_exhausted follows; an exhaustion flagged earlier is cleared.
+  if (run && run.route === 'fallback' && !(v && v.finished) && !h.finished_at && h.driver && !driverAlive(h.driver) && !spawning(h)
+    && !(task.budget_stopped && task.budget_stopped.harness_killed) && reportCopyFresh(h)) {
+    h.finished_at = Date.now();
+    h.accepted = !!(v && v.accept);
+    h.finished_via = 'report_copy';
+    delete h.exhausted;
+    record(task, { event: 'harness_report_found', task_id: task.run_id, report_path: h.report_path, run_dir: run.run_dir, accept: h.accepted });
+  }
   // The finish read: the engine computes the scope verdict once, from the run's plan/setgoal
   // scope, its baseline and its own-write record.
-  if (v && v.finished && !h.scope) {
+  if (((v && v.finished) || h.finished_at) && !h.scope) {
     const s = computeScopeVerdict(h, run, task);
     if (s) {
       h.scope = { ok: s.ok, reason: s.reason, outOfScope: s.outOfScope, scope: s.scope, own_record: s.own_record, at: Date.now() };
@@ -252,7 +269,7 @@ export function serviceHarnessRun(task) {
       event: (t, fresh) => ({ event: 'child_driver_spawned', task_id: t.run_id, node_id: 'S', pid: fresh.pid, cwd: t.cwd, log: fresh.log, command: fresh.command, ...(fresh.error ? { error: fresh.error } : {}) }),
     }) || changed();
   }
-  if ((v && v.finished) || !d || driverAlive(d) || h.waiting_capacity || task.budget_stopped || spawning(h)) return changed();
+  if ((v && v.finished) || h.finished_at || !d || driverAlive(d) || h.waiting_capacity || task.budget_stopped || spawning(h)) return changed();
   const usage = driverUsageLimitText(d);
   if (usage) {
     h.waiting_capacity = parkCapacity(h.last_capacity || null, usage.slice(0, 500), Date.now());

@@ -470,7 +470,9 @@ function harnessOutcome(task) {
 
 function harnessShipped(task) {
   const v = harnessOutcome(task);
-  return !!(v && v.finished && v.accept);
+  if (v && v.finished && v.accept) return true;
+  const h = task.harness_run;
+  return !!(h && h.finished_via === 'report_copy' && h.finished_at && h.accepted);
 }
 
 export function buildRetro(task) {
@@ -782,11 +784,12 @@ export function renderSReport(task) {
 export function renderHarnessReport(task) {
   const h = task.harness_run;
   const v = harnessOutcome(task);
-  const finished = !!(v && v.finished);
+  const viaCopy = h.finished_via === 'report_copy' && !!h.finished_at;
+  const finished = !!(v && v.finished) || viaCopy;
   const bs = task.budget_stopped;
   const killed = !!(bs && bs.harness_killed);
   if (!finished && !h.exhausted && !killed) return null;
-  const st = finished ? (v.accept ? 'complete' : 'partial') : killed ? 'partial' : 'blocked';
+  const st = finished ? ((v && v.finished ? v.accept : h.accepted) ? 'complete' : 'partial') : killed ? 'partial' : 'blocked';
   const L = [frontmatter(epicKey(task.run_id), st === 'complete' ? 'DONE' : st.toUpperCase(), task), `# Report — size S on the development harness (${st}${!finished && killed ? ' — budget stopped' : ''})`, ''];
   let text = '';
   try { text = readFileSync(h.report_path, 'utf8').trim(); } catch { /* the driver did not copy it */ }
@@ -797,8 +800,9 @@ export function renderHarnessReport(task) {
   else L.push('The harness driver died past its restart budget before the run finished. tm_retry({task_id}) gives it a fresh driver on the same run.', '');
   if (finished && bs) L.push(`budget_stopped fired at ${stopAt}; the run finished inside the grace.`, '');
   if (v && v.readable) {
-    L.push('## Goal gate', '', `${v.accept ? 'accepted' : 'not accepted'}${v.match_pct != null ? ` at ${v.match_pct}` : ''}`);
-    if ((v.gaps || []).length) L.push('', 'Gaps:', bullets(v.gaps));
+    const noVerdict = viaCopy && !v.finished && !h.accepted;
+    L.push('## Goal gate', '', noVerdict ? 'no goal-gate verdict file was read' : `${v.accept ? 'accepted' : 'not accepted'}${v.match_pct != null ? ` at ${v.match_pct}` : ''}`);
+    if (!noVerdict && (v.gaps || []).length) L.push('', 'Gaps:', bullets(v.gaps));
     L.push('');
   }
   const run = h.run;

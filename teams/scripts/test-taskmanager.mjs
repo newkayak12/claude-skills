@@ -22,7 +22,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, appendFileSync, readFileSync, rm
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { docPaths } from '../mcp/tickets.mjs';
+import { docPaths, epicTicketState } from '../mcp/tickets.mjs';
 import { epicName, givenName, taskName } from '../mcp/names.mjs';
 import { shippedPackages } from '../mcp/docs.mjs';
 import { collectDriverCosts } from './bench/lib/drivercost.mjs';
@@ -8933,6 +8933,193 @@ test('card129 U1.6 S1a: a size-S harness park carries first_since and parks 1 an
     rmSync(f.root, { recursive: true, force: true });
     rmSync(f.drv, { recursive: true, force: true });
   }
+});
+
+// card 129 leftover (E-943c979a): a recorded driver stream, replayed through the real spawn and log
+// path. FAKE_DRIVER_STREAM is the file to print; FAKE_DRIVER_GO (when set) is a file the driver waits
+// for first; FAKE_DRIVER_EXIT is its exit code. No real `claude -p`.
+const FAKE_DRIVER_REPLAY = `
+import { writeFileSync, existsSync, readFileSync } from 'node:fs';
+const counterFile = process.env.FAKE_DRIVER_COUNTER;
+if (counterFile) writeFileSync(counterFile, String(existsSync(counterFile) ? parseInt(readFileSync(counterFile, 'utf8'), 10) + 1 : 1));
+const go = process.env.FAKE_DRIVER_GO;
+if (go) while (!existsSync(go)) await new Promise((r) => setTimeout(r, 25));
+process.stdout.write(readFileSync(process.env.FAKE_DRIVER_STREAM, 'utf8'));
+setTimeout(() => process.exit(parseInt(process.env.FAKE_DRIVER_EXIT || '0', 10)), 50);
+`;
+const c129Fixture = (name) => fileURLToPath(new URL(`./fixtures/${name}`, import.meta.url));
+
+async function card129Park(stream, assertions) {
+  const f = driverFixture({ FAKE_DRIVER_STREAM: c129Fixture(stream), FAKE_DRIVER_EXIT: '1' }, FAKE_DRIVER_REPLAY);
+  const tm = await f.client.init();
+  try {
+    const { task_id } = await tm.call('tm_open', { roles: { qa: false }, brainstorm: false, request: 'small request', cwd: f.cwd, vendor: 'self', size: 'S', driver_restarts: 0 });
+    await waitFor(async () => { const t = readTask(f.root, task_id); return !driverAliveLocal(t.harness_run.driver.pid); }, 'the driver to end on its limit result');
+    const nx = await tm.call('tm_next', { task_id });
+    await assertions({ tm, f, task_id, nx });
+  } finally {
+    tm.close();
+    rmSync(f.cwd, { recursive: true, force: true });
+    rmSync(f.root, { recursive: true, force: true });
+    rmSync(f.drv, { recursive: true, force: true });
+  }
+}
+
+test('card129 T1 a replayed usage_limit_reached result with its text parks with the reset time, spends no restart, and reset_capacity resumes it', async () => {
+  await card129Park('s-stream-usage-limit.jsonl', async ({ tm, f, task_id, nx }) => {
+    assert.equal(nx.state, 'running', JSON.stringify(nx));
+    assert.match(nx.waiting_capacity.reason, /resets 5:40pm/);
+    const ledger = readFileSync(join(f.root, task_id, 'ledger.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+    assert.equal(ledger.filter((e) => e.event === 'child_driver_restarted').length, 0);
+    const r = await tm.call('tm_retry', { task_id, reset_capacity: true });
+    assert.deepEqual(r.resumed, ['S']);
+    assert.equal(readTask(f.root, task_id).harness_run.waiting_capacity, undefined);
+  });
+});
+
+test('card129 T2 a usage_limit_reached result with an empty text parks on the structured field, not blocked', async () => {
+  await card129Park('s-stream-usage-limit-fields.jsonl', async ({ nx }) => {
+    assert.equal(nx.state, 'running', `an api_error usage_limit_reached is a spent quota, not a death: ${JSON.stringify(nx)}`);
+    assert.match(nx.waiting_capacity.reason, /usage_limit_reached/);
+  });
+});
+
+test('card129 T8 driverUsageLimitText: the structured usage_limit_reached field counts, a bare 429 rate_limit_error does not', async () => {
+  const { driverUsageLimitText } = await import('../mcp/taskmanager-drivers.mjs');
+  assert.equal(driverUsageLimitText({ log: c129Fixture('s-stream-usage-limit-fields.jsonl') }), 'usage_limit_reached (429)');
+  const dir = mkdtempSync(join(tmpdir(), 'c129-t8-'));
+  try {
+    const log = join(dir, 'bare.jsonl');
+    writeFileSync(log, `${JSON.stringify({ type: 'result', is_error: true, api_error_status: 429, api_error_type: 'rate_limit_error', result: 'Overloaded, try again' })}\n`);
+    assert.equal(driverUsageLimitText({ log }), '');
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+// card 129 leftover (E-943c979a), the report-copy finish: a fallback-route size-S driver that
+// finished its run but wrote no 05-report.md leaves only the harness-report.md copy the engine
+// can read. A dead driver plus a fresh copy ends the task complete/partial, never blocked.
+async function card129Finish({ restarts, gate = null, gated = false, assertions }) {
+  const go = join(tmpdir(), `c129-go-${process.pid}-${Date.now()}`);
+  const f = driverFixture({ FAKE_DRIVER_STREAM: c129Fixture('s-stream-run-finished.jsonl'), FAKE_DRIVER_EXIT: '0', ...(gated ? { FAKE_DRIVER_GO: go } : {}) }, FAKE_DRIVER_REPLAY);
+  const tm = await f.client.init();
+  try {
+    const { task_id } = await tm.call('tm_open', { roles: { qa: false }, brainstorm: false, request: 'small request', cwd: f.cwd, vendor: 'self', size: 'S', driver_restarts: restarts });
+    const pid = () => readTask(f.root, task_id).harness_run.driver.pid;
+    const dead = () => waitFor(() => !driverAliveLocal(pid()), 'the driver to end');
+    const reportCopy = join(f.root, task_id, 'harness-report.md');
+    const writeRun = () => {
+      const run = fallbackRunFixture(f.cwd, task_id, gate === null ? {} : { pass: gate });
+      writeFileSync(join(run.run_dir, '80-report.md'), '# task report\n');
+      writePointer(f.root, task_id, run);
+      return run;
+    };
+    const events = (name) => c129Ledger(f.root, task_id).filter((e) => e.event === name);
+    await assertions({ tm, f, task_id, go, dead, reportCopy, writeRun, events });
+  } finally {
+    tm.close();
+    killDriversIn(f.drv);
+    rmSync(go, { force: true });
+    rmSync(f.cwd, { recursive: true, force: true });
+    rmSync(f.root, { recursive: true, force: true });
+    rmSync(f.drv, { recursive: true, force: true });
+  }
+}
+
+test('card129 T3 a dead driver with a fresh report copy and no goal-gate file ends partial: no respawn, no exhaustion, report and board agree, survives the run dir going', async () => {
+  await card129Finish({ restarts: 2, gated: true, assertions: async ({ tm, f, task_id, go, dead, reportCopy, writeRun, events }) => {
+    const run = writeRun();
+    writeFileSync(reportCopy, '# the harness report\n');
+    const alive = await tm.call('tm_next', { task_id });
+    assert.equal(alive.state, 'running', JSON.stringify(alive));
+    assert.equal(events('harness_report_found').length, 0, 'a live driver may still commit: the copy does not finish it');
+    writeFileSync(go, '');
+    await dead();
+    const nx = await tm.call('tm_next', { task_id });
+    assert.equal(nx.state, 'partial', JSON.stringify(nx));
+    assert.match(nx.reason || nx.partial_reasons.join(' '), /no goal-gate verdict file was read/);
+    await tm.call('tm_next', { task_id });
+    assert.equal(readFileSync(f.counter, 'utf8'), '1', 'the driver was spawned once: no respawn');
+    assert.equal(events('child_driver_restarted').length, 0);
+    assert.equal(events('harness_driver_exhausted').length, 0);
+    assert.equal(events('harness_report_found').length, 1);
+    const retry = await tm.call('tm_retry', { task_id });
+    assert.equal(retry.retried, false);
+    assert.match(retry.reason, /partial/);
+    await tm.call('tm_docs', { task_id });
+    const task = readTask(f.root, task_id);
+    const report = readFileSync(docPaths(task).report, 'utf8');
+    assert.match(report, /development harness \(partial\)/);
+    assert.doesNotMatch(report, /blocked|restart budget/);
+    assert.equal(epicTicketState(task), 'SETTLED');
+    rmSync(run.run_dir, { recursive: true, force: true });
+    const gone = await tm.call('tm_next', { task_id });
+    assert.equal(gone.state, 'partial', JSON.stringify(gone));
+    const why = gone.reason || gone.partial_reasons.join(' ');
+    assert.match(why, /no goal-gate verdict file was read/);
+    assert.doesNotMatch(why, /did not accept/);
+  } });
+});
+
+test('card129 T4 the same finish with an accepting 04-goal-gate.json reads complete and DONE', async () => {
+  await card129Finish({ restarts: 2, gate: true, gated: true, assertions: async ({ tm, f, task_id, go, dead, reportCopy, writeRun }) => {
+    writeRun();
+    writeFileSync(reportCopy, '# the harness report\n');
+    writeFileSync(go, '');
+    await dead();
+    const nx = await tm.call('tm_next', { task_id });
+    assert.equal(nx.state, 'complete', JSON.stringify(nx));
+    await tm.call('tm_docs', { task_id });
+    const task = readTask(f.root, task_id);
+    assert.match(readFileSync(docPaths(task).report, 'utf8'), /development harness \(complete\)/);
+    assert.equal(epicTicketState(task), 'DONE');
+  } });
+});
+
+test('card129 T5 a task already blocked on a spent budget finishes partial once the copy appears: no new exhaustion, flag cleared, report and board agree', async () => {
+  await card129Finish({ restarts: 0, assertions: async ({ tm, f, task_id, dead, reportCopy, writeRun, events }) => {
+    writeRun();
+    await dead();
+    const blocked = await tm.call('tm_next', { task_id });
+    assert.equal(blocked.state, 'blocked', JSON.stringify(blocked));
+    const before = events('harness_driver_exhausted').length;
+    assert.equal(before, 1);
+    writeFileSync(reportCopy, '# the harness report\n');
+    const nx = await tm.call('tm_next', { task_id });
+    assert.equal(nx.state, 'partial', JSON.stringify(nx));
+    assert.equal(events('harness_driver_exhausted').length, before);
+    assert.equal(readTask(f.root, task_id).harness_run.exhausted, undefined);
+    await tm.call('tm_docs', { task_id });
+    const task = readTask(f.root, task_id);
+    assert.doesNotMatch(readFileSync(docPaths(task).report, 'utf8'), /blocked|restart budget/);
+    assert.equal(epicTicketState(task), 'SETTLED');
+  } });
+});
+
+test('card129 T6 control: no copy, one restart left: it is spent, then the task reads blocked', async () => {
+  await card129Finish({ restarts: 1, assertions: async ({ tm, f, task_id, dead, writeRun, events }) => {
+    writeRun();
+    await dead();
+    const first = await tm.call('tm_next', { task_id });
+    assert.equal(first.state, 'running', JSON.stringify(first));
+    assert.equal(readTask(f.root, task_id).harness_run.driver.restarts.length, 1);
+    await dead();
+    const last = await tm.call('tm_next', { task_id });
+    assert.equal(last.state, 'blocked', JSON.stringify(last));
+    assert.equal(events('child_driver_restarted').length, 1);
+  } });
+});
+
+test('card129 T7 a report copy older than the harness open does not finish the task', async () => {
+  await card129Finish({ restarts: 0, assertions: async ({ tm, task_id, f, dead, reportCopy, writeRun, events }) => {
+    writeRun();
+    writeFileSync(reportCopy, '# a stale report\n');
+    const old = new Date(readTask(f.root, task_id).harness_run.opened_at - 3600 * 1000);
+    utimesSync(reportCopy, old, old);
+    await dead();
+    const nx = await tm.call('tm_next', { task_id });
+    assert.equal(nx.state, 'blocked', JSON.stringify(nx));
+    assert.equal(events('harness_report_found').length, 0);
+  } });
 });
 
 // card 129 U2: an environment failure (ENOSPC, a denied write, a tool denial) of a dispatch is not

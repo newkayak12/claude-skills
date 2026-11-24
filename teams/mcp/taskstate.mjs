@@ -273,6 +273,14 @@ export function harnessState(task) {
     const why = `the harness goal gate did not accept${v.match_pct != null ? ` (match ${v.match_pct})` : ''}${v.gaps.length ? `: ${v.gaps.slice(0, 3).join('; ')}` : ''}`;
     return { state: 'partial', partial: true, partial_reasons: [...(v.accept ? [] : [why]), ...(scopeWhy ? [scopeWhy] : [])], counts: {} };
   }
+  // A fallback run the engine finished from its harness-report.md copy (card 129): no own
+  // goal-gate verdict file was read unless one was accepted.
+  if (h.finished_via === 'report_copy' && h.finished_at && !(h.driver && driverAlive(h.driver))) {
+    const scopeWhy = ownScopeFailure(h);
+    if (h.accepted && !scopeWhy) return { state: 'complete', counts: {} };
+    const why = "the run's report was found (harness-report.md) but no goal-gate verdict file was read; read the report";
+    return { state: 'partial', partial: true, partial_reasons: [...(h.accepted ? [] : [why]), ...(scopeWhy ? [scopeWhy] : [])], counts: {} };
+  }
   if ((!v || v.readable === false) && h.finished_at) {
     const scopeWhy = ownScopeFailure(h);
     if (h.accepted !== false && !scopeWhy) return { state: 'complete', counts: {} };

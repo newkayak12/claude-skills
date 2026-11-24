@@ -277,7 +277,10 @@ function driverExitInfo(driver) {
 // Reads the driver's own stdout stream (NDJSON, `claude -p --output-format stream-json`) for
 // its last `result` event, and returns that text only when it names a usage limit - the same
 // pattern scripts/bench/drive.sh uses to tell a spent quota from an ordinary ending. A death
-// with this text set is not the package's failure and must not spend a restart.
+// with this text set is not the package's failure and must not spend a restart. A result whose
+// structured `api_error` is `usage_limit_reached` counts too, with or without text (a bare 429
+// `rate_limit_error` does not: that one is transient and keeps its restart). Size-S harness
+// drivers and size-L package drivers both park through this one function.
 function driverUsageLimitText(driver) {
   if (!driver || !driver.log) return '';
   try {
@@ -291,7 +294,9 @@ function driverUsageLimitText(driver) {
       if (e && e.type === 'result') last = e;
     }
     const text = last && typeof last.result === 'string' ? last.result : '';
-    return /hit your [a-z0-9-]+ limit/i.test(text) ? text : '';
+    if (/hit your [a-z0-9-]+ limit/i.test(text)) return text;
+    if (last && last.api_error === 'usage_limit_reached') return text || `usage_limit_reached${last.api_error_status === 429 ? ' (429)' : ''}`;
+    return '';
   } catch {
     return '';
   }
