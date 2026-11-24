@@ -100,7 +100,8 @@ the snapshot. A round always builds (the user's standing word: "결과물도 검
    (`본문` | `부록` | `제외`) · 쪽 · 이유 · 대표 (the one problem, decision or result the item leads
    with, in the material's words). Picked by signal (`references/principles.md` § Composition),
    each item scored on four questions in its 이유: does it help this person (a number that reads
-   badly — 149 routine on-call requests — is context, never a 대표), what strength does it show, what
+   badly — 149 routine on-call requests — is written `안 씀: 149건` in the 이유 and shown nowhere, not as
+context or in a figure either; `claims` flags it on any page citing the item), what strength does it show, what
    is measured, what earns qualitative credit (a decision, a trade-off, a lesson). An item that only
    looks impressive and answers none is `제외` (user, 2026-11-22: "AI가 하는 전형적인 '좋아보이는거
    가져오기'"); 부록 items pass the same bar. The body is for chapters with a measured result; a

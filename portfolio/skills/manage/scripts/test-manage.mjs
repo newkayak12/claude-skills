@@ -535,6 +535,16 @@ test('claims on a deck: a slot holding only a short label (`text6: 해결`) is n
   assert.deepEqual(claims(deckPages(deck), readMaterial(root)).problems, [])
 })
 
+test('claims: a figure the selection holds back (`안 씀:`) is a problem on a page citing the item, and never offered', () => {
+  const root = claimsWorkspace()
+  const sel = { rows: [{ id: 'retro--검색-지연', use: '본문', why: '도움: 재설계. 안 씀: 820ms. 측정: 응답 시간' }], problems: [] }
+  const r = claims('## 1 검색\n글감: retro--검색-지연\n응답 시간 820ms → 210ms.\n', readMaterial(root), [], sel)
+  assert.deepEqual(r.problems.map(p => p.kind), ['held'])
+  const none = claims('## 1 검색\n글감: retro--검색-지연\n전체 스캔 때문에 목록 조회가 느렸다.\n', readMaterial(root), [], sel)
+  const p = none.problems.find(x => x.kind === 'no_figure')
+  assert.ok(p && !p.text.includes('820ms'), p && p.text)
+})
+
 test('claims: a figure under a draft or plan heading, or on a plan line, is never offered as a result', () => {
   const root = mkdtempSync(join(tmpdir(), 'manage-plan-'))
   mkdirSync(join(root, 'sources', '01_이관'), { recursive: true })

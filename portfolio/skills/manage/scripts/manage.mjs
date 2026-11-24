@@ -990,6 +990,11 @@ export function settle(findings, lines) {
 // lists cover only 본문/부록 items, and items the table does not name are listed `unselected`.
 export function claims(text, items, settledLines = [], sel = null, confirmed = []) {
   const use = new Map((sel?.rows || []).map(r => [r.id, r.use]))
+  // `안 씀: 149건, 14건` (or `쓰지 않음:`) in a row's 이유: figures that item never shows
+  const held = new Map((sel?.rows || []).map(r => {
+    const m = String(r.why || '').match(/(?:안 씀|쓰지 않음)\s*[:：]\s*([^.;|]+)/)
+    return [r.id, new Set(m ? figs(m[1]) : [])]
+  }))
   const problems = [], listed = { self_confirmed: [], user_stated: [], tone: [], confirmed: [], summary: [], in_text: [] }
   const carried = new Map()   // item id → figures some page carries
   const summary = []          // uncited lines with figures, kept for the summary check below
@@ -1025,7 +1030,15 @@ export function claims(text, items, settledLines = [], sel = null, confirmed = [
     // a plan, draft or proposal line states no outcome (bench17 was offered a rejected rollout plan's
     // 25/50/75% and a test loop's 10000회 as results, 2026-11-22)
     const PLAN = /초안|최초안|계획|예정|목표|제안|후보|가정|대안|Draft|DRAFT|RFC|반복 횟수|회 반복|테스트 케이스|~~/
-    const offer = ground.flatMap(it => it.rows.filter(r => !/근거 없음/.test(r.evidence) && !PLAN.test(r.evidence) && !PLAN.test(r.head || '')).flatMap(r => r.figs.filter(f => !banned.has(f)).map(f => ({ f, s: `${f} (${it.id})` }))))
+    // a figure the selection keeps off the deck (`안 씀: 149건` in the item's 이유): never offered, and
+    // a problem wherever a page citing the item shows it, its figures included (bench17 p18 drew
+    // "149건" although its own selection row said not to lead with it; user: "정상적으로 온콜이
+    // 149건인게 나에게 이로울 수 없다")
+    const heldBy = new Map(known.map(id => [id, held.get(id) || new Set()]))
+    for (const [id, hs] of heldBy) for (const line of p.body) for (const f of figs(line)) {
+      if (hs.has(f)) problems.push({ page: p.page, kind: 'held', text: `${f} — ${line} (선정.md ${id}: 안 씀)` })
+    }
+    const offer = ground.flatMap(it => it.rows.filter(r => !/근거 없음/.test(r.evidence) && !PLAN.test(r.evidence) && !PLAN.test(r.head || '')).flatMap(r => r.figs.filter(f => !banned.has(f) && !heldBy.get(it.id).has(f)).map(f => ({ f, s: `${f} (${it.id})` }))))
       .sort((a, b) => weight(b.f) - weight(a.f)).map(x => x.s)
     const pageFigs = p.body.flatMap(figs)
     if (offer.length && !pageFigs.length)

@@ -4300,6 +4300,26 @@ def svg_crossed_labels(data):
     return out
 
 
+def svg_overlapping_labels(data):
+    """Pairs of labels whose boxes overlap — words drawn on top of words. Each box is shrunk by a
+    tenth on each side so labels that merely touch are not counted (2026-11-22: bench17 page 21
+    drew "시작은 왼쪽 끝" over "10,000명 동시 요청"; check saw only lines through labels)."""
+    try:
+        root = ET.fromstring(data)
+    except ET.ParseError:
+        return []
+    boxes = []
+    for body, (x0, y0, x1, y1) in _svg_labels(root):
+        ix, iy = (x1 - x0) * 0.1, (y1 - y0) * 0.1
+        boxes.append((body, (x0 + ix, y0 + iy, x1 - ix, y1 - iy)))
+    out = []
+    for i, (a, ba) in enumerate(boxes):
+        for b, bb in boxes[i + 1:]:
+            if min(ba[2], bb[2]) > max(ba[0], bb[0]) and min(ba[3], bb[3]) > max(ba[1], bb[1]):
+                out.append((a, b))
+    return out
+
+
 def svg_tight_labels(data):
     """Texts of the labels whose estimated box ends within TIGHT_UNITS of their own box's edge.
 
@@ -4352,6 +4372,12 @@ def _check_figure_text(path, slot, tag, slot_id, line, warns, mode="fill"):
                      "read squeezed or clipped (%s) — fewer lines, a wider or taller box, or a smaller "
                      "sub-line" % (line, tag, slot_id, path.name, len(tight), TIGHT_UNITS,
                                    "; ".join(repr(t) for t in tight[:3])))
+    stacked = svg_overlapping_labels(path.read_bytes())
+    if stacked:
+        warns.append("line %d: %s.%s — %s: %d pair(s) of labels are drawn over each other (%s) — move "
+                     "one, or shorten it"
+                     % (line, tag, slot_id, path.name, len(stacked),
+                        "; ".join("%r / %r" % p for p in stacked[:3])))
     crossed = svg_crossed_labels(path.read_bytes())
     if crossed:
         warns.append("line %d: %s.%s — %s: a drawn line runs through %d label(s) (%s) — route the line "

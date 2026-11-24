@@ -673,6 +673,12 @@ def crossings(tmp):
            '<path d="M 250 80 L 350 80"/>'                       # under the second, touching nothing
            '</svg>').encode()
     check(deck.svg_crossed_labels(svg) == ["OAuth 2.1"], "only the label a line runs through: %s" % deck.svg_crossed_labels(svg))
+    stacked = ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 200" font-size="12">'
+               '<text x="20" y="50">시작은 왼쪽 끝</text><text x="40" y="52">10,000명 동시 요청</text>'
+               '<text x="20" y="120">떨어진 라벨</text></svg>').encode()
+    check(deck.svg_overlapping_labels(stacked) == [("시작은 왼쪽 끝", "10,000명 동시 요청")],
+          "labels drawn over each other are paired: %s" % deck.svg_overlapping_labels(stacked))
+    check(deck.svg_overlapping_labels(svg) == [], "labels apart are not")
     labels = deck._svg_labels(ET.fromstring(svg))
     x0, x1 = labels[0][1][0], labels[0][1][2]
     check(abs((x0 + x1) / 2 - 100) < 0.01, "a group's text-anchor centres the label: %s" % (labels[0][1],))
