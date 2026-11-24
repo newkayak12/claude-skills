@@ -84,7 +84,7 @@ Trigger: "글감 원장 정리해줘". One item = one file `<grade><n>_<title>.m
    the same 27 items with 2, 8 and 11 failures when the bar was prose, 2026-11-24). A banned number
    never fails a scene, and a later 정정 is the scene, not a failure (scene.md F4). Every scene changed
    after review goes back to the reviewer before step 2. A scene that still fails keeps the item A
-   with a question for the user in `gaps.md` (rule b), or regrades with the user's yes — never dropped by the
+   with a question for the user (an item's `gaps.md`; in a ledger workspace `manage questions --add`, which writes `docs/확인할-것.md`) (rule b), or regrades with the user's yes — never dropped by the
    writer. `ledger` lists A items without a 장면 as `noScene`.
 2. `ledger-scaffold` for missing READMEs, `X_쓰지않을것.md` and project rows; ask the period for a new project.
 3. Raw material is read from the `analysis/` link (a read-only archive): read it, never write there; cite it as the `원자료:` path.

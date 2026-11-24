@@ -109,7 +109,7 @@ the snapshot. A round always builds (the user's standing word: "결과물도 검
    "역전 조건 공개". An A item still in `noScene` goes back to material 1b before it is selected.
    A held-back number (`안 씀`) never moves an item out of the body by itself: when the scene stands
    in words, the item stays where its scene puts it (the user kept 05/A5 in the body with its
-   numbers out). An item whose scene is still a `gaps.md` question is selected on its latest 정정, not excluded.
+   numbers out). An item whose scene is still an open question is selected on its latest 정정, not excluded.
    `selection` flags a project whose 본문 items state no measured result: that project goes to 부록.
    Picked by signal (`references/principles.md` § Composition),
    each item scored on four questions in its 이유: does it help this person (a number that reads
