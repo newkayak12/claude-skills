@@ -992,7 +992,8 @@ export function claims(text, items, settledLines = [], sel = null, confirmed = [
   const use = new Map((sel?.rows || []).map(r => [r.id, r.use]))
   // `안 씀: 149건, 14건` (or `쓰지 않음:`) in a row's 이유: figures that item never shows
   const held = new Map((sel?.rows || []).map(r => {
-    const m = String(r.why || '').match(/(?:안 씀|쓰지 않음)\s*[:：]\s*([^.;|]+)/)
+    // the list ends at a sentence stop (`. `), `;` or the cell — a decimal point (7.5%, 2.7초) is not one
+    const m = String(r.why || '').match(/(?:안 씀|쓰지 않음)\s*[:：]\s*((?:[^;|.]|\.(?=\d))+)/)
     return [r.id, new Set(m ? figs(m[1]) : [])]
   }))
   const problems = [], listed = { self_confirmed: [], user_stated: [], tone: [], confirmed: [], summary: [], in_text: [] }
