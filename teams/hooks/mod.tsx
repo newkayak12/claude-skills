@@ -105,6 +105,9 @@ const en = {
   tileProgress: 'Progress', tileStories: 'Stories', tileCost: 'Cost', tileWaiting: 'Needs you', tileDrivers: 'Drivers',
   tileSubStages: '{done}/{total} stages', tileSubAccepted: 'accepted', tileSubTurns: '{n} turns', tileSubWaiting: 'waiting', tileSubNothing: 'nothing', tileSubLive: 'live',
   evWaiting: '{run} needs you: {node}', evPaused: '{run} paused: provider limit', evDone: '{run} finished: {state}', evExhausted: '{run} stopped: daemon restarts used up', evFixRounds: '{run} {pkg}: fix rounds used up', evAttempt: '(attempt {n})',
+  evBlocked: '{run} blocked: {reason}', evBlockedKind: '{run} blocked ({kind}): {reason}', cardBlockedKind: '{kind}: {reason}', bandParked: 'paused: provider limit',
+  kindCapacity: 'provider limit', kindEnvironment: 'environment', kindRepeatedIdenticalRejection: 'same rejection repeated', kindBelowThreshold: 'below threshold',
+  kindMergeConflict: 'merge conflict', kindEndedTask: 'task already ended', kindUnclassified: 'unclassified',
   doneComplete: 'complete', donePartial: 'partial', doneBlocked: 'blocked',
   askTo: '⚑ {who} needs you', stateBlocked: 'blocked', stateCancelled: 'cancelled',
   ticketDone: 'done', ticketBlocked: 'blocked', ticketInProgress: 'in progress', ticketReady: 'ready', ticketInReview: 'in review', ticketCancelled: 'cancelled', ticketStalled: 'stalled',
@@ -189,6 +192,9 @@ export const STRINGS: Record<'en' | 'ko', Record<keyof typeof en, string>> = {
     tileProgress: '진행', tileStories: 'STORY', tileCost: '비용', tileWaiting: '내 차례', tileDrivers: '드라이버',
     tileSubStages: '{done}/{total} 단계', tileSubAccepted: '승인', tileSubTurns: '{n}턴', tileSubWaiting: '대기', tileSubNothing: '없음', tileSubLive: '동작 중',
     evWaiting: '{run} 내 차례: {node}', evPaused: '{run} 일시 중지: 제공자 한도', evDone: '{run} 종료: {state}', evExhausted: '{run} 중단: 데몬 재시작 소진', evFixRounds: '{run} {pkg}: 수정 라운드 소진', evAttempt: '({n}회차)',
+    evBlocked: '{run} 막힘: {reason}', evBlockedKind: '{run} 막힘 ({kind}): {reason}', cardBlockedKind: '{kind}: {reason}', bandParked: '일시 중지: 제공자 한도',
+    kindCapacity: '제공자 한도', kindEnvironment: '환경', kindRepeatedIdenticalRejection: '같은 반려 반복', kindBelowThreshold: '기준 미달',
+    kindMergeConflict: '병합 충돌', kindEndedTask: '이미 끝난 작업', kindUnclassified: '분류 안 됨',
     doneComplete: '완료', donePartial: '일부 완료', doneBlocked: '막힘',
     askTo: '⚑ {who} 내 차례', stateBlocked: '막힘', stateCancelled: '취소됨',
     ticketDone: '완료', ticketBlocked: '막힘', ticketInProgress: '진행 중', ticketReady: '준비됨', ticketInReview: '검토 중', ticketCancelled: '취소됨', ticketStalled: '멈춤',
@@ -488,7 +494,13 @@ const cardTask = (m: Record<string, string>) => Object.keys(m).filter(k => m[k] 
 const PUSH_KIND: Record<string, keyof typeof en> = {
   node_finish: 'pushRejected', upstream_fix_rounds_exhausted: 'pushRejected',
   waiting_human: 'pushNeedsYou', daemon_done: 'pushEnded', daemon_exhausted: 'pushEnded',
+  // a blocked run needs a person; the engine's kind line has no entry here: it adds words to this one, never a push
+  task_blocked: 'pushNeedsYou',
 }
+
+// a failure kind of the engine (failure-kind.mjs) as words; a kind the table lacks draws as received
+const kindWord = (words: Record<string, string>, kind: string) => wordOr(words, `kind${camel(kind.replace(/-/g, '_'))}`, kind)
+const BLOCKED_REASON_MAX = 120
 
 // A failed node_finish as view.mjs tells it (scripts/lib/view-events.mjs): the node worked out the run,
 // node, reason and next step (with the keys of the last two); the mod only draws them. A line missing any
@@ -534,9 +546,14 @@ function toastFailure($: EngineInterface, f: Failure, words: Record<string, stri
 
 // An event's toast and push sentence from its fields: the ev* sentence for kinds that have one. A kind it does not know, or a
 // line missing a field it needs (an old-shape line), is the engine's own text verbatim: fail open.
-function eventSentence(words: Record<string, string>, one: TeamsEvent): string {
+function eventSentence(words: Record<string, string>, one: TeamsEvent, kind: string | null = null): string {
   const run = one.run
   if (typeof run !== 'string') return one.text
+  // `kind` is the failure_classified kind the caller found for this task; no kind leaves no slot
+  if (one.kind === 'task_blocked' && typeof one.reason === 'string') {
+    const reason = clipText(one.reason, BLOCKED_REASON_MAX)
+    return kind === null ? fmt(words.evBlocked, { run, reason }) : fmt(words.evBlockedKind, { run, reason, kind: kindWord(words, kind) })
+  }
   if (one.kind === 'waiting_human' && typeof one.node === 'string') return fmt(words.evWaiting, { run, node: one.node })
   if (one.kind === 'daemon_done' && typeof one.state === 'string') return fmt(words.evDone, { run, state: wordOr(words, `done${camel(one.state)}`, one.state) })
   if (one.kind === 'child_driver_capacity') return fmt(words.evPaused, { run })
@@ -547,7 +564,15 @@ function eventSentence(words: Record<string, string>, one: TeamsEvent): string {
 
 // One push for an event, `teams <task>: <kind> - <what>`. The event's text already toasts, so a push not
 // sent (user at the terminal, off, throw) needs no second toast. Fail open: nothing here may throw.
-async function pushEvent($: EngineInterface, one: TeamsEvent, sent: Set<string>): Promise<void> {
+// What the tick knows of this batch: the tasks with a task_blocked in it (its push replaces their run-ended push) and the
+// failure kind found for a blocked line
+type PushCtx = { blockedNow: Set<string>; kindOf: (one: TeamsEvent) => string | null }
+const NO_CTX: PushCtx = { blockedNow: new Set(), kindOf: () => null }
+
+// a run that ended blocked: the run-ended push a task_blocked replaces (same batch) or makes redundant (a later one)
+const endedBlocked = (one: TeamsEvent) => one.kind === 'daemon_exhausted' || (one.kind === 'daemon_done' && one.state === 'blocked')
+
+async function pushEvent($: EngineInterface, one: TeamsEvent, sent: Set<string>, ctx: PushCtx = NO_CTX): Promise<void> {
   try {
     const kind = PUSH_KIND[one.kind]
     // a failed node pushes only once it needs you or gave up; a retry or reshape is a toast
@@ -556,7 +581,16 @@ async function pushEvent($: EngineInterface, one: TeamsEvent, sent: Set<string>)
     // once per (task, kind, package, attempt); the ts keeps two lines of one attempt apart
     const key = `${one.task_id}|${one.kind}|${one.package ?? ''}|${one.attempt ?? ''}|${one.text}|${one.ts}`
     if (kind === undefined || sent.has(key)) return
-    sent.add(key)
+    // a blocked end whose task_blocked is in this batch sends no push of its own (the task_blocked one carries the reason);
+    // its outcome is still written below, and its key stays out of `sent` so the replacing push is not read as a second one
+    const replaced = endedBlocked(one) && ctx.blockedNow.has(one.task_id)
+    if (replaced) {
+      if (sent.has(`replaced|${key}`)) return
+      sent.add(`replaced|${key}`)
+    } else sent.add(key)
+    // a task_blocked after a run-ended push already sent for the task (an earlier batch): no second push; the band has the reason
+    if (one.kind === 'task_blocked' && sent.has(`ended|${one.task_id}`)) return
+    if (endedBlocked(one) && !replaced) sent.add(`ended|${one.task_id}`)
     // the run outcome trophy counts, from the daemon's state field; any other state is no outcome
     const outcome =
       one.kind === 'daemon_exhausted' ? 'fail'
@@ -572,13 +606,14 @@ async function pushEvent($: EngineInterface, one: TeamsEvent, sent: Set<string>)
         // fail open: a lost outcome never costs the push
       }
     }
+    if (replaced) return
     const words = STRINGS[await read($, lang)]
     let message: string
     if (failed !== null) {
       message = `teams ${failed.run}: ${words[kind]} \u2014 ${failureWhat(failed, words)}`
       if (message.length > PUSH_MAX) message = message.slice(0, PUSH_MAX - 1) + '\u2026'
     } else {
-      const sentence = eventSentence(words, one)
+      const sentence = eventSentence(words, one, ctx.kindOf(one))
       const m = /^(E-\S+) (.*)$/.exec(sentence)
       message = `teams ${m?.[1] ?? one.task_id}: ${words[kind]} \u2014 ${m?.[2] ?? sentence}`.slice(0, 200)
     }
@@ -605,6 +640,19 @@ async function toggleLang($: EngineInterface): Promise<void> {
 export const register: Register = on => {
   let isRunning = false
   const pushed = new Set<string>()
+  // What the band and the blocked sentence read of the notable events, caches a reload may lose: the failure kinds seen per
+  // task, the reason and kind of a task that ended blocked (the card's line), the runs parked on a provider limit.
+  // A parked run clears on the next other event of the run: the engine writes no resume event.
+  type KindSeen = TeamsEvent & { node_id?: string | null; failure_kind?: string }
+  const failKinds = new Map<string, { node: string | null; kind: string }[]>()
+  const blockedWhy = new Map<string, { reason: string; kind: string | null }>()
+  const parkedRuns = new Set<string>()
+  // the kind for a blocked line: the latest classified for its node_id, else the latest for the task
+  const kindOf = (one: TeamsEvent): string | null => {
+    const seen = [...(failKinds.get(one.task_id) ?? [])].reverse()
+    const node = (one as KindSeen).node_id
+    return (typeof node === 'string' ? seen.find(x => x.node === node) : undefined)?.kind ?? seen[0]?.kind ?? null
+  }
   // the session.start tick, kept so a received ask can refresh the data once
   let refresh: (() => Promise<void>) | null = null
 
@@ -684,11 +732,25 @@ export const register: Register = on => {
             }
           }
           if (fresh.length > 0) {
+            // the kinds first: a failure_classified line may come after the notify it explains in one batch
+            for (const one of fresh as KindSeen[]) {
+              if (one.kind !== 'failure_classified' || typeof one.failure_kind !== 'string') continue
+              failKinds.set(one.task_id, [...(failKinds.get(one.task_id) ?? []), { node: typeof one.node_id === 'string' ? one.node_id : null, kind: one.failure_kind }])
+            }
+            const ctx: PushCtx = { blockedNow: new Set(fresh.filter(f => f.kind === 'task_blocked').map(f => f.task_id)), kindOf }
             for (const one of fresh) {
               const failure = failureOf(one)
-              if (failure === null) $.ui.toast(eventSentence(STRINGS[await read($, lang)], one))
-              else toastFailure($, failure, STRINGS[await read($, lang)])
-              await pushEvent($, one, pushed)
+              const words = STRINGS[await read($, lang)]
+              if (typeof one.run === 'string' && one.kind !== 'failure_classified') {
+                if (one.kind === 'child_driver_capacity') parkedRuns.add(one.run)
+                else parkedRuns.delete(one.run)
+              }
+              if (one.kind === 'task_blocked' && typeof one.reason === 'string') blockedWhy.set(one.task_id, { reason: one.reason, kind: kindOf(one) })
+              if (one.kind === 'failure_classified') {
+                // words for the blocked line, no toast and no push of its own
+              } else if (failure === null) $.ui.toast(eventSentence(words, one, kindOf(one)))
+              else toastFailure($, failure, words)
+              await pushEvent($, one, pushed, ctx)
             }
             // a run that ended after this session began gets a card and one report call
             for (const one of fresh.filter(f => f.kind === 'daemon_done')) {
@@ -1199,6 +1261,7 @@ export const register: Register = on => {
     if (!e.props.hasSurvey && cardId !== undefined && held?.task_id === cardId && held.payload.verdict !== 'running') {
       const { Box, Button, Text } = $.ui.resolve(e)
       const p = held.payload
+      const blocked = blockedWhy.get(cardId)
       const set = (state: 'seen' | 'dismissed') => update($, ended, m => mark(m, cardId, state))
       return (
         <Box flexDirection="column">
@@ -1225,6 +1288,10 @@ export const register: Register = on => {
             )}
             <Box flexShrink={0} marginLeft={1}><Button key="dismiss" label={s('dismiss')} onPress={() => set('dismissed')} /></Box>
           </Box>
+          {/* the engine's reason a run ended blocked, with its failure kind when classified; it goes with the card */}
+          {p.verdict !== 'finished' && blocked !== undefined && (
+            <Box><Text color="warning" wrap="truncate-end">{blocked.kind === null ? blocked.reason : s('cardBlockedKind', { kind: kindWord(STRINGS[lang$], blocked.kind), reason: blocked.reason })}</Text></Box>
+          )}
           {await next(e)}
         </Box>
       )
@@ -1320,7 +1387,9 @@ export const register: Register = on => {
     const bandNameShown = bandKeyOnly ? '' : clipWords(task.title.trim(), Math.max(width(bandFirst) + (bandMore ? 1 : 0), bandRoom))
     // the now sentence follows only when it has room for itself; otherwise nothing follows the ⑂ or the name, so no glyph is cut
     const bandNowRoom = bandRoom - width(bandNameShown) - (bandNameShown === task.title.trim() ? 0 : 99)
-    const bandTail = bandNowRoom >= 6 ? ` — ${nowSentence(s, wo, task)}` : ''
+    // paused on a provider limit: the summary's waiting_capacity when it carries one, else the run's child_driver_capacity event
+    const bandParked = (task as { waiting_capacity?: unknown }).waiting_capacity != null || parkedRuns.has(task.key)
+    const bandTail = bandNowRoom >= 6 ? ` — ${bandParked ? s('bandParked') : nowSentence(s, wo, task)}` : ''
     const bandFilled = task.total > 0 ? Math.round((10 * task.done) / task.total) : 0
     return (
       <Box flexDirection="column">

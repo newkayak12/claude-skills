@@ -1745,9 +1745,9 @@ for (const surface of SURFACES) {
 }
 
 // push on a reject, a person who must act, and the end of a run (design 2026-10-12-mod-run-push)
-function pushWorld(on: On, push: (e: any) => unknown, events: string) {
+function pushWorld(on: On, push: (e: any) => unknown, events: string | (() => string)) {
   const pushes: any[] = []
-  const seen = world(on, ['terminal'], argv => (isEvents(argv) ? ok(events) : ok('{"line":"","waiting":0}')))
+  const seen = world(on, ['terminal'], argv => (isEvents(argv) ? ok(typeof events === 'string' ? events : events()) : ok('{"line":"","waiting":0}')))
   // a Map-backed $.state; the run outcome writes (for trophy) are kept apart
   const store = new Map<string, unknown>()
   const outcomes: any[] = []
@@ -4766,4 +4766,163 @@ test('card 126: the Messages heading is in Korean', async ($, on) => {
   const { lines } = await homeLines($, on, 190, THREADS_FIXTURE(THREADS_S2), 'terminal', 'korean', { page: STORY_S2 })
   expect(lines.some(l => l.trim() === '메시지')).toBe(true)
   expect(lines.some(l => l.trim() === 'Messages')).toBe(false)
+})
+
+// ---- card 129: task_blocked push, blocked sentence with failure-kind words, blocked card line, parked row ----
+const RUN = 'E-aaaaaaaa'
+const TID = 'E-aaaaaaaa1'
+const TB = (over: Record<string, unknown> = {}) => ({ ts: 1500, task_id: TID, kind: 'task_blocked', text: `${RUN} blocked: out of budget`, run: RUN, reason: 'out of budget', ...over })
+const FC = (over: Record<string, unknown> = {}) => ({ ts: 1400, task_id: TID, kind: 'failure_classified', text: `${RUN} gate:P1:2: capacity`, run: RUN, node_id: 'gate:P1:2', failure_kind: 'capacity', via: 'judge', ...over })
+const DB = (over: Record<string, unknown> = {}) => ({ ts: 1450, task_id: TID, kind: 'daemon_done', text: `${RUN} finished: blocked`, run: RUN, state: 'blocked', ...over })
+const DX = (over: Record<string, unknown> = {}) => ({ ts: 1450, task_id: TID, kind: 'daemon_exhausted', text: `${RUN} stopped: daemon restarts used up`, run: RUN, ...over })
+const KIND_KEYS = ['kindCapacity', 'kindEnvironment', 'kindRepeatedIdenticalRejection', 'kindBelowThreshold', 'kindMergeConflict', 'kindEndedTask', 'kindUnclassified'] as const
+const NEW_KEYS = ['evBlocked', 'evBlockedKind', 'cardBlockedKind', 'bandParked', ...KIND_KEYS] as const
+const blockedSentence = (S: typeof STRINGS.en, kind: string | null, reason = 'out of budget') =>
+  kind === null ? S.evBlocked.replace('{run}', RUN).replace('{reason}', reason) : S.evBlockedKind.replace('{run}', RUN).replace('{kind}', kind).replace('{reason}', reason)
+
+test('card 129: every new key is in en and ko with the same placeholders', () => {
+  const holes = (s: string) => [...s.matchAll(/\{(\w+)\}/g)].map(m => m[1]).sort()
+  for (const k of NEW_KEYS) {
+    const en = (STRINGS.en as Record<string, string>)[k]
+    const ko = (STRINGS.ko as Record<string, string>)[k]
+    expect(typeof en).toBe('string')
+    expect(typeof ko).toBe('string')
+    expect(holes(ko!)).toEqual(holes(en!))
+  }
+})
+
+test('card 129: a task_blocked pushes once (needs you), the sentence names run, kind and reason', async ($, on) => {
+  const clock = mock.clock(on, { now: 1000 })
+  const { pushes, seen } = pushWorld(on, sentOk, evLines(FC(), TB()))
+  await start($)
+  await clock.advance(3000)
+  expect(pushes).toHaveLength(1)
+  expect(pushes[0].message).toBe(`teams ${RUN}: ${STRINGS.en.pushNeedsYou} — ${blockedSentence(STRINGS.en, STRINGS.en.kindCapacity).replace(`${RUN} `, '')}`)
+  // failure_classified has no toast of its own
+  expect(seen.toasts).toEqual([blockedSentence(STRINGS.en, STRINGS.en.kindCapacity)])
+})
+
+test('card 129: failure_classified alone sends no push and no toast, for every kind', async ($, on) => {
+  const clock = mock.clock(on, { now: 1000 })
+  const lines = ['capacity', 'environment', 'below-threshold', 'merge-conflict', 'unclassified'].map((k, i) => FC({ ts: 1400 + i, failure_kind: k }))
+  const { pushes, seen } = pushWorld(on, sentOk, evLines(...lines))
+  await start($)
+  await clock.advance(3000)
+  expect(pushes).toHaveLength(0)
+  expect(seen.toasts).toEqual([])
+})
+
+test('card 129: no failure_classified: the sentence names the reason only, no empty slot', async ($, on) => {
+  const clock = mock.clock(on, { now: 1000 })
+  const { seen } = pushWorld(on, sentOk, evLines(TB()))
+  await start($)
+  await clock.advance(3000)
+  expect(seen.toasts).toEqual([blockedSentence(STRINGS.en, null)])
+  expect(seen.toasts[0]).not.toMatch(/\(\)|\{|undefined/)
+})
+
+test('card 129: the kind of the same node_id wins over a later one; Korean words', async ($, on) => {
+  const clock = mock.clock(on, { now: 1000 })
+  KO_ON(on)
+  const { seen } = pushWorld(on, sentOk, evLines(FC({ ts: 1300, node_id: 'n1', failure_kind: 'environment' }), FC({ ts: 1400, node_id: 'n2', failure_kind: 'brand-new' }), TB({ node_id: 'n1' })))
+  await start($)
+  await clock.advance(3000)
+  expect(seen.toasts).toEqual([blockedSentence(STRINGS.ko, STRINGS.ko.kindEnvironment)])
+})
+
+test('card 129: with no node match the latest failure_classified of the task is used; an unknown kind is the raw value', async ($, on) => {
+  const clock = mock.clock(on, { now: 1000 })
+  const { seen } = pushWorld(on, sentOk, evLines(FC({ ts: 1300, node_id: 'n2', failure_kind: 'environment' }), FC({ ts: 1400, node_id: 'n3', failure_kind: 'brand-new' }), TB({ node_id: 'n9' })))
+  await start($)
+  await clock.advance(3000)
+  expect(seen.toasts).toEqual([blockedSentence(STRINGS.en, 'brand-new')])
+})
+
+test('card 129: an old-shape notify (reason null, or run missing) returns the engine text verbatim and does not throw', async ($, on) => {
+  const clock = mock.clock(on, { now: 1000 })
+  const a = TB({ reason: null, text: `${RUN} blocked: no reason recorded` })
+  const b = TB({ ts: 1600, run: undefined, text: 'E-bbbbbbbb blocked: out of budget' })
+  const { seen } = pushWorld(on, sentOk, evLines(a, b))
+  await start($)
+  await clock.advance(3000)
+  expect(seen.toasts).toEqual([a.text, b.text])
+})
+
+for (const [name, done] of [['daemon_done blocked', DB], ['daemon_exhausted', DX]] as const) {
+  test(`card 129: ${name} and task_blocked in one batch send one push, the task_blocked one; the outcome is still written`, async ($, on) => {
+    const clock = mock.clock(on, { now: 1000 })
+    const { pushes, outcomes } = pushWorld(on, sentOk, evLines(done(), FC(), TB()))
+    await start($)
+    await clock.advance(3000)
+    expect(pushes).toHaveLength(1)
+    expect(pushes[0].message).toContain('out of budget')
+    expect(pushes[0].message).not.toContain(STRINGS.en.evDone.replace('{run} ', '').slice(0, 8))
+    expect(outcomes.map(o => o.outcome)).toEqual(['fail'])
+  })
+
+  test(`card 129: a task_blocked in a later batch than a sent ${name} push sends no second push`, async ($, on) => {
+    const clock = mock.clock(on, { now: 1000 })
+    const feed = { v: evLines(done()) }
+    const { pushes } = pushWorld(on, sentOk, () => feed.v)
+    await start($)
+    await clock.advance(3000)
+    expect(pushes).toHaveLength(1)
+    expect(pushes[0].message).not.toContain('out of budget')
+    feed.v = evLines(TB({ ts: 1800 }))
+    await clock.advance(3000)
+    expect(pushes).toHaveLength(1)
+  })
+}
+
+test('card 129: the same task_blocked on a re-poll sends no second push', async ($, on) => {
+  const clock = mock.clock(on, { now: 1000 })
+  const { pushes } = pushWorld(on, sentOk, evLines(TB()))
+  await start($)
+  await clock.advance(3000)
+  await clock.advance(3000)
+  await clock.advance(3000)
+  expect(pushes).toHaveLength(1)
+})
+
+test('card 129: a push that throws is swallowed; the toast still shows', async ($, on) => {
+  const clock = mock.clock(on, { now: 1000 })
+  const { seen } = pushWorld(on, () => { throw new Error('push down') }, evLines(TB()))
+  await start($)
+  await clock.advance(3000)
+  expect(seen.toasts).toEqual([blockedSentence(STRINGS.en, null)])
+})
+
+for (const surface of SURFACES) {
+  test(`card 129 ${surface}: the blocked card shows reason and kind, and clears with the card`, async ($, on) => {
+    const events = [END('tee'), { ts: 1400, task_id: 'tee', kind: 'failure_classified', text: 'x', run: 'E-tee', node_id: 'n1', failure_kind: 'capacity', via: null }, { ts: 1500, task_id: 'tee', kind: 'task_blocked', text: 'x', run: 'E-tee', reason: 'out of budget', node_id: 'n1' }]
+    const { seen } = await seeded($, on, { status: stat(), task: demo(), events, reports: { tee: BLOCKED() } }, surface)
+    const b = await band($, surface)
+    const text = await shown(b)
+    expect(text).toContain('out of budget')
+    expect(text).toContain(STRINGS.en.kindCapacity)
+    await b.press({ key: 'dismiss' })
+    expect(seen.store.get('ended')).toEqual({ tee: 'dismissed' })
+    expect(await shown(await band($, surface))).not.toContain('out of budget')
+  })
+
+  test(`card 129 ${surface}: a capacity-parked task's running row says paused on a provider limit; a narrow band throws nothing`, async ($, on) => {
+    const events = [{ ts: 1500, task_id: 'abc', kind: 'child_driver_capacity', text: 'E-3a3a3bb5 paused: provider limit', run: 'E-3a3a3bb5' }]
+    await seeded($, on, { status: stat(), task: demo(), events }, surface)
+    expect(await shown(await band($, surface, false, 190))).toContain(STRINGS.en.bandParked)
+    for (const cols of [110, 60, 40]) expect(typeof (await shown(await band($, surface, false, cols)))).toBe('string')
+  })
+}
+
+test('card 129: a parked flag in the summary (waiting_capacity) is read with no event', async ($, on) => {
+  await seeded($, on, { status: stat(), task: demo({ waiting_capacity: { since: 1 } }) }, 'terminal')
+  expect(await shown(await band($, 'terminal', false, 190))).toContain(STRINGS.en.bandParked)
+})
+
+test('card 129: a later event for the run clears the event-sourced parked row', async ($, on) => {
+  const data: { status: Record<string, unknown>; task: unknown; events: unknown[] } = { status: stat(), task: demo(), events: [{ ts: 1500, task_id: 'abc', kind: 'child_driver_capacity', text: 'x', run: 'E-3a3a3bb5' }] }
+  const { tick } = await seeded($, on, data, 'terminal')
+  expect(await shown(await band($, 'terminal', false, 190))).toContain(STRINGS.en.bandParked)
+  data.events = [{ ts: 1900, task_id: 'abc', kind: 'node_finish', text: 'E-3a3a3bb5 n1 finished', run: 'E-3a3a3bb5' }]
+  await tick()
+  expect(await shown(await band($, 'terminal', false, 190))).not.toContain(STRINGS.en.bandParked)
 })
