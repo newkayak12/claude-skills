@@ -75,6 +75,17 @@ Per-part procedures: `references/parts.md`. Citation, evidence and matching: `re
 Trigger: "글감 원장 정리해줘". One item = one file `<grade><n>_<title>.md` in `sources/<NN>_<project>/`. A stands as its own page, B is a bullet or evidence for another item, C is a footnote only. Each file opens with `> 등급 · 프로젝트 · 원자료: <path>`.
 
 1. `ledger`; say each `problems` entry. Wrong grade letters and missing headers are the user's to fix (ask which grade); do not rename or rewrite their files.
+1b. **Pick the scene, then verify it.** Grade A means the item shows how this person judges, not
+   that it looks good (user, 2026-11-24: "나한테 무슨 이득인가... 내가 납득이 안되는 부분이야").
+   For each A item, write under its header `> 장면: <one line> — "<verbatim quote>" (<원자료 path +
+   heading>)`: the moment the person's own judgment shows — their plan changed in review and why,
+   a flaw of their own they wrote down, a limit they measured before redesigning, the condition
+   under which their fix stops working, a check they found could be silently wrong. A correct
+   decision with no such moment is graded B (it supports another page), never A. Then a separate
+   reviewer subagent, given only the item and its 원자료, checks each 장면: the quote is in the
+   source, the judgment is the person's (not a reviewer's or a teammate's), and the line says what
+   they decided, not what the system does; a failed 장면 is fixed or the item regraded with the
+   user's yes. `ledger` lists A items without a 장면 as `noScene`.
 2. `ledger-scaffold` for missing READMEs, `X_쓰지않을것.md` and project rows; ask the period for a new project.
 3. Raw material is read from the `analysis/` link (a read-only archive): read it, never write there; cite it as the `원자료:` path.
 4. `X_` files list topics not to use and why (interview attack risk): never made into items, never cited by `portfolio:manage` `claims`; a new such topic is appended to the project's `X_` file with its reason, from the user's words.

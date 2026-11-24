@@ -133,6 +133,8 @@ function ledgerItems() {
         // the file opens with `> 등급 · 프로젝트 · 원자료: <path>`, under its `# title` when it has one
         // (bench17: all 109 items carried it on line 3 and every one was listed noHeader)
         header: /^>[^\n]*·[^\n]*·\s*원자료:\s*\S/.test(text.replace(/^\s+/, '').replace(/^#[ \t][^\n]*\n\s*/, '')),
+        // `> 장면: <the moment the person's judgment shows> — "<quote>"`
+        scene: (text.match(/^>\s*장면\s*[:：]\s*(\S.*)$/m) || [, null])[1],
         file,
         title: (text.match(/^#[ \t]+(.+)$/m) || [, f.name.normalize('NFC').replace(/\.md$/, '')])[1].trim(),
         written: /^- \d{4}-\d{2}-\d{2} .*\(status: written\b/m.test(text),
@@ -349,6 +351,9 @@ const cmd = {
     const problems = {
       invalidGrade: t.projects.flatMap((p) => p.invalid),
       noHeader: items.filter((i) => !i.header).map((i) => i.id),
+      // an A item names the scene its judgment shows in (user, 2026-11-24: 글감 is picked by
+      // "how the person judges", not by what looks good)
+      noScene: items.filter((i) => i.grade === 'A' && !i.scene).map((i) => i.id),
       notInReadme: [],
       noExcluded: t.projects.filter((p) => !p.x.length).map((p) => p.name),
       noReadme: t.projects.filter((p) => !p.readme).map((p) => p.name),
@@ -358,7 +363,7 @@ const cmd = {
       for (const f of p.files) if (!p.readme.includes(f)) problems.notInReadme.push(`${p.name}/${f}`);
     }
     return {
-      items: items.map(({ id, grade, header, file, title, written }) => ({ id, grade, header, file, title, written })),
+      items: items.map(({ id, grade, header, scene, file, title, written }) => ({ id, grade, header, scene, file, title, written })),
       excluded: t.projects.flatMap((p) => p.x.map((f) => `${p.name}/${f}`)),
       analysis: fs.existsSync(path.resolve(process.cwd(), 'analysis')),
       problems,

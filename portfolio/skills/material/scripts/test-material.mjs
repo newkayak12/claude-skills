@@ -560,6 +560,11 @@ test('ledger reports grade letters other than A/B/C, a missing header, X_ files 
   assert.equal(r.analysis, true);
   assert.deepEqual(r.problems.invalidGrade, ['01_가상검색/D1_잘못.md']);
   assert.deepEqual(r.problems.noHeader, ['01_가상검색/A2', '02_가상알림/A1']);
+  assert.deepEqual(r.problems.noScene, ['01_가상검색/A1', '01_가상검색/A2', '02_가상알림/A1']);
+  fs.writeFileSync(path.join(d, 'A1_검색개편.md'), '> A · 가상검색 · 원자료: analysis/01/retro.md\n> 장면: 내 인덱스 안이 리뷰에서 바뀌었다 — "리뷰에서 복합 인덱스로"\n\n# 검색 개편\n');
+  const r2 = run(cwd, ['ledger']).json;
+  assert.deepEqual(r2.problems.noScene, ['01_가상검색/A2', '02_가상알림/A1']);
+  assert.match(r2.items[0].scene, /리뷰에서 바뀌었다/);
   assert.deepEqual(r.problems.noExcluded, ['02_가상알림']);
   assert.deepEqual(r.problems.noReadme, ['01_가상검색', '02_가상알림']);
   assert.deepEqual(r.problems.notInTable, ['01_가상검색', '02_가상알림']);
