@@ -165,6 +165,7 @@ headless 실행(`claude -p`)에서는 이 명령들이 텍스트를 출력합니
 한 세션에서 `main`으로의 `git push`가 성공하면(`origin main`, `HEAD:main`, `x:main`, main 브랜치에서의 그냥 push), 같은 저장소에서 최근 30분 안에 움직인 다른 열린 세션마다 `main moved to <sha> … Fetch before editing or bumping versions.` 메시지가 갑니다. 세션당 2분에 한 번까지이고, 이 세션에는 `main moved: told N of M` toast가 뜹니다. headless 실행은 보내지 않습니다.
 
 ## 상태
+- `0.12.0`: 정책 플러그인이 `session.compact` mod 훅을 건너뛰는 환경에서도 auto-compact가 handoff 항목을 받습니다. PreCompact 명령 훅이 넣어 주며, 수동 compact, 표식, smart-compact off일 때는 아무것도 하지 않습니다.
 - `0.11.1`: `classic.SessionStart`를 건너뛰게 하는 정책 플러그인 아래에서도 `/compact`나 `/clear` 뒤 `/memo`가 다시 들어갑니다. 대화가 마지막으로 보낸 때보다 짧아지면 다시 보냅니다. session은 그 정책이 건너뛰는 이벤트에 훅을 두지 않아, 시작할 때 "hook was skipped" 줄이 뜨지 않습니다.
 - `0.11.0`: 정책 플러그인이 `session.compact` 훅을 건너뛰게 하는 환경에서도 smart-compact가 다시 compact합니다. handoff를 `/compact` 지시문으로 함께 보내고(`compacted:guided`, 엔진 호출 한 번, 요약은 recap으로 보관), `/smart-compact off|on`이 생겼습니다. compact마다 arm(before/after/off)과 전후 컨텍스트 토큰이 기록되고 `/smart-compact log`에서 arm별로 비교됩니다. 표식을 단 플러그인 compact를 알아보고, 더는 `compact-not-run`을 남기지 않습니다.
 - `0.10.0`: smart-compact가 자기 `/compact`를 직접 처리합니다. recap에 최근 턴 원문을 그대로 붙여 모델 호출 한 번으로 끝내고, 엔진 요약기가 다시 돌지 않습니다. auto-compact도 같은 handoff를 받고, `/smart-compact log`에 쓴 토큰 수가 남습니다.

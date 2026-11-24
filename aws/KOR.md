@@ -87,3 +87,4 @@ MFA 일련번호, 1Password `vault`/`item`/`otp_item`을 넘깁니다. 프로필
 필요 없습니다.
 
 0.2.2: Codex에서도 같은 서버와 스킬을 씁니다(`.codex-plugin/plugin.json`).
+0.2.3: 로그인 안내가 "access key" 대신 "사용자 이름"과 "비밀번호"라고 말합니다. 숨김 입력창에서 취소를 누르면 "Hidden-answer dialog failed" 대신 취소로 처리됩니다.

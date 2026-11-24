@@ -86,3 +86,4 @@ Setup: needs the `aws` CLI on the PATH; if it is missing the server answers 'aws
 The plugin starts `plugin:aws:readonly-aws` from one bundled file; no npm and no network on install.
 
 0.2.2: Codex gets the same server and skills (`.codex-plugin/plugin.json`).
+0.2.3: the login prompts say "username" and "password", never "access key"; Cancel in the hidden dialog now ends as a cancel instead of "Hidden-answer dialog failed".
