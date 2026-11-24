@@ -111,6 +111,15 @@ the snapshot. A round always builds (the user's standing word: "결과물도 검
    in words, the item stays where its scene puts it (the user kept 05/A5 in the body with its
    numbers out). An item whose scene is still an open question is selected on its latest 정정, not excluded.
    `selection` flags a project whose 본문 items state no measured result: that project goes to 부록.
+   **Chapters first, then leads.** Before rows, decide the chapters: which project becomes how many
+   chapters, each with one result it ends on (the user's deck split one OMS project into a
+   rate-limit chapter and an incident chapter). A 본문 item is a step toward its chapter's result or
+   the result itself. A good scene that ends where it starts — a flaw written down with no fix and
+   no result after it (not a textbook Outbox), a metric found blind with nothing measured after
+   (a dashboard), a plan changed that no page tells (Kafka → SQS) — goes to 부록 as a document, not
+   본문: in the body the reader asks "why not done properly?" and the page has no answer (user,
+   2026-11-24, on such an item: "이런 판단이 아쉬운거임"). A 확정사실 ban on wording ("재발 방지가
+   장애를 키웠다") bans the sentence, not the item: the 4 recurrence fixes still lead the incident chapter.
    A weak scene goes to 부록, never 제외 (`selection` flags it). When a chapter has more passing items
    than its pages can lead, the surplus goes to 부록 — never 제외 by the writer — and which ones lead
    is one question to the user (`questions --add`), since only they know which of their work to show

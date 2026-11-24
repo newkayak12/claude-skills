@@ -35,4 +35,8 @@ skill judged differently (2026-11-24: 2, 8 and 11 failures on the same 27 items)
 | F3 | The source is someone else's (`_참고_타인작성`), or names a ticket or document (CL-244) with no line saying the person wrote it or made the call | a question asking who wrote it; keep A. Not F3: the item itself states the work as theirs (02/A1 "본인 기여는 집계·분류·대조"); the curator's narration counts as that line only when it names the person ("작성자 본인") |
 | F4 | A later 정정 rejects the title or premise | **not a failure**: write the scene from the latest 정정 block (P8); the stale title is a question |
 
+A scene says the item is A; it does not say the item leads the body. P2 and P5 lead only when
+the fix and its result follow in the same chapter (the semaphore flaw → redesign → p95 21.5s→1.7s);
+otherwise the item is an appendix document (manage step 2, chapters first).
+
 A number 확정사실 bans never fails a scene: the scene is written without it (P4).
