@@ -346,10 +346,6 @@ toasts).
 
 ### Repo and rules
 
-179. **Local failure records become backlog cards without copy-paste**
-   - Why: user, 2026-11-24, pasting a trophy Failures row (database · query, mcp_error ×17, "optimizer hint /*+ ... */ is not allowed"): "이런거 왜 자동 수집 안되는거야?". Telemetry sends only fixed codes and counts (by design); the error text stays local and reaches the maintainer only when pasted.
-   - Acceptance: a repo-only script (`_repo/scripts/`) reads the local trophy failure records, groups by plugin · skill/tool · reason · text, and adds or updates one backlog card per group with count, versions and the first line of text (no paths, prompts or ids); a re-run updates counts instead of duplicating; a test on fixture records. Nothing is sent anywhere.
-
 ### Subagents and parallel runs — use and clean up (user, 2026-10-17)
 
 ### teams plugin bugs
