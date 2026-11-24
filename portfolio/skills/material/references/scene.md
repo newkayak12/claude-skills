@@ -28,7 +28,7 @@ skill judged differently (2026-11-24: 2, 8 and 11 failures on the same 27 items)
 |---|---|---|
 | F1 | It says what the system does, no decision | find their decision in the item; if none, propose regrade to B |
 | F2 | Work volume or a task line (a 91-API survey) | propose regrade to B |
-| F3 | The source is someone else's (`_참고_타인작성`) and nothing says they wrote it | `[확인 필요: 작성자]`, keep A |
-| F4 | A later 정정 rejects the title or premise | **not a failure**: write the scene from the latest 정정 block (P8); the stale title goes to `docs/확인할-것.md` |
+| F3 | The source is someone else's (`_참고_타인작성`) and nothing says they wrote it | a `gaps.md` question asking who wrote it; keep A |
+| F4 | A later 정정 rejects the title or premise | **not a failure**: write the scene from the latest 정정 block (P8); the stale title is a `gaps.md` question |
 
 A number 확정사실 bans never fails a scene: the scene is written without it (P4).
