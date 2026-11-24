@@ -114,6 +114,13 @@ context or in a figure either; `claims` flags it on any page citing the item), w
    in `확정사실.md`. `selection` reads the table back; a 쓰임 outside the three is a problem.
 3. **Draft.** No skeleton yet, or a new project → write it from the `본문`/`부록` items only: one
    project as why → the user's role and decision → result; strengths chosen from the evidence.
+   **One chapter at a time, each reviewed before the next:** write a chapter (its cover, pages and
+   results page), run `claims` on it, then hand only that chapter, its cited items, `확정사실.md` and
+   the workspace's rubric (`판정기준.md` when it exists, else the rules below) to a separate reviewer
+   subagent that did not write it; it returns rule-numbered findings, the writer revises, and the
+   chapter is done when the reviewer has none left. Assemble after the last chapter, then review the
+   whole once for what spans chapters: contents vs titles, one cover archetype, appendix size,
+   figure forms by page role (user, 2026-11-24: "작은 단위로 작성-퇴고 나중에 모아서 진행").
    Each page that carries a figure or a reason cites its items on one line under its heading, `글감: <id>, <id>` (a ledger item is
    `NN_프로젝트/A1`, never a README or index; a fact only `확정사실.md` holds needs no cite); a reason the item does not give is written `[확인 필요: …]`, never filled in.
    The draft ends with `claims`: each problem fixed (a `제외` item's lines go) or left `[확인 필요]`. A `no_figure`
