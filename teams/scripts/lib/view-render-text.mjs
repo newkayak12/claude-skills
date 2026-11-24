@@ -1,6 +1,9 @@
 // Plain-text tree rendering of the collect() model - for terminals and CI logs. The HTML page
 // (view.mjs) renders the SAME model; this file only turns it into indented lines.
 
+import { busMessages } from './view-bus.mjs';
+import { busDigest } from './bus-digest.mjs';
+
 const STATE_MARK = {
   pending: '.', running: '>', done: 'v', failed: 'x', skipped: '-', blocked: '!',
   complete: 'v', missing: '?', unknown: '?', waiting_human: 'H',
@@ -209,6 +212,8 @@ export function renderText(model) {
       out.push(line(1, `${ts} ${event} ${JSON.stringify(rest)}`));
     }
   }
+  const bus = model.tasks_dir ? busMessages(model.tasks_dir, model.task_id) : [];
+  if (bus.length) out.push(busDigest(bus));
   return out.join('\n') + '\n';
 }
 
