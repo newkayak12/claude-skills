@@ -292,7 +292,8 @@ toasts).
 
 ### session plugin
 
-168. **smart-compact compacts again, keeps the handoff, saves tokens, and measures itself — in E-89c4c835**
+168. **smart-compact compacts again, keeps the handoff, saves tokens, and measures itself**
+   - E-c2c146f3 (2026-11-25, L, ~$39 of $50, partial, merged by hand e30a1c96): pre-write once per compaction epoch, reuse in session.compact, pending charge, engine-compaction recap, per-arm log, bare /smart-compact regression tests. Left: the bridge file is still never written (D1 rejected 72/85/88 — the package said "write no bridge until proven"), so PreCompact under the org policy still has nothing to read; the live run; 4 session tests fail on main too ("start band, retro and recap rows", all four surfaces).
    - E-1f93da92 (2026-11-24, L, $27.44 of $25, partial): P1 shipped (PreCompact command hook reads a written handoff through a bridge file contract, f4fc61e3 cherry-picked). Left: P2, the mod side — pre-write on turn.complete near the threshold, writing the bridge file, reuse in session.compact, pending-charge accounting, noteTurnTokens keeping the recap after an engine compaction, off-arm summarizer usage, the live run. Plan: `.teams_output/team/E-1f93da92/10-prd-F1.md` (F1-AC-1..39).
    - Why: 2026-11-20, the 0.10.0 log (50 entries, 2026-11-19 12:54-23:45 UTC, threshold 30%) shows 4 of 4
      threshold hits ending `compact-not-run`, 0 `compacted:recap`, 0 `auto-compact` entries. Cause
