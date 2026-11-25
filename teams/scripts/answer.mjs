@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // answer.mjs - the engine side of the teams pane's answer mode (the pane runs it through $.process.run and
-// writes no task file). It reads the cards waiting on a person and submits an answer through the code tm_submit
-// runs (toolSubmit), so an answer from the pane and one from tm_submit are the same write.
+// writes no task file). It reads the cards waiting on a person and answers one through toolAnswer, the code the
+// tm_answer tool runs, so an answer from the pane, tm_answer and tm_submit are the same write.
 //
 //   node answer.mjs --card --task <id> [--story <Pn> | --key <card key>] [--tasks-dir <dir>]
 //       prints { ok: true, task_id, cards: [{ key, node_id, title, story_key, ask_id, since, questions: [{ question, options }] }] }
@@ -12,7 +12,7 @@
 //       engine's own refusal text; the card stays as it was on a refusal
 //
 // One JSON line on stdout, exit 0 for either answer (the pane reads `ok`); exit 2 only for a usage error.
-// toolSubmit is imported from mcp/taskmanager-claims.mjs: loading it opens no server and starts no daemon.
+// toolAnswer is imported from mcp/storyanswer.mjs: loading it opens no server and starts no daemon.
 
 function arg(argv, name) { const i = argv.indexOf(name); return i < 0 ? undefined : argv[i + 1]; }
 
@@ -57,20 +57,13 @@ async function main(argv) {
   }
 
   if (!key) { process.stderr.write('usage: --answer needs --key <ask card key>\n'); process.exitCode = 2; return; }
-  const rawTask = await hasNodes(task);
-  if (rawTask && !Array.isArray(rawTask.nodes)) return out({ ok: false, reason: `${task} has no nodes yet: nothing to answer` });
   let decisions;
   const raw = arg(argv, '--decisions');
   if (raw !== undefined) {
     try { decisions = JSON.parse(raw); } catch { return out({ ok: false, reason: '--decisions is not valid JSON' }); }
   }
-  const { toolSubmit } = await import('../mcp/taskmanager-claims.mjs');
-  try {
-    const r = toolSubmit({ task_id: task, key, payload: decisions === undefined ? {} : { decisions } });
-    out({ ok: true, key: r.key, node_id: r.node_id, state: r.state });
-  } catch (e) {
-    out({ ok: false, reason: String((e && e.message) || e) });
-  }
+  const { toolAnswer } = await import('../mcp/storyanswer.mjs');
+  out(toolAnswer({ task_id: task, key, decisions }));
 }
 
 main(process.argv.slice(2)).catch((e) => { out({ ok: false, reason: String((e && e.message) || e) }); });

@@ -9,6 +9,7 @@ process.env.HARNESS_TEST_NO_DAEMON = '1';
 process.env.HARNESS_JUDGE_TIMEOUT_MS = '1500';
 delete process.env.HARNESS_TEST_NO_DRIVER;
 delete process.env.HARNESS_ANSWER_DRIVER;
+delete process.env.TEAMS_ASK_TASK_ID; // the pane's env: no driver
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
@@ -29,6 +30,7 @@ const tm = await import(join(HERE, '..', 'mcp', 'taskmanager.mjs'));
 const graph = await import(join(HERE, '..', 'mcp', 'graph.mjs'));
 const daemon = await import(join(HERE, '..', 'mcp', 'daemon.mjs'));
 const { callTool } = tm;
+const { peekHumanActions } = await import(join(HERE, '..', 'mcp', 'graph-runfile.mjs'));
 
 process.on('exit', () => { for (const d of [ROOT, SCRATCH]) { try { rmSync(d, { recursive: true, force: true }); } catch { /* best-effort */ } } });
 
@@ -167,6 +169,177 @@ test('an unknown card, an unknown task and a missing flag are refused or reporte
   assert.equal(cli('--card').status, 2);
   assert.equal(cli('--task', t.id).status, 2);
   assert.equal(cli('--answer', '--task', t.id).status, 2);
+});
+
+// ---------- tm_answer / toolAnswer (F3-AC-19..22). The env is toolAnswer's second argument. ----------
+
+const { toolAnswer } = await import(join(HERE, '..', 'mcp', 'storyanswer.mjs'));
+const PERSON_ENV = {};
+const DRIVER_ENV = { TEAMS_ASK_TASK_ID: 'the-driver-task' };
+
+// A STORY ask by P1, forwarded to the person and waiting; P2 is a declared sibling.
+async function seedStoryAsk() {
+  const t = seedTask();
+  const task = load(t.id);
+  task.spec.packages.push({ ...task.spec.packages[0], id: 'P2', title: 'module b', touches: ['b.txt'] });
+  writeFileSync(tm.taskPath(t.id), JSON.stringify(task));
+  await callTool('tm_ask', { task_id: t.id, key: t.key, question: Q });
+  await daemon.stepOnce(t.id, { judge: async () => { throw new Error('no judge expected'); }, answer: async () => JSON.stringify({ verdict: 'forward', reason: 'unsettled' }) });
+  const card = cli('--card', '--task', t.id, '--story', 'P1').out.cards[0];
+  const sibling = `E-${t.id.slice(0, 8)}/P2`;
+  return { ...t, card, sibling, decisions: [{ question: Q, chose: 'cents' }] };
+}
+const rawLedger = (id) => readFileSync(join(tm.taskDir(id), 'ledger.jsonl'), 'utf8');
+
+// What an answer wrote: its ledger lines without the run-varying values.
+const written = (t, from) => ledger(t.id).slice(from).map((e) => {
+  const { ts, since, pid, ...rest } = e;
+  return JSON.stringify(rest).split(t.card.ask_id).join('ASK_ID').split(t.id).join('TASK_ID').split(t.id.slice(0, 8)).join('TASK8');
+});
+
+test('F3-AC-19: tm_answer and answer.mjs --answer leave equal ledger lines on the same fixture', async () => {
+  const a = await seedStoryAsk();
+  const b = await seedStoryAsk();
+  const [fromA, fromB] = [ledger(a.id).length, ledger(b.id).length];
+  const viaTool = await callTool('tm_answer', { task_id: a.id, key: a.card.key, decisions: a.decisions });
+  assert.deepEqual(viaTool, { ok: true, key: a.card.key, node_id: a.card.node_id, state: 'done' });
+  const viaCli = cli('--answer', '--task', b.id, '--key', b.card.key, '--decisions', JSON.stringify(b.decisions));
+  assert.equal(viaCli.out.ok, true, JSON.stringify(viaCli.out));
+  const lines = written(a, fromA);
+  assert.ok(lines.some((l) => /"event":"answered".*"by":"person"|"by":"person".*"event":"answered"/.test(l)), lines.join('\n'));
+  assert.deepEqual(lines, written(b, fromB));
+});
+
+test('F3-AC-20, 21: an unknown key and an answered, pending or done ask are refused in the engine\'s own words, nothing written', async () => {
+  const t = await seedStoryAsk();
+  const refused = (key, re) => {
+    const before = rawLedger(t.id);
+    const r = toolAnswer({ task_id: t.id, key, decisions: t.decisions }, PERSON_ENV);
+    assert.equal(r.ok, false, key);
+    assert.match(r.reason, re);
+    assert.equal(rawLedger(t.id), before, `${key}: the ledger is untouched`);
+  };
+  refused(`E-${t.id.slice(0, 8)}/TASK/ask:nope:1`, /has no card waiting on a human/);
+  refused('garbage', /TASK key/);
+  refused(`E-${t.id.slice(0, 8)}/TASK/accept:P1:1`, /is pending, not waiting_human/);
+  refused(`E-${t.id.slice(0, 8)}/TASK/shape`, /is done, not waiting_human/);
+  assert.equal(toolAnswer({ task_id: t.id, key: t.card.key, decisions: t.decisions }, PERSON_ENV).ok, true);
+  refused(t.card.key, /not waiting_human/);
+  assert.match(toolAnswer({ task_id: 'no-such-task', key: t.card.key, decisions: [] }, PERSON_ENV).reason, /unknown task/);
+});
+
+test('F3-AC-22: the person is accepted, with no by or by person', async () => {
+  for (const by of [undefined, '', 'person']) {
+    const t = await seedStoryAsk();
+    const r = toolAnswer({ task_id: t.id, key: t.card.key, decisions: t.decisions, by }, PERSON_ENV);
+    assert.equal(r.ok, true, `${by}: ${r.reason}`);
+  }
+});
+
+test('F3-AC-22: a driver with a sibling\'s key is accepted, in both key forms', async () => {
+  for (const form of ['short', 'full']) {
+    const t = await seedStoryAsk();
+    const r = toolAnswer({ task_id: t.id, key: t.card.key, decisions: t.decisions, by: form === 'short' ? 'P2' : t.sibling }, DRIVER_ENV);
+    assert.equal(r.ok, true, `${form}: ${r.reason}`);
+    assert.equal(ledger(t.id).filter((e) => e.event === 'answered').length, 1);
+  }
+});
+
+test('F3-AC-22: own ask, a driver with no by, person or teamleader, and an unknown by are refused with the ledger byte-equal', async () => {
+  const t = await seedStoryAsk();
+  const before = rawLedger(t.id);
+  const cases = [
+    ['P1', DRIVER_ENV, /may not answer its own ask/],
+    [t.key, DRIVER_ENV, /may not answer its own ask/],
+    ['P1', PERSON_ENV, /may not answer its own ask/],
+    [undefined, DRIVER_ENV, /a driver must pass its own STORY key/],
+    ['person', DRIVER_ENV, /a driver must pass its own STORY key/],
+    ['teamleader', DRIVER_ENV, /a driver must pass its own STORY key/],
+    ['somebody', DRIVER_ENV, /by must be person, teamleader or a STORY key/],
+  ];
+  for (const [by, env, re] of cases) {
+    const r = toolAnswer({ task_id: t.id, key: t.card.key, decisions: t.decisions, by }, env);
+    assert.equal(r.ok, false, String(by));
+    assert.match(r.reason, re);
+    assert.equal(rawLedger(t.id), before, `${by}: nothing written`);
+  }
+  assert.equal(cli('--card', '--task', t.id, '--story', 'P1').out.cards.length, 1, 'still waiting');
+});
+
+// P1's child run holds a waiting ask (ask:U1:1) its own driver raised; task also declares sibling P2.
+function seedChildAsk() {
+  const t = seedTask();
+  const task = load(t.id);
+  task.spec.packages.push({ ...task.spec.packages[0], id: 'P2', title: 'module b', touches: ['b.txt'] });
+  writeFileSync(tm.taskPath(t.id), JSON.stringify(task));
+  const { cwd, run_id } = task.nodes.find((n) => n.node_id === 'dispatch:P1:1').child;
+  const childPath = join(cwd, '.teams_output', 'broker', 'runs', `${run_id}.json`);
+  const child = JSON.parse(readFileSync(childPath, 'utf8'));
+  const inv = graph.node('investigate:U1:1', 'investigate', [], { state: 'done', subgoal_id: 'U1', result: { stage_ok: true } });
+  child.nodes.unshift(inv);
+  graph.openAsk(child, inv, [{ question: Q, options: ['cents', 'dollars'] }]);
+  writeFileSync(childPath, JSON.stringify(child));
+  const snapshot = () => ({
+    task: readFileSync(tm.taskPath(t.id), 'utf8'),
+    ledger: existsSync(join(tm.taskDir(t.id), 'ledger.jsonl')) ? rawLedger(t.id) : '',
+    child: readFileSync(childPath, 'utf8'),
+    pending: peekHumanActions(cwd, run_id),
+  });
+  return { ...t, e: `E-${t.id.slice(0, 8)}`, snapshot, decisions: [{ question: Q, chose: 'cents' }] };
+}
+
+const assertRefused = (t, args, env, re) => {
+  const before = t.snapshot();
+  const r = toolAnswer({ task_id: t.id, decisions: t.decisions, ...args }, env);
+  const label = `by ${args.by}, key ${args.key}`;
+  assert.equal(r.ok, false, label);
+  assert.match(r.reason, re, label);
+  assert.deepEqual(t.snapshot(), before, `${label}: nothing written`);
+};
+
+test('F3-AC-22: a driver may not answer any card of its own STORY\'s child run, by any key or by spelling', () => {
+  const t = seedChildAsk();
+  assert.deepEqual(t.snapshot().pending, []);
+  for (const by of ['P1', `${t.e}/P1`]) {
+    for (const key of [`${t.e}/P1`, `${t.e}/P1/U1`, `${t.e}/P1/ask:U1:1`]) {
+      assertRefused(t, { key, by }, DRIVER_ENV, /may not answer its own ask/);
+    }
+  }
+});
+
+test('F3-AC-22: a driver may not answer a manager card opened for its own package', () => {
+  const t = seedChildAsk();
+  const task = load(t.id);
+  graph.openAsk(task, task.nodes.find((n) => n.node_id === 'accept:P1:1'), [{ question: Q, options: ['cents', 'dollars'] }]);
+  writeFileSync(tm.taskPath(t.id), JSON.stringify(task));
+  const ask = task.nodes.find((n) => n.stage === 'ask');
+  assertRefused(t, { key: `${t.e}/TASK/${ask.node_id}`, by: 'P1' }, DRIVER_ENV, /may not answer its own ask/);
+});
+
+test('F3-AC-22: by must be a package this task has, spelled exactly, under any env', () => {
+  const t = seedChildAsk();
+  for (const by of ['P01', 'P001', 'P999', `${t.e}/P01`, 'E-deadbeef/P2']) {
+    for (const env of [DRIVER_ENV, PERSON_ENV]) {
+      assertRefused(t, { key: `${t.e}/P1/U1`, by }, env, /by must be person, teamleader or a STORY key/);
+    }
+  }
+});
+
+test('F3-AC-22: P01 on P1\'s own STORY ask is refused', async () => {
+  const t = await seedStoryAsk();
+  const before = rawLedger(t.id);
+  const r = toolAnswer({ task_id: t.id, key: t.card.key, decisions: t.decisions, by: 'P01' }, DRIVER_ENV);
+  assert.equal(r.ok, false);
+  assert.equal(rawLedger(t.id), before);
+});
+
+test('F3-AC-22: a sibling driver and the person may answer P1\'s child card', () => {
+  for (const [by, env] of [['P2', DRIVER_ENV], [undefined, PERSON_ENV], ['person', PERSON_ENV]]) {
+    const t = seedChildAsk();
+    const r = toolAnswer({ task_id: t.id, key: `${t.e}/P1/U1`, decisions: t.decisions, by }, env);
+    assert.equal(r.ok, true, `${by}: ${r.reason}`);
+    assert.equal(t.snapshot().pending.length, 1);
+  }
 });
 
 test('a task with no nodes: --card and --answer report a clear reason', () => {

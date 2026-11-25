@@ -179,7 +179,7 @@ function codexArgv(extra, env, root = 'x') {
     const bin = recordingCodex(dir);
     writeFileSync(join(dir, 'prompt.md'), 'do it');
     spawnSync('node', [ADAPTER, '--stage', 'implement', '--cwd', dir, '--prompt-file', join(dir, 'prompt.md'), '--output', join(dir, 'out.json'), '--sandbox', 'danger-full-access', ...extra],
-      { cwd: dir, encoding: 'utf8', env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, TEAMS_WIKI_ROOT: '', ...env } });
+      { cwd: dir, encoding: 'utf8', env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, TEAMS_WIKI_ROOT: '', TEAMS_ASK_TASK_ID: undefined, HARNESS_TASKS_DIR: undefined, ...env } });
     return JSON.parse(readFileSync(join(dir, 'argv.json'), 'utf8'));
   } finally { rmSync(dir, { recursive: true, force: true }); }
 }
@@ -193,20 +193,45 @@ test('TEAMS_WIKI_ROOT set: codex exec gets exactly two -c pairs (command, args) 
   assert.equal(cmd.slice(0, cmd.indexOf('=')), 'mcp_servers.teams.command');
   assert.equal(JSON.parse(cmd.slice(cmd.indexOf('=') + 1)), process.execPath);
   assert.equal(args.slice(0, args.indexOf('=')), 'mcp_servers.teams.args');
-  assert.deepEqual(JSON.parse(args.slice(args.indexOf('=') + 1)), [WIKI_SERVER, '--only', 'wiki', '--root', root]);
+  assert.deepEqual(JSON.parse(args.slice(args.indexOf('=') + 1)), [WIKI_SERVER, '--stage', 'node', '--root', root]);
   assert.ok(isAbsolute(WIKI_SERVER));
   assert.equal(argv[argv.length - 1], 'do it', 'the prompt stays last');
 });
 
-test('codex exec argv is unchanged without TEAMS_WIKI_ROOT or with --no-wiki; the write/smoke probes (--detect) never get it', () => {
-  assert.equal(codexArgv([], {}).includes('-c'), false);
-  assert.equal(codexArgv(['--no-wiki'], { TEAMS_WIKI_ROOT: '/proj/main' }).includes('-c'), false);
+// key -> parsed TOML value of every -c override
+const teamsConfig = (argv) => Object.fromEntries(cOverrides(argv).map((v) => [v.slice(0, v.indexOf('=')), JSON.parse(v.slice(v.indexOf('=') + 1))]));
+
+test('F3-AC-7: --no-wiki or no TEAMS_WIKI_ROOT keeps the --stage node server and hides wiki_* through its env', () => {
+  for (const [label, extra, env, rootArgs] of [
+    ['no root', [], {}, []],
+    ['--no-wiki', ['--no-wiki'], { TEAMS_WIKI_ROOT: '/proj/main' }, ['--root', '/proj/main']],
+  ]) {
+    assert.deepEqual(teamsConfig(codexArgv(extra, env)), {
+      'mcp_servers.teams.command': process.execPath,
+      'mcp_servers.teams.args': [WIKI_SERVER, '--stage', 'node', ...rootArgs],
+      'mcp_servers.teams.env.TEAMS_WIKI_OFF': '1',
+    }, label);
+  }
+});
+
+test('F3-AC-7: TEAMS_ASK_TASK_ID and HARNESS_TASKS_DIR (resolved) are forwarded to the server env when set, absent otherwise', () => {
+  const forwarded = teamsConfig(codexArgv([], { TEAMS_WIKI_ROOT: '/proj/main', TEAMS_ASK_TASK_ID: 'task "1"', HARNESS_TASKS_DIR: '/abs/x/../tasks' }));
+  assert.equal(forwarded['mcp_servers.teams.env.TEAMS_ASK_TASK_ID'], 'task "1"');
+  assert.equal(forwarded['mcp_servers.teams.env.HARNESS_TASKS_DIR'], '/abs/tasks');
+  assert.equal('mcp_servers.teams.env.TEAMS_WIKI_OFF' in forwarded, false);
+  const relative = teamsConfig(codexArgv([], { HARNESS_TASKS_DIR: 'rel-tasks' }))['mcp_servers.teams.env.HARNESS_TASKS_DIR'];
+  assert.ok(isAbsolute(relative) && relative.endsWith('/rel-tasks'), relative);
+  const absent = Object.keys(teamsConfig(codexArgv([], { TEAMS_WIKI_ROOT: '/proj/main' })));
+  assert.deepEqual(absent, ['mcp_servers.teams.command', 'mcp_servers.teams.args']);
+});
+
+test('codex exec: the write/smoke probes (--detect) never get the teams server, even with the driver env set', () => {
   const dir = mkdtempSync(join(tmpdir(), 'codex-detect-'));
   try {
     spawnSync('git', ['init', '-q'], { cwd: dir });
     const bin = recordingCodex(dir);
     spawnSync('node', [ADAPTER, '--detect', '--cwd', dir, '--output', join(dir, 'out.json'), '--sandbox', 'danger-full-access'],
-      { cwd: dir, encoding: 'utf8', env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, TEAMS_WIKI_ROOT: '/proj/main' } });
+      { cwd: dir, encoding: 'utf8', env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, TEAMS_WIKI_ROOT: '/proj/main', TEAMS_ASK_TASK_ID: 't', HARNESS_TASKS_DIR: '/t' } });
     const seen = (() => { try { return readFileSync(join(dir, 'argv.json'), 'utf8'); } catch { return '[]'; } })();
     assert.equal(JSON.parse(seen).includes('-c'), false);
   } finally { rmSync(dir, { recursive: true, force: true }); }

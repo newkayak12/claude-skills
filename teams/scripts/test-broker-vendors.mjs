@@ -182,6 +182,24 @@ test('probe: not ready but reachable is reported as exactly that (a reasoning no
   assert.equal(r.reason, 'read-only');
 }));
 
+// F3-AC-13: a shorter probe must not shorten the wait. This adapter is slower than any measured
+// claude probe (about 6.5s at most) and still well inside the timeout.
+test('probe: a slow adapter within the timeout is still ready', () => tmp(async (d) => {
+  probeCache.clear();
+  const saved = process.env.BROKER_PROBE_TIMEOUT_MS;
+  process.env.BROKER_PROBE_TIMEOUT_MS = '60000';
+  try {
+    const slow = scriptVendor(d, `
+const a = process.argv; const out = a[a.indexOf('--output') + 1];
+setTimeout(() => require('node:fs').writeFileSync(out, JSON.stringify({ ok: true, ready: true, reachable: true })), 7000);
+`);
+    const r = await probe('slow', slow, d, 'workspace-write');
+    assert.deepEqual([r.ready, r.reachable, r.reason], [true, true, '']);
+  } finally {
+    if (saved === undefined) delete process.env.BROKER_PROBE_TIMEOUT_MS; else process.env.BROKER_PROBE_TIMEOUT_MS = saved;
+  }
+}));
+
 test('probe: a vendor with no adapter file, or whose binary is missing, is refused with a named reason', () => tmp(async (d) => {
   probeCache.clear();
   const noAdapter = await probe('ghost', { command: 'node', args: [join(d, 'nope.mjs')] }, d, 'workspace-write');

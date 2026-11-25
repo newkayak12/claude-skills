@@ -6,6 +6,7 @@ import { serviceDaemon } from './taskmanager-drivers.mjs';
 import { syncTickets, toolAssign, toolBoard, toolCancel, toolClean, toolDocs, toolEvents, toolFile, toolHold, toolInbox, toolLog, toolNextUnlessHeld, toolOpen, toolRetry, toolRun, toolStatus, toolTicket, toolWait } from './taskmanager-handlers.mjs';
 import { toolSubmit } from './taskmanager-claims.mjs';
 import { post, readMarked } from './bus.mjs';
+import { toolAnswer } from './storyanswer.mjs';
 
 // ---------- tools ----------
 
@@ -349,6 +350,21 @@ const TOOLS = [
     },
     outputSchema: { type: 'object', properties: { task_id: { type: 'string' }, key: { type: 'string' }, messages: { type: 'array', items: { type: 'object', properties: { ts: { type: 'number' }, from: { type: 'string' }, to: { type: 'string' }, topic: { type: 'string' }, body: { type: 'string' }, reply_to: { type: ['number', 'null'] } } } }, cursor: { type: 'number' }, more: { type: 'boolean' } }, required: ['task_id', 'key', 'messages', 'cursor', 'more'] },
   },
+  {
+    name: 'tm_answer',
+    description: 'Answer a waiting ask card: `key` is the card\'s own key (tm_inbox), `decisions` one {question, chose} each. `by`: omit for the person; a driver must pass its own STORY key (Pn or E-xxxxxxxx/Pn), never person or teamleader, and may not answer its own ask. Returns {ok:true, key, node_id, state}, or {ok:false, reason} with nothing written.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        task_id: { type: 'string' },
+        key: { type: 'string', description: 'the ask card\'s key, E-xxxxxxxx/TASK/ask:...' },
+        decisions: { type: 'array', items: { type: 'object', properties: { question: { type: 'string' }, chose: { type: 'string' } }, required: ['question', 'chose'] } },
+        by: { type: 'string', description: 'person, teamleader or your own STORY key' },
+      },
+      required: ['task_id', 'key', 'decisions'],
+    },
+    outputSchema: { type: 'object', properties: { ok: { type: 'boolean' }, key: { type: 'string' }, node_id: { type: 'string' }, state: { type: 'string' }, reason: { type: 'string' } }, required: ['ok'] },
+  },
 ];
 
 // board.jsonl - ticket TRANSITIONS only, append-only, never read as ground truth. tickets.mjs's
@@ -384,6 +400,7 @@ function dispatch(name, a, signal) {
     case 'tm_hold': return toolHold(a);
     case 'tm_post': return withTask(a, (task) => post(task, a, process.env));
     case 'tm_read': return withTask(a, (task) => ({ task_id: task.run_id, key: a.key, ...readMarked(task, { reader: a.key, cursor: a.cursor }) }));
+    case 'tm_answer': return toolAnswer(a, process.env);
     default: throw new Error('unknown tool: ' + name);
   }
 }

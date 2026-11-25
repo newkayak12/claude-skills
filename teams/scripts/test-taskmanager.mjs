@@ -274,8 +274,8 @@ test('serves the MCP handshake and the seventeen manager tools', async () => {
   try {
     const r = await c.send('tools/list', {});
     const names = r.result.tools.map((t) => t.name);
-    assert.equal(names.length, 36, 'the one teams server lists every tool');
-    assert.deepEqual(names.filter((n) => n.startsWith('tm_')).sort(), ['tm_ask', 'tm_assign', 'tm_board', 'tm_cancel', 'tm_clean', 'tm_docs', 'tm_events', 'tm_file', 'tm_hold', 'tm_inbox', 'tm_log', 'tm_next', 'tm_open', 'tm_post', 'tm_read', 'tm_retry', 'tm_run', 'tm_status', 'tm_submit', 'tm_ticket', 'tm_wait']);
+    assert.equal(names.length, 37, 'the one teams server lists every tool');
+    assert.deepEqual(names.filter((n) => n.startsWith('tm_')).sort(), ['tm_answer', 'tm_ask','tm_assign', 'tm_board', 'tm_cancel', 'tm_clean', 'tm_docs', 'tm_events', 'tm_file', 'tm_hold', 'tm_inbox', 'tm_log', 'tm_next', 'tm_open', 'tm_post', 'tm_read', 'tm_retry', 'tm_run', 'tm_status', 'tm_submit', 'tm_ticket', 'tm_wait']);
   } finally {
     c.close();
   }
@@ -10154,6 +10154,16 @@ test('§6.5-3: the brainstorm node, interactive, puts every question on ONE card
     assert.deepEqual(d['Does the cap span presale?'], ['no', 'ask']);
     assert.deepEqual(d['Show remaining quota?'], ['no', 'self-brainstorm']);
     assert.deepEqual((await tm.call('tm_next', { task_id })).ready.map((n) => n.node_id), ['areas']);
+  }, { brainstorm: true, interactive: true });
+});
+
+test('tm_submit({task_id, node_id}) on a waiting_human manager node is told to wait, and the card keeps waiting', async () => {
+  await withTask(async ({ tm, root, task_id }) => {
+    await tm.call('tm_submit', { task_id, node_id: 'size', payload: ok({ size: 'L', flow: 'develop', sizing: ['x'], handoff: 'h' }) });
+    await tm.call('tm_submit', { task_id, node_id: 'brainstorm', payload: ok(BRAINSTORM) });
+    const r = await tm.call('tm_submit', { task_id, node_id: 'ask:brainstorm:1', payload: ok({}) });
+    assert.equal(r.error, "node ask:brainstorm:1 is waiting_human: it is waiting for the person's answer. Wait for that answer; do not submit.");
+    assert.equal(readTask(root, task_id).nodes.find((n) => n.node_id === 'ask:brainstorm:1').state, 'waiting_human');
   }, { brainstorm: true, interactive: true });
 });
 

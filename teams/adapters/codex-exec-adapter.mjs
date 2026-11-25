@@ -78,17 +78,26 @@ if (opts.stage && !['implement', 'test'].includes(opts.stage)) usage();
 
 const cwd = resolve(opts.cwd);
 
-// The project wiki: when the engine sets TEAMS_WIKI_ROOT (task.cwd, never a worktree) a worker gets
-// exactly one MCP server, teams (server.mjs --only wiki), rooted there, through two -c overrides (value parsed as TOML;
-// JSON.stringify gives valid TOML basic strings and a valid inline array). Judging stages arrive
-// with --no-wiki and the write/smoke probes are separate argv lists: neither gets it.
+// Every node gets exactly one MCP server, teams (server.mjs --stage node: the bus tools next to
+// wiki_*), through -c overrides (value parsed as TOML; JSON.stringify gives valid TOML basic strings
+// and a valid inline array). The project wiki: when the engine sets TEAMS_WIKI_ROOT (task.cwd, never
+// a worktree) the server is rooted there. Without it, or with --no-wiki (judging stages),
+// TEAMS_WIKI_OFF hides wiki_*. The driver env is forwarded by name, since codex is not known to hand
+// its own env to an MCP server. The write/smoke probes are separate argv lists and get none of this.
 function wikiConfigArgs() {
+  if (opts.detect) return [];
   const root = process.env.TEAMS_WIKI_ROOT;
-  if (!root || opts.noWiki || opts.detect) return [];
   const server = fileURLToPath(new URL('../mcp/server.mjs', import.meta.url));
+  const { TEAMS_ASK_TASK_ID: askTask, HARNESS_TASKS_DIR: tasksDir } = process.env;
+  const env = {
+    ...(!root || opts.noWiki ? { TEAMS_WIKI_OFF: '1' } : {}),
+    ...(askTask ? { TEAMS_ASK_TASK_ID: askTask } : {}),
+    ...(tasksDir ? { HARNESS_TASKS_DIR: resolve(tasksDir) } : {}),
+  };
   return [
     '-c', `mcp_servers.teams.command=${JSON.stringify(process.execPath)}`,
-    '-c', `mcp_servers.teams.args=${JSON.stringify([server, '--only', 'wiki', '--root', root])}`,
+    '-c', `mcp_servers.teams.args=${JSON.stringify([server, '--stage', 'node', ...(root ? ['--root', root] : [])])}`,
+    ...Object.entries(env).flatMap(([name, value]) => ['-c', `mcp_servers.teams.env.${name}=${JSON.stringify(value)}`]),
   ];
 }
 const outputPath = resolve(opts.output);

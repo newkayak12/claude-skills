@@ -96,6 +96,21 @@ test('Claude adapter retains quota diagnostics and rejects malformed stage outpu
   } finally { rmSync(f.dir, { recursive: true, force: true }); }
 });
 
+// F3-US-3: the probe reads project settings only (no user plugins or hooks), as a lean node does.
+test('both detect probes pass --setting-sources project once; a stage run passes none of its own', () => {
+  const f = fixture();
+  try {
+    const argv = () => JSON.parse(readFileSync(join(f.dir, 'observed.json'))).args;
+    for (const sandbox of ['read-only', 'workspace-write']) {
+      assert.equal(f.run(['--detect', '--sandbox', sandbox]).status, 0);
+      assert.equal(argv()[argv().indexOf('--setting-sources') + 1], 'project', sandbox);
+      assert.equal(argv().filter(a => a === '--setting-sources').length, 1, sandbox);
+    }
+    f.run(['--prompt-file', join(f.dir, 'prompt.md'), '--stage', 'test']);
+    assert.ok(!argv().includes('--setting-sources'));
+  } finally { rmSync(f.dir, { recursive: true, force: true }); }
+});
+
 test('Claude accepts danger-full-access and bypasses the permission prompt there', () => {
   const f = fixture();
   try {
@@ -150,13 +165,13 @@ test('workspace-write still defers to the project permission layer', () => {
   } finally { rmSync(f.dir, { recursive: true, force: true }); }
 });
 
-// The project wiki: TEAMS_WIKI_ROOT hands a worker exactly one MCP server (teams, --only wiki) and names
-// its tools in --allowedTools (--tools only limits built-ins). --no-wiki or no root: the old empty config.
+// Every node gets exactly one MCP server (teams, --stage node); TEAMS_WIKI_ROOT roots it and names the wiki
+// tools in --allowedTools (--tools only limits built-ins). --no-wiki or no root: wiki_* hidden and not allowed.
 const WIKI_SERVER = fileURLToPath(new URL('../mcp/server.mjs', import.meta.url));
 const argvOf = f => JSON.parse(readFileSync(join(f.dir, 'observed.json'))).args;
 const withoutRoot = { TEAMS_WIKI_ROOT: '' };
 
-test('TEAMS_WIKI_ROOT set: one teams server (--only wiki) rooted there, its six tools allowed, strict config kept', () => {
+test('TEAMS_WIKI_ROOT set: one teams server (--stage node) rooted there, its six wiki tools and the bus allowed, strict config kept', () => {
   const f = fixture();
   try {
     const r = f.run(['--prompt-file', join(f.dir, 'prompt.md'), '--stage', 'implement'], { TEAMS_WIKI_ROOT: '/proj/main' });
@@ -164,37 +179,80 @@ test('TEAMS_WIKI_ROOT set: one teams server (--only wiki) rooted there, its six 
     const args = argvOf(f);
     assert.ok(args.includes('--strict-mcp-config'));
     assert.deepEqual(JSON.parse(args[args.indexOf('--mcp-config') + 1]), {
-      mcpServers: { teams: { command: process.execPath, args: [WIKI_SERVER, '--only', 'wiki', '--root', '/proj/main'] } },
+      mcpServers: { teams: { command: process.execPath, args: [WIKI_SERVER, '--stage', 'node', '--root', '/proj/main'] } },
     });
-    // card 173: a workspace-write node also gets Bash, so the exact list is Bash plus the six wiki tools
+    // card 173: a workspace-write node also gets Bash, so the exact list is Bash, the six wiki tools and the three bus tools
     assert.equal(args[args.indexOf('--allowedTools') + 1],
-      'Bash,mcp__teams__wiki_search,mcp__teams__wiki_get,mcp__teams__wiki_resume,mcp__teams__wiki_list,mcp__teams__wiki_status,mcp__teams__wiki_write');
+      'Bash,mcp__teams__wiki_search,mcp__teams__wiki_get,mcp__teams__wiki_resume,mcp__teams__wiki_list,mcp__teams__wiki_status,mcp__teams__wiki_write,mcp__teams__tm_ask,mcp__teams__tm_post,mcp__teams__tm_read');
   } finally { rmSync(f.dir, { recursive: true, force: true }); }
 });
 
-test('--no-wiki (a judging stage) or an unset TEAMS_WIKI_ROOT: the old empty config exactly; workspace-write allows only Bash', () => {
+const BUS_ALLOWED = 'mcp__teams__tm_ask,mcp__teams__tm_post,mcp__teams__tm_read';
+const nodeServer = (root) => ({ mcpServers: { teams: { command: process.execPath, args: [WIKI_SERVER, '--stage', 'node', ...(root ? ['--root', root] : [])] } } });
+
+test('--no-wiki (a judging stage) or an unset TEAMS_WIKI_ROOT: the node server stays; workspace-write allows Bash and the bus', () => {
   const f = fixture();
   try {
-    for (const [extra, env] of [[['--no-wiki'], { TEAMS_WIKI_ROOT: '/proj/main' }], [[], withoutRoot]]) {
+    for (const [extra, env, root] of [[['--no-wiki'], { TEAMS_WIKI_ROOT: '/proj/main' }, '/proj/main'], [[], withoutRoot, '']]) {
       const r = f.run(['--prompt-file', join(f.dir, 'prompt.md'), '--stage', 'test', ...extra], env);
       assert.equal(r.status, 0, r.stderr);
       const args = argvOf(f);
-      assert.equal(args[args.indexOf('--mcp-config') + 1], '{"mcpServers":{}}');
+      assert.deepEqual(JSON.parse(args[args.indexOf('--mcp-config') + 1]), nodeServer(root));
       assert.ok(args.includes('--strict-mcp-config'));
       // card 173: no wiki tools, but a workspace-write node may run Bash
-      assert.equal(args[args.indexOf('--allowedTools') + 1], 'Bash');
+      assert.equal(args[args.indexOf('--allowedTools') + 1], `Bash,${BUS_ALLOWED}`);
     }
   } finally { rmSync(f.dir, { recursive: true, force: true }); }
 });
 
-test('read-only with --no-wiki: the old empty config and no --allowedTools at all', () => {
+test('F3-AC-6: non-lean workspace-write and read-only nodes register a --stage node server, allow the three bus tools, and hide the wiki through env under --no-wiki', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'claude-nonlean-'));
+  try {
+    writeFileSync(join(dir, 'claude'), `#!/usr/bin/env node
+process.stdin.resume();
+process.stdin.on('end', () => { require('node:fs').writeFileSync('observed.json', JSON.stringify({ args: process.argv.slice(2), wikiOff: process.env.TEAMS_WIKI_OFF || null })); console.log(JSON.stringify({ result: '{"stage_ok":true}' })); });
+`);
+    chmodSync(join(dir, 'claude'), 0o755);
+    writeFileSync(join(dir, 'prompt.md'), 'x');
+    for (const sandbox of ['workspace-write', 'read-only']) {
+      for (const [extra, root, wikiOff] of [[[], '/proj/main', null], [['--no-wiki'], '/proj/main', '1'], [[], '', '1']]) {
+        const label = `${sandbox} ${extra.join(' ')} root=${root}`;
+        const env = { ...process.env, PATH: `${dir}:${process.env.PATH}`, TEAMS_WIKI_ROOT: root };
+        delete env.TEAMS_WIKI_OFF;
+        const r = spawnSync('node', [adapter, '--cwd', dir, '--prompt-file', join(dir, 'prompt.md'), '--output', join(dir, 'out.json'), '--sandbox', sandbox, ...extra], { encoding: 'utf8', env });
+        assert.equal(r.status, 0, `${label}: ${r.stderr}`);
+        const seen = JSON.parse(readFileSync(join(dir, 'observed.json')));
+        assert.deepEqual(JSON.parse(seen.args[seen.args.indexOf('--mcp-config') + 1]), nodeServer(root), label);
+        const allowed = seen.args[seen.args.indexOf('--allowedTools') + 1].split(',');
+        for (const t of BUS_ALLOWED.split(',')) assert.ok(allowed.includes(t), `${label}: ${t}`);
+        assert.equal(seen.wikiOff, wikiOff, label);
+        assert.equal(allowed.includes('mcp__teams__wiki_search'), wikiOff === null, label);
+      }
+    }
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('F3-AC-3: the full claude argv of a lean wiki node, nothing added and nothing restored', () => {
+  const f = fixture();
+  try {
+    const config = JSON.stringify(nodeServer('/proj/main'));
+    f.run(['--prompt-file', join(f.dir, 'prompt.md'), '--stage', 'implement', '--mcp-config', config, '--setting-sources', 'project', '--plugin-dir', '/plug/teams'], { TEAMS_WIKI_ROOT: '/proj/main' });
+    const wiki = ['search', 'get', 'resume', 'list', 'status', 'write'].map(t => `mcp__teams__wiki_${t}`).join(',');
+    assert.deepEqual(argvOf(f), ['-p', '--output-format', 'stream-json', '--verbose', '--no-session-persistence',
+      '--strict-mcp-config', '--mcp-config', config, '--model', 'sonnet',
+      '--tools', 'Read,Glob,Grep,Edit,Write,Bash', '--permission-mode', 'acceptEdits',
+      '--allowedTools', `Bash,${wiki},${BUS_ALLOWED}`, '--setting-sources', 'project', '--plugin-dir', '/plug/teams']);
+  } finally { rmSync(f.dir, { recursive: true, force: true }); }
+});
+
+test('read-only with --no-wiki: the node server and only the bus tools allowed', () => {
   const f = fixture();
   try {
     const r = f.run(['--prompt-file', join(f.dir, 'prompt.md'), '--stage', 'review', '--sandbox', 'read-only', '--no-wiki'], { TEAMS_WIKI_ROOT: '/proj/main' });
     assert.equal(r.status, 0, r.stderr);
     const args = argvOf(f);
-    assert.equal(args[args.indexOf('--mcp-config') + 1], '{"mcpServers":{}}');
-    assert.equal(args.includes('--allowedTools'), false);
+    assert.deepEqual(JSON.parse(args[args.indexOf('--mcp-config') + 1]), nodeServer('/proj/main'));
+    assert.equal(args[args.indexOf('--allowedTools') + 1], BUS_ALLOWED);
     assert.equal(args.includes('--disallowedTools'), false);
   } finally { rmSync(f.dir, { recursive: true, force: true }); }
 });
@@ -244,13 +302,13 @@ test('card173 draft workspace-write: acceptEdits, Bash on --tools and --allowedT
   } finally { rmSync(f.dir, { recursive: true, force: true }); }
 });
 
-test('card173 review read-only: no --allowedTools, --tools Read,Glob,Grep (no --verify)', () => {
+test('card173 review read-only: only the bus tools on --allowedTools, --tools Read,Glob,Grep (no --verify)', () => {
   const f = fixture();
   try {
     const r = f.run(['--prompt-file', join(f.dir, 'prompt.md'), '--stage', 'review', '--sandbox', 'read-only'], withoutRoot);
     assert.equal(r.status, 0, r.stderr);
     const args = argvOf(f);
-    assert.equal(args.includes('--allowedTools'), false);
+    assert.equal(args[args.indexOf('--allowedTools') + 1], BUS_ALLOWED);
     assert.equal(args[args.indexOf('--tools') + 1], 'Read,Glob,Grep');
     assert.equal(args[args.indexOf('--permission-mode') + 1], 'dontAsk');
   } finally { rmSync(f.dir, { recursive: true, force: true }); }
@@ -328,7 +386,7 @@ test('read-only --verify argv is exactly what it was before card 173', () => {
     const i = args.indexOf('--tools');
     assert.deepEqual(args.slice(i), ['--tools', 'Read,Glob,Grep,Bash', '--permission-mode', 'dontAsk',
       '--disallowedTools', 'Bash(git commit:*),Bash(git push:*),Bash(git add:*),Bash(git rm:*),Bash(git reset:*),Bash(git checkout:*),Bash(git merge:*),Bash(git stash:*),Bash(git apply:*),Bash(rm:*),Bash(mv:*),Bash(cp:*),Bash(chmod:*),Bash(sed -i:*)',
-      '--allowedTools', 'Bash']);
+      '--allowedTools', `Bash,${BUS_ALLOWED}`]);
   } finally { rmSync(f.dir, { recursive: true, force: true }); }
 });
 

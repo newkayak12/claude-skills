@@ -289,6 +289,7 @@ const TOOLS = [
 function requireRunnable(run, nodeId) {
   const n = getNode(run, nodeId);
   if (!n) throw new Error(`unknown node ${nodeId}`);
+  if (n.state === 'waiting_human') throw new Error(`node ${n.node_id} is waiting_human: it is waiting for the person's answer. Wait for that answer; do not submit.`);
   if (n.state !== 'pending') throw new Error(`node ${n.node_id} is ${n.state}, not pending`);
   const missing = unmetDeps(run, n);
   if (missing.length) throw new Error(`node ${n.node_id} is blocked on ${missing.join(', ')}`);

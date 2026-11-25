@@ -33,6 +33,7 @@ import {
   defaultKind,
   normalizeSpec,
   computeWriteScope,
+  stopRule,
 } from './graph.mjs';
 import { composePrompt } from './prompts.mjs';
 import { brokerDir, record, syncOpenNodes } from './broker-vendors.mjs';
@@ -246,7 +247,7 @@ function autoReassignGoalGate(run, n) {
   for (const s of siblings) s.final = true;
 
   const sig = goalRejectionSig(consensus);
-  if (sig && sig === run.last_goal_sig) {
+  if (stopRule(run, { loop: 'goal_round', sig }).reason === 'stalled') {
     saveRun(run);
     record(run.cwd, { event: 'team_settle', run_id: run.run_id, target: 'goal_gate', round, signature: sig, stalled: true });
     return { round, stalled: true };
@@ -318,7 +319,8 @@ function autoReassign(run, n) {
   // this exists for: a package README truthfully said "the repo has no other docs", which was
   // false only in the combined tree, so no attempt inside that package could ever fix it.
   const sig = rejectionSig(n.result);
-  if (sig && sig === priorSig(run, sid, n.attempt || 1)) {
+  const stop = stopRule(run, { loop: 'subgoal', subgoal_id: sid, sig, prior_sig: priorSig(run, sid, n.attempt || 1) });
+  if (stop.action === 'escalate') {
     const out = retrySpec(run, `subgoal ${sid} was rejected twice for the same reason, so the shape is what has to change, not the work:\n- ${subgoalFeedback(run, sid)}`);
     record(run.cwd, {
       event: out.attempt ? 'team_escalate' : 'team_settle',

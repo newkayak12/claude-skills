@@ -197,6 +197,39 @@ test('card 130: --tools is one `--tools=<list>` token naming the lean set, Agent
   assert.deepEqual(LEAN_TOOLS, list);
 });
 
+// F3-AC-3: the whole argument set, so restoring removed context or adding new context fails here.
+const teamsServer = (stage) => JSON.stringify({ mcpServers: { teams: { command: process.execPath, args: [`${teamsPluginRoot()}/mcp/server.mjs`, '--stage', stage] } } });
+const LEAN_LIST = '--tools=Agent,Task,Bash,Edit,Read,Write,Skill,ToolSearch,Workflow,TaskStop,Glob,Grep';
+
+test('F3-AC-3: the full launch argument set of a node, as built and as handed to the claude adapter', async () => {
+  const root = teamsPluginRoot();
+  assert.deepEqual(leanLaunchArgs('implement', {}, { helpText: HELP_TOOLS }),
+    ['--strict-mcp-config', '--mcp-config', teamsServer('node'), '--setting-sources', 'project', LEAN_LIST, '--plugin-dir', root]);
+  const { runAdapter } = await import('../mcp/broker-vendors.mjs');
+  let sent;
+  const spawn = (command, args) => { sent = args; throw new Error('captured'); };
+  const vendor = { command: process.execPath, args: [`${root}/adapters/claude-exec-adapter.mjs`] };
+  await runAdapter(vendor, ['--cwd', '/x'], root, { stage: 'implement', lean: {}, spawn });
+  // the adapter sets its own --tools and strict flag; the rest is the node's start context
+  const flags = ['--mcp-config', teamsServer('node'), '--setting-sources', 'project', '--plugin-dir', root];
+  assert.deepEqual(sent, [...vendor.args, '--cwd', '/x', '--model', 'sonnet', ...flags]);
+});
+
+test('F3-AC-3: the full launch argument set of a driver', async () => {
+  const { driverArgv } = await import('../mcp/taskmanager-drivers.mjs');
+  const override = process.env.HARNESS_CHILD_DRIVER;
+  delete process.env.HARNESS_CHILD_DRIVER;
+  try {
+    const argv = driverArgv(null);
+    if (!argv.includes('--mcp-config') || !argv.includes(LEAN_LIST)) return; // claude --help here lists no such flag
+    const root = teamsPluginRoot();
+    const plugins = [root, ...['agents', 'completion', 'think'].map((p) => resolvePluginDir(p, root))];
+    assert.deepEqual(argv, ['claude', '-p', '--output-format', 'stream-json', '--verbose', '--dangerously-skip-permissions',
+      '--setting-sources', 'project', '--model', 'sonnet', '--strict-mcp-config', '--mcp-config', teamsServer('driver'),
+      LEAN_LIST, ...plugins.flatMap((d) => ['--plugin-dir', d])]);
+  } finally { if (override !== undefined) process.env.HARNESS_CHILD_DRIVER = override; }
+});
+
 test('card 130: --tools is absent when help lists only --disallowed-tools/--allowedTools, present when help is unreadable', () => {
   assert.deepEqual(toolTokens(leanLaunchArgs('implement', {}, { helpText: HELP })), []);
   assert.deepEqual(toolTokens(leanLaunchArgs('implement', {}, { helpText: '  --disallowed-tools <t>\n  --allowedTools <t>\n' })), []);

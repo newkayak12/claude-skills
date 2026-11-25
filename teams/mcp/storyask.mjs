@@ -128,3 +128,66 @@ export function validateAsk(input) {
   if (dispatch.state !== 'running') return { ok: false, reason: `STORY ${pkgId} is not running (${dispatch.state})` };
   return { ok: true, key, pkgId };
 }
+
+// ---------- evidence asks: questions the engine answers itself (storyevidence.mjs reads) ----------
+//
+// A question is classified only when every sentence of it names at least one of the three kinds and,
+// with the kind phrases taken out, holds nothing but the FILLER words below. A whitelist: a
+// decision, opinion or plan question (should, which, why, approve, "X or Y", ...) or any further
+// request leaves a word that is not on it. A judgement can be worded from filler alone, so each
+// sentence must also read as a request (REQUEST) and must not open as a yes/no question (YES_NO).
+// A miss costs a person's answer, as before; a false hit would silently answer a decision, so a
+// doubt is null.
+const EVENT = '(?:[a-z]+(?:_[a-z]+)+|asked|answered)';
+const EVIDENCE = [
+  { kind: 'process_count', match: [
+    /\b(?:how many|(?:number|count) of)\s+(?:teams\s+)?(?:mcp\/)?server(?:\.mjs)?\s+processes\b/g,
+    /\b(?:teams\s+)?(?:mcp\/)?server(?:\.mjs)?\s+process\s+count\b/g,
+  ] },
+  { kind: 'ledger_lines', match: [new RegExp(`(?:\\b${EVENT}(?:(?:\\s*,\\s*|\\s+and\\s+)${EVENT})*\\s+)?\\bledger(?:\\.jsonl)?\\s+lines?\\b`, 'g')],
+    also: [/\bfrom\s+(?:the\s+)?ledger\.jsonl\b/g, /\bts\b/g, /\b\d{13}\b/g] },
+  { kind: 'cost_by_stage', match: [/\b(?:by[_ -]stage\s+(?:cost|spend)|(?:cost|spend)\s+by[_ -]stage)\b/g],
+    also: [/\bfrom\s+drivercost\.mjs(?:\s+taskfigure(?:\s+plus\s+costbystage)?)?/g] },
+];
+const FILLER = new Set(('please give send show tell me us i we need needs the a an of now currently current running '
+  + 'are is there verbatim from so far and this task live').split(' '));
+const WHAT_IS = /^\s*what\s+(?:is|are)\b/; // the one place "what" is allowed
+const REQUEST = [/\b(?:give|send|show|tell|how many|(?:number|count) of)\b/, /^\s*p\d+\s+needs?\b/, WHAT_IS, /^\s*(?:is|are)\s+there\b/];
+const YES_NO = /^[^\p{L}\p{N}]*(?:(?:and|so|now|p\d+)[^\p{L}\p{N}]+)*(?:is|are|does|do|did|was)\b(?!\s+there\b)/u;
+
+export function evidenceKinds(question) {
+  if (typeof question !== 'string') return null;
+  const sentences = question.toLowerCase().split(/(?<=[.?!;])\s+|\n+/).filter((s) => s.trim() !== '');
+  const found = new Set();
+  for (const sentence of sentences) {
+    const hit = EVIDENCE.filter((k) => k.match.some((re) => sentence.search(re) !== -1));
+    if (!hit.length || YES_NO.test(sentence) || !REQUEST.some((re) => re.test(sentence))) return null;
+    let rest = sentence.replace(/^\s*p\d+\s+needs?\b/, ' ').replace(WHAT_IS, ' ').replace(/\bright now\b/g, ' ');
+    for (const k of hit) for (const re of [...k.match, ...(k.also || [])]) rest = rest.replace(re, ' ');
+    // \p{L}: words of any script count, so a non-English addition is never invisible.
+    if (rest.split(/[^\p{L}\p{N}_]+/u).some((w) => w && !FILLER.has(w))) return null;
+    for (const k of hit) found.add(k.kind);
+  }
+  return found.size ? EVIDENCE.map((k) => k.kind).filter((k) => found.has(k)) : null;
+}
+
+// The answer text. facts: {at (ISO time of the reads), process_count: number, ledger: {lines,
+// omitted}, cost: {by_stage, spend, estimated}} - only the parts `kinds` names are used. The process
+// evidence is the count alone: command lines would carry other sessions' paths and arguments.
+export function evidenceAnswer(kinds, facts) {
+  const out = [`Read first-hand by the engine at ${facts.at}.`];
+  if (kinds.includes('process_count')) {
+    out.push('', `teams mcp/server.mjs processes on this machine: ${facts.process_count}`);
+  }
+  if (kinds.includes('ledger_lines')) {
+    const { lines, omitted } = facts.ledger;
+    out.push('', `ledger.jsonl lines (verbatim): ${lines.length}${omitted ? ` shown, ${omitted} earlier ones omitted` : ''}`, ...lines);
+  }
+  if (kinds.includes('cost_by_stage')) {
+    const { by_stage, spend, estimated } = facts.cost;
+    out.push('', 'cost by stage so far, whole task (USD, live):',
+      ...Object.entries(by_stage).map(([stage, usd]) => `${stage}: ${usd}`),
+      `spend: ${spend}${estimated ? ' (estimated)' : ''}`);
+  }
+  return out.join('\n');
+}

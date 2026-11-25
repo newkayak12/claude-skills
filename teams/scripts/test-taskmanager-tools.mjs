@@ -52,7 +52,7 @@ test('TOOLS deep-equals the golden fixture\'s tm_* entries', () => {
   });
   // tm_post and tm_read (card 126, the message bus) postdate the fixture: pinned by name here,
   // their schemas are exercised by test-bus.mjs.
-  const BUS_TOOLS = ['tm_hold', 'tm_post', 'tm_read'];
+  const BUS_TOOLS = ['tm_answer', 'tm_hold', 'tm_post', 'tm_read'];
   const added = JSON.parse(JSON.stringify(mod.TOOLS)).filter((t) => BUS_TOOLS.includes(t.name));
   assert.deepEqual(added.map((t) => t.name).sort(), BUS_TOOLS);
   for (const t of added) assert.equal(SHORT[t.name], t.description, `${t.name}: tools-short.json holds its exact description`);
@@ -60,11 +60,11 @@ test('TOOLS deep-equals the golden fixture\'s tm_* entries', () => {
   assert.deepEqual(JSON.parse(JSON.stringify(mod.TOOLS)).sort(byName), expected.sort(byName));
 });
 
-test('every TOOLS name has a dispatch case and every dispatch case has a TOOLS entry (21 tm_*)', () => {
+test('every TOOLS name has a dispatch case and every dispatch case has a TOOLS entry (22 tm_*)', () => {
   const text = readFileSync(join(HERE, '..', 'mcp', 'taskmanager-tools.mjs'), 'utf8');
   const fn = text.slice(text.indexOf('function dispatch('), text.indexOf('export async function callTool') >= 0 ? text.indexOf('export async function callTool') : undefined);
   const cases = [...fn.matchAll(/case '(tm_[a-z_]+)'/g)].map((m) => m[1]).sort();
   const names = mod.TOOLS.map((t) => t.name).sort();
-  assert.equal(names.length, 21);
+  assert.equal(names.length, 22);
   assert.deepEqual(cases, names);
 });

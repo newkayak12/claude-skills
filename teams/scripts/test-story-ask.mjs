@@ -4,7 +4,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  newAskId, askedEvent, answeredEvent, answerPrompt, parseVerdict, validateAsk,
+  newAskId, askedEvent, answeredEvent, answerPrompt, parseVerdict, validateAsk, evidenceKinds, evidenceAnswer,
 } from '../mcp/storyask.mjs';
 
 const RUN_ID = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
@@ -202,4 +202,65 @@ test('answerPrompt works with only a question and refuses a blank one', () => {
   assert.ok(p.includes('q?'));
   assert.throws(() => answerPrompt({ question: '  ' }), /question/);
   assert.throws(() => answerPrompt(), /question/);
+});
+
+test('evidenceKinds classifies each of the three kinds, and several together in a fixed order', () => {
+  const cases = [
+    ['P3 needs the count of mcp/server.mjs processes now.', ['process_count']],
+    ['How many teams mcp/server.mjs processes are running?', ['process_count']],
+    ['How many server.mjs processes are running right now?', ['process_count']],
+    ['Is there a bus_message ledger line?', ['ledger_lines']],
+    ['P3 needs the bus_message ledger lines verbatim from ledger.jsonl.', ['ledger_lines']],
+    ['Please send me the bus_message ledger lines, ts 1795490820889 and 1795490836895.', ['ledger_lines']],
+    ['Please give me the live by_stage cost so far from drivercost.mjs taskFigure plus costByStage.', ['cost_by_stage']],
+    ['What is the cost by stage so far?\nHow many server.mjs processes are running?', ['process_count', 'cost_by_stage']],
+  ];
+  for (const [q, kinds] of cases) assert.deepEqual(evidenceKinds(q), kinds, q);
+});
+
+test('evidenceKinds is null for anything outside the three kinds: plan, opinion, decision, mixed, extra request', () => {
+  const cases = [
+    'Which plan should package P2 follow?',
+    'Are amounts stored in cents or in dollars?',
+    'Do you think the retry design is right?',
+    'May I drop the review stage?',
+    'cost by stage is high - should we drop the review stage?',
+    'the ledger shows two server.mjs processes; which one should I keep?',
+    'How many teams mcp/server.mjs processes are running, and should I restart them?',
+    'Give me the cost by stage. Is that acceptable?',
+    'Why is the cost by stage so high?',
+    'Please approve the cost by stage.',
+    'Give me the cost by stage or the bus_message ledger lines.',
+    'Please give me the cost by stage and the open ps sample timestamp.',
+    'Please give me the cost by stage 줄여도 되나요',
+    'Give me the cost by stage for P2.',
+    'How many processes are running?',
+    // judgements and requests worded from filler words only
+    'Is the server process count right?',
+    'Is cost by stage what we need?',
+    'And is the cost by stage what we need?',
+    'Tell me, is cost by stage what we need?',
+    'Are we running the server.mjs process count?',
+    'Is this what we need, a cost_recorded ledger line?',
+    'We need a cost_recorded ledger line.',
+    'Give me the cost by stage, right?',
+    // the two verbatim E-de2a5672 questions: each also asks for things outside the three kinds
+    "P3 needs, for cards 126/128: (1) the open and mid-run ps samples (timestamp, count of mcp/server.mjs in the tm_open session's process tree, command lines if count != 1); none were posted to E-de2a5672/P3. (2) the two bus_message ledger lines verbatim (P1 probe ts 1795490820889; P1->P2 note ts 1795490836895). (3) cost_recorded by_stage so far. Anything you cannot send I will write as 'pending teamleader' / 'relayed from handoff'.",
+    "P3 cannot read the state dir from its worktree. Please give me, as they are now: (a) the number of cost_recorded events in ledger.jsonl; (b) the live by_stage cost so far from drivercost.mjs taskFigure plus costByStage, with each stage's USD, the sum, the spend figure, the estimated figure, the difference and the ISO time you took them; (c) the ISO timestamp of the open ps sample; (d) the first-hand value of task.json bus_reads['E-de2a5672/P2']. If a value does not exist yet, say so plainly and I will record it as such.",
+    '', '   ', undefined, null, 5,
+  ];
+  for (const q of cases) assert.equal(evidenceKinds(q), null, String(q));
+});
+
+test('evidenceAnswer words only the kinds asked, with every line verbatim', () => {
+  const facts = {
+    at: '2026-11-26T00:00:00.000Z',
+    process_count: 4,
+    ledger: { lines: ['{"ts":1,"event":"bus_message","body":"  a  "}'], omitted: 3 },
+    cost: { by_stage: { dispatch_package: 1.5, node_review: 0.25 }, spend: 1.75, estimated: true },
+  };
+  const all = evidenceAnswer(['process_count', 'ledger_lines', 'cost_by_stage'], facts);
+  for (const part of [facts.at, 'processes on this machine: 4\n',facts.ledger.lines[0], '3 earlier ones omitted', 'dispatch_package: 1.5', 'node_review: 0.25', 'spend: 1.75 (estimated)']) assert.ok(all.includes(part), part);
+  const one = evidenceAnswer(['cost_by_stage'], { at: facts.at, cost: facts.cost });
+  assert.equal(/processes|ledger/.test(one), false);
 });

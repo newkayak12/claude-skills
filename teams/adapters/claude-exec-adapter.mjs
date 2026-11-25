@@ -52,25 +52,25 @@ function unexplainedRefusal(result) {
   return { ...result, stage_ok: false, judge_failed: true, reason: 'the judge refused without a reason or gaps - a refusal nobody can act on; asked again' };
 }
 
-// The project wiki: when the engine sets TEAMS_WIKI_ROOT (task.cwd, never a worktree) a worker
-// gets exactly one MCP server, teams (server.mjs --only wiki), rooted there, and its tools are allowed by name so
-// writes need no approval. --tools only limits built-ins, so MCP tools are named in
-// --allowedTools. Judging stages arrive with --no-wiki (broker.mjs) and get the empty config.
+// Every node but the --detect probe gets exactly one MCP server, teams (server.mjs --stage node:
+// the bus tools next to wiki_*). The project wiki: when the engine sets TEAMS_WIKI_ROOT (task.cwd,
+// never a worktree) the server is rooted there and wiki_* are allowed by name so writes need no
+// approval. --tools only limits built-ins, so MCP tools are named in --allowedTools. Judging stages
+// arrive with --no-wiki (broker.mjs): same server, wiki_* hidden by TEAMS_WIKI_OFF.
 const WIKI_TOOLS = ['wiki_search', 'wiki_get', 'wiki_resume', 'wiki_list', 'wiki_status', 'wiki_write'].map(t => `mcp__teams__${t}`);
 const wikiRoot = process.env.TEAMS_WIKI_ROOT;
 const withWiki = Boolean(wikiRoot) && !opts['no-wiki'] && !opts.detect;
 const BUS_TOOLS = ['tm_ask', 'tm_post', 'tm_read'].map(t => `mcp__teams__${t}`);
-// A lean launch (card 130) passes its own --mcp-config: the one teams server, which serves the bus
-// tools (tm_ask, tm_post, tm_read) and team_* next to wiki_*. It replaces the wiki-only config below;
-// the node's wiki access is still decided by withWiki (TEAMS_WIKI_OFF hides wiki_* from that server),
-// and the bus tools are allowed: under -p, acceptEdits and dontAsk refuse an MCP tool no allow rule
+// A lean launch (card 130) passes its own --mcp-config for that one teams server, replacing the one
+// built below. Either way the node's wiki access is decided by withWiki, and the bus tools (tm_ask,
+// tm_post, tm_read) are allowed: under -p, acceptEdits and dontAsk refuse an MCP tool no allow rule
 // names (E-92c82150).
 const leanMcp = !opts.detect && Boolean(opts['mcp-config']);
 const mcpConfig = leanMcp
   ? opts['mcp-config']
-  : withWiki
-    ? JSON.stringify({ mcpServers: { teams: { command: process.execPath, args: [fileURLToPath(new URL('../mcp/server.mjs', import.meta.url)), '--only', 'wiki', '--root', wikiRoot] } } })
-    : '{"mcpServers":{}}';
+  : opts.detect
+    ? '{"mcpServers":{}}'
+    : JSON.stringify({ mcpServers: { teams: { command: process.execPath, args: [fileURLToPath(new URL('../mcp/server.mjs', import.meta.url)), '--stage', 'node', ...(wikiRoot ? ['--root', wikiRoot] : [])] } } });
 
 async function invoke(prompt) {
   const readOnly = opts.sandbox === 'read-only';
@@ -103,13 +103,16 @@ async function invoke(prompt) {
   // ran, `rm` stayed denied).
   // card 173: acceptEdits does not approve Bash, and the project settings carry no allow rule, so a
   // workspace-write node (implement/test/draft) could never run a command headless. Allow it by name.
-  const allowed = [...(verifyTools || opts.sandbox === 'workspace-write' ? ['Bash'] : []), ...(withWiki ? WIKI_TOOLS : []), ...(leanMcp ? BUS_TOOLS : [])];
+  const allowed = [...(verifyTools || opts.sandbox === 'workspace-write' ? ['Bash'] : []), ...(withWiki ? WIKI_TOOLS : []), ...(opts.detect ? [] : BUS_TOOLS)];
   if (allowed.length) cli.push('--allowedTools', allowed.join(','));
-  if (opts['setting-sources']) cli.push('--setting-sources', opts['setting-sources']);
+  // The probe loads project settings only, as a lean node does: user plugins and their hooks were
+  // most of its time (write probe about 6.0s -> 4.4s) and changed no result.
+  const settingSources = opts['setting-sources'] || (opts.detect ? 'project' : undefined);
+  if (settingSources) cli.push('--setting-sources', settingSources);
   for (const dir of opts.pluginDirs) cli.push('--plugin-dir', dir);
   for (const dir of opts.addDirs) cli.push('--add-dir', dir);
-  // Without a wiki the lean teams server must not offer wiki_* either (a judge never sees it).
-  const env = leanMcp && !withWiki ? { ...process.env, TEAMS_WIKI_OFF: '1' } : process.env;
+  // Without a wiki the teams server must not offer wiki_* either (a judge never sees it).
+  const env = !opts.detect && !withWiki ? { ...process.env, TEAMS_WIKI_OFF: '1' } : process.env;
   // Each stdout chunk reaches events.jsonl as it arrives: the running node's live signal for the
   // stall check (card 129), where a post-exit write left a long claude node silent.
   let events = null;

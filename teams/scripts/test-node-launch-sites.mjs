@@ -114,6 +114,11 @@ test('answerArgv (the daemon\'s other child spawn): one --model, opus by default
   assert.ok(answerArgv({}).includes('--tools=Read,Grep,Glob'), 'its read-only tool limits are untouched');
 }));
 
+test('answerArgv(null) denies tm_answer: the answer node cannot answer a card', () => withoutOverrides(() => {
+  const denied = answerArgv(null).find((a) => a.startsWith('--disallowedTools=')).slice('--disallowedTools='.length).split(',');
+  assert.ok(denied.includes('mcp__plugin_teams_teams__tm_answer'), denied.join(','));
+}));
+
 // A stub for node:child_process spawn: records every call, hands out distinct pids.
 function stubSpawn(stdout = '') {
   const calls = [];
@@ -430,13 +435,14 @@ process.stdin.on('end', () => { fs.writeFileSync(${JSON.stringify(join(dir, 'obs
   } finally { rmSync(dir, { recursive: true, force: true }); }
 }
 
-test('claude adapter: with none of the lean flags its claude argv is what it always was (strict, an empty MCP config, no plugin dirs)', () => {
+test('claude adapter: with none of the lean flags its claude argv is strict, the --stage node teams server, the bus tools allowed, no plugin dirs', () => {
   const { args, wikiOff } = adapterThroughStub(['--sandbox', 'read-only', '--model', 'opus']);
   assert.ok(args.includes('--strict-mcp-config'));
   assert.deepEqual(modelsOf(args), ['opus']);
-  assert.deepEqual(JSON.parse(valuesOf(args, '--mcp-config')[0]), { mcpServers: {} });
-  assert.ok(!args.includes('--plugin-dir') && !args.includes('--setting-sources') && !args.includes('--allowedTools'));
-  assert.equal(wikiOff, null);
+  assert.deepEqual(JSON.parse(valuesOf(args, '--mcp-config')[0]).mcpServers.teams.args.slice(1), ['--stage', 'node']);
+  assert.ok(!args.includes('--plugin-dir') && !args.includes('--setting-sources'));
+  assert.deepEqual(valuesOf(args, '--allowedTools'), ['mcp__teams__tm_ask,mcp__teams__tm_post,mcp__teams__tm_read']);
+  assert.equal(wikiOff, '1', 'no wiki root: wiki_* hidden on the node server');
 });
 
 test('claude adapter: --mcp-config replaces the MCP config once (still strict), --setting-sources and each --plugin-dir are passed on, the bus tools are allowed', () => {

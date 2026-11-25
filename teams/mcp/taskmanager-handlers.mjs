@@ -828,6 +828,7 @@ export function requireRunnable(task, nodeId) {
     if (n.state !== 'running') throw new Error(`dispatch ${n.node_id} is ${n.state}; only a running dispatch can be folded`);
     return n;
   }
+  if (n.state === 'waiting_human') throw new Error(`node ${n.node_id} is waiting_human: it is waiting for the person's answer. Wait for that answer; do not submit.`);
   if (n.state !== 'pending') throw new Error(`node ${n.node_id} is ${n.state}, not pending`);
   const missing = unmetDeps(task, n);
   if (missing.length) throw new Error(`node ${n.node_id} is blocked on ${missing.join(', ')}`);

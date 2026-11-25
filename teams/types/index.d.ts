@@ -70,6 +70,8 @@ export type SummaryWorker = { id: string; state: WorkState; doing: string; icon:
   minutes?: number // only when state is 'stalled': whole minutes silent; absent otherwise
   // an acting or waiting worker's node (its stage), role word and ms in it, each only when the engine recorded it
   node?: string; role?: string; elapsed_ms?: number
+  // held tasks only, on a desk named otherwise than its card (PLAN): the item it works
+  item?: string
 }
 // what_key/from_key/to_key name a STRINGS entry for the English beside them; what_vars fill its placeholders
 export type Handoff = {
@@ -82,6 +84,10 @@ export type SummaryTaskEntry = SummaryTask & {
   task_id: string; created_at: number | null
   live: boolean; age_ms: number | null // age_ms: stalled tasks only, under 24 h
   items: SummaryItem[]; workers: SummaryWorker[]; handoffs: Handoff[]; phases?: PhaseCount[]
+  // task.hold as recorded (stopped on purpose, by the person or an engine park); null when not held
+  hold?: { reason: string; since: string; by: string } | null
+  // held tasks only: a run of the task is parked waiting_capacity (provider limit)
+  capacity_parked?: boolean
   // an S task's harness run (slug, moved lately); null for a package EPIC
   harness: { slug: string | null; moving: boolean } | null
   // a size-S task's five steps in order (harness entries only; absent on a package EPIC); phase is the EPIC Phase the step sits in

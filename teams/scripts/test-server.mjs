@@ -13,7 +13,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { normalize } from './capture-tools.mjs';
-import { ALL_TOOLS } from '../mcp/server-tools.mjs';
+import { ALL_TOOLS, STAGE_TOOLS, toolsFor } from '../mcp/server-tools.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SERVER = join(HERE, '..', 'mcp', 'server.mjs');
@@ -180,8 +180,8 @@ test('full mode lists the 33 tools of the golden fixture plus tm_post and tm_rea
     assert.equal(golden.length, 33);
     assert.deepEqual(listed.filter((t) => t.name === 'tm_post' || t.name === 'tm_read').map((t) => t.name), ['tm_post', 'tm_read']);
     assert.equal(listed.filter((t) => t.name === 'tm_hold').length, 1);
-    const listedOld = listed.filter((t) => t.name !== 'tm_post' && t.name !== 'tm_read' && t.name !== 'tm_hold');
-    assert.equal(listed.length, 36);
+    const listedOld = listed.filter((t) => t.name !== 'tm_post' && t.name !== 'tm_read' && t.name !== 'tm_hold' && t.name !== 'tm_answer');
+    assert.equal(listed.length, 37);
     assert.deepEqual(listedOld, golden);
   });
 });
@@ -205,12 +205,12 @@ test('driver-visible tool descriptions keep the rules the driver prompt relies o
   }
 });
 
-test('TEAMS_WIKI_OFF=1 in full mode lists 27 tools (team_ + tm_) and a wiki_* call is an error with the exact text', async () => {
+test('TEAMS_WIKI_OFF=1 in full mode lists 28 tools (team_ + tm_) and a wiki_* call is an error with the exact text', async () => {
   await withClient(['--root', mk('server-wiki-')], baseEnv({ TEAMS_WIKI_OFF: '1' }), async (c) => {
     const tools = await c.tools();
-    assert.equal(tools.length, 27);
+    assert.equal(tools.length, 28);
     assert.equal(withPrefix(tools, 'team_').length, 6);
-    assert.equal(withPrefix(tools, 'tm_').length, 21);
+    assert.equal(withPrefix(tools, 'tm_').length, 22);
     assert.equal(withPrefix(tools, 'wiki_').length, 0);
     const r = await c.call('wiki_status', {});
     assert.equal(r.isError, true);
@@ -411,6 +411,18 @@ test('stdin closed at once: every reply is written before the exit (drain), exit
 
 const DRIVER_SET = ['team_next', 'team_run', 'team_submit', 'team_retry', 'team_status', 'tm_ask', 'tm_post', 'tm_read'];
 
+test('F3-AC-4: a stage lists every tool its prompt names, and its set is pinned exactly', () => {
+  const listedFor = (stage) => toolsFor({ stage }).map((t) => t.name);
+  const wikiPrompt = ['wiki_search', 'wiki_get', 'wiki_write']; // prompts.mjs WIKI_PARAGRAPH
+  for (const n of ['tm_ask', ...wikiPrompt]) assert.ok(listedFor('node').includes(n), `node: ${n}`); // prompts.mjs tm_ask
+  for (const n of [...DRIVER_SET, ...wikiPrompt]) assert.ok(listedFor('driver').includes(n), `driver: ${n}`); // driverPrompt
+  const wiki = ['wiki_search', 'wiki_get', 'wiki_resume', 'wiki_list', 'wiki_status', 'wiki_propose', 'wiki_write', 'wiki_accept', 'wiki_reject'];
+  assert.deepEqual([...STAGE_TOOLS.node].sort(), ['tm_ask', 'tm_post', 'tm_read', ...wiki].sort());
+  // No tm_answer listing (nor tm_submit) for a driver: its prompt names neither, a STORY is answered by someone
+  // else, and every listed schema is start context.
+  assert.deepEqual([...STAGE_TOOLS.driver].sort(), [...DRIVER_SET, ...wiki].sort());
+});
+
 test('--stage driver lists exactly the 8 driver tools and the 9 wiki_* tools', async () => {
   await withClient(['--stage', 'driver', '--root', mk('server-wiki-')], baseEnv(), async (c) => {
     const tools = await c.tools();
@@ -432,10 +444,10 @@ test('--stage node lists 12 tools (tm_ask, tm_post, tm_read + 9 wiki_*), 3 with 
   });
 });
 
-test('no --stage and --stage bogus both list all 36 tools', async () => {
+test('no --stage and --stage bogus both list all 37 tools', async () => {
   for (const args of [[], ['--stage', 'bogus']]) {
     await withClient([...args, '--root', mk('server-wiki-')], baseEnv(), async (c) => {
-      assert.equal((await c.tools()).length, 36, args.join(' '));
+      assert.equal((await c.tools()).length, 37, args.join(' '));
     });
   }
 });

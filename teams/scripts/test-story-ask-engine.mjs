@@ -213,6 +213,33 @@ test('an answered question whose driver is still alive is delivered once it exit
   assert.match(driverCalls().at(-1).argv.at(-1), /cents/);
 });
 
+test('an evidence ask is answered by the engine itself: the answer seam is never called and the driver is resumed', async () => {
+  const t = seedTask();
+  const calls0 = driverCalls().length;
+  const { ask_id } = await ask(t, 'Please give me the live by_stage cost so far.');
+  await step(t, async () => { throw new Error('the answer node must not run'); });
+  const answered = events(t.id, 'answered');
+  assert.equal(answered.length, 1);
+  assert.equal(answered[0].ask_id, ask_id);
+  assert.equal(answered[0].by, 'teamleader');
+  assert.equal(answered[0].route, 'answer');
+  assert.match(answered[0].answer, /cost by stage so far/);
+  assert.equal(events(t.id, 'story_ask_forwarded').length, 0);
+  assert.ok(await until(() => driverCalls().length > calls0), 'the parked driver was resumed');
+  assert.match(driverCalls().at(-1).argv.at(-1), /cost by stage so far/);
+});
+
+test('a decision question that uses an evidence kind\'s words still reaches the answer node', async () => {
+  const t = seedTask();
+  const q = 'cost by stage is high - should we drop the review stage?';
+  await ask(t, q);
+  let seen = null;
+  await step(t, async (task, a) => { seen = a.question; return JSON.stringify({ verdict: 'forward', reason: 'a decision' }); });
+  assert.equal(seen, q);
+  assert.equal(events(t.id, 'answered').length, 0);
+  assert.equal((await callTool('tm_inbox', { task_id: t.id })).cards.length, 1);
+});
+
 // ---------- (3) route forward and the submit pairing ----------
 
 for (const [name, answerFn] of [
@@ -313,8 +340,8 @@ test('answerArgv: read tools only (Read, Grep, Glob, wiki_search, wiki_get), eve
   const deniedList = denied.split(/[ ,]/);
   const { ALL_TOOLS } = await import(join(HERE, '..', 'mcp', 'server-tools.mjs'));
   const expected = ALL_TOOLS.map((t) => t.name).filter((n) => n !== 'wiki_search' && n !== 'wiki_get').map((n) => `mcp__plugin_teams_teams__${n}`);
-  assert.equal(expected.length, 34);
-  assert.deepEqual(deniedList, expected, 'all 34 non-read tools are denied by name');
+  assert.equal(expected.length, 35);
+  assert.deepEqual(deniedList, expected, 'all 35 non-read tools are denied by name');
   for (const d of ['mcp__plugin_teams_teams__tm_open', 'mcp__plugin_teams_teams__team_open', 'mcp__plugin_teams_teams__wiki_write', 'mcp__plugin_teams_teams__wiki_propose', 'mcp__plugin_teams_teams__wiki_accept']) {
     assert.ok(deniedList.includes(d), `${d} is denied`);
   }
