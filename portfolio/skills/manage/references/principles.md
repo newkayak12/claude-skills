@@ -38,6 +38,17 @@ one result (the user's deck split one OMS project into a rate-limit chapter and 
 - **A 확정사실 ban on wording bans the sentence, not the item** ("재발 방지가 장애를 키웠다" is
   banned; the 4 recurrence fixes still lead the incident chapter).
 
+## Resume
+
+A resume cites a subset of the deck's 본문, never an item the deck left out. Per chapter keep the
+items that carry its result line and the one decision a reader asks about first; drop the ones
+that only lead into another (the user's resume cut from the deck: the not-textbook Outbox, the
+dashboard, the two defects before the switch, the PMS and B2B appendices). Add the 부록 items that
+are tools others used — a shared library several services run — under the role or skills section,
+not as a project (the user's resume cites the scheduler library, which the deck keeps in an
+attachment). The user's 2026-11-13 resume: migration (baseline, plan changed, silent check),
+incident (owner, 4 fixes), rate-limit, all five side-project items, plus the library.
+
 ## Writing
 
 - **Plain words.** A word only a developer knows is said in plain words; if it must stay, a footnote

@@ -188,7 +188,7 @@ context or in a figure either; `claims` flags it on any page citing the item), w
    the deck cannot defend → its item's `gaps.md`; a result the user restores → `result.md` labelled
    `본인 확인`. The next round starts at 2 (selection changed) or 4 (wording).
 9. **Resume.** `resume-skeleton.md` (the template's section order, facts from portfolio-skeleton
-   only) → `resume-deck.mdx` → `claims --file resume-deck.mdx` → `resume-builder` (catalog, build into
+   only; items picked per `references/principles.md` § Resume) → `resume-deck.mdx` → `claims --file resume-deck.mdx` → `resume-builder` (catalog, build into
    the user's template, final checks, render when told, fit by `over_lines`) → `render-review` (step 7).
    The user's material never goes to git: the engine refuses a workspace git would carry.
 
