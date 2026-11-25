@@ -148,7 +148,7 @@ function walkPages() {
       if (!f.endsWith('.md')) continue;
       const path = join(dir, f);
       const s = statSync(path);
-      out.push({ id: `${space}/${f.slice(0, -3)}`, space, path, mtime: s.mtimeMs, size: s.size });
+      out.push({ id: `${space}/${f.slice(0, -3)}`, space, path, mtime: s.mtimeMs, size: s.size, ino: s.ino, ctime: s.ctimeMs });
     }
   }
   return out;
@@ -251,6 +251,28 @@ function rowOf(f) {
     id: f.id, space: f.space, title: fm.title || f.id.split('/')[1], tags, status: fm.status || 'accepted',
     superseded_by: fm.superseded_by || null, updated: fm.updated || '', mtime: f.mtime, size: f.size, summary: summaryOf(body), body,
   };
+}
+
+// Parsed rows kept per wiki dir, for scan reads and INDEX.md (rows are shared: never mutate one).
+// Every call still stats every page; a page is re-read only when its ino, size, mtime or ctime moved,
+// so only a same-size rewrite within one timestamp tick goes unseen.
+const rowCache = new Map(); // wikiDir -> Map<path, { ino, size, mtime, ctime, row }>
+
+// All page rows in walk order. The dir's map is replaced each time, so deleted pages drop out.
+function rowsNow() {
+  const dir = wikiDir();
+  const known = rowCache.get(dir);
+  const next = new Map();
+  const rows = walkPages().map((f) => {
+    let e = known && known.get(f.path);
+    if (!e || e.ino !== f.ino || e.size !== f.size || e.mtime !== f.mtime || e.ctime !== f.ctime) {
+      e = { ino: f.ino, size: f.size, mtime: f.mtime, ctime: f.ctime, row: rowOf(f) };
+    }
+    next.set(f.path, e);
+    return e.row;
+  });
+  rowCache.set(dir, next);
+  return rows;
 }
 
 function indexPage(d, f) {
@@ -374,7 +396,7 @@ function scanRank(rows, kind, tokens, space, includeSuperseded) {
 }
 
 function scanStore() {
-  const rows = walkPages().map(rowOf).sort((a, b) => (a.id < b.id ? -1 : 1));
+  const rows = rowsNow().sort((a, b) => (a.id < b.id ? -1 : 1));
   const byId = new Map(rows.map((r) => [r.id, r]));
   const links = rows.flatMap((r) => linksOf(r.body).map((to) => ({ from: r.id, to })))
     .sort((a, b) => (a.from < b.from ? -1 : a.from > b.from ? 1 : a.to < b.to ? -1 : 1));
@@ -437,9 +459,9 @@ function checkPid(pid) {
 }
 
 function renderIndex() {
-  const lines = walkPages().map((f) => ({ f, ...readMd(f.path) }))
-    .filter((p) => (p.fm.status || 'accepted') === 'accepted')
-    .map((p) => `[[${p.f.id}]] — ${summaryOf(p.body)}`);
+  const lines = rowsNow()
+    .filter((r) => r.status === 'accepted')
+    .map((r) => `[[${r.id}]] — ${r.summary}`);
   if (HOLD_MS) sleep(HOLD_MS);
   writeAtomic(join(wikiDir(), 'INDEX.md'), `# Wiki index\n\n${lines.join('\n')}\n`);
 }

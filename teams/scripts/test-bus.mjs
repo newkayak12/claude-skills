@@ -10,7 +10,8 @@ process.env.TEAMS_RUNS_DIR ??= 'off';
 process.env.HARNESS_TEST_NO_DAEMON = '1';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, appendFileSync, rmSync, existsSync, readdirSync, statSync } from 'node:fs';
+import fs, { mkdtempSync, mkdirSync, writeFileSync, readFileSync, appendFileSync, rmSync, existsSync, readdirSync, statSync, renameSync, utimesSync } from 'node:fs';
+import { syncBuiltinESMExports } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -397,5 +398,220 @@ test('the engine is the only writer: nothing under teams/hooks or view.mjs touch
     const text = readFileSync(f, 'utf8');
     assert.doesNotMatch(text, WRITE, f);
     if (f.includes(`${join(root, 'hooks')}`)) assert.ok(!text.includes('bus.jsonl'), f);
+  }
+});
+
+// ---- the read cache: same results as a whole-file read, whatever happened to the file ----
+
+// The uncached whole-file read, filter and slice: what every cached read must equal.
+function refAll(file) {
+  if (!existsSync(file)) return [];
+  const text = readFileSync(file, 'utf8');
+  const cut = text.lastIndexOf('\n');
+  if (cut < 0) return [];
+  const out = [];
+  for (const line of text.slice(0, cut).split('\n')) {
+    if (!line.trim()) continue;
+    try {
+      const m = JSON.parse(line);
+      if (m && typeof m === 'object' && Number.isFinite(m.ts)) out.push(m);
+    } catch { /* skipped */ }
+  }
+  return out;
+}
+function refRead(file, reader, cursor) {
+  const story = reader.startsWith('E-');
+  const visible = refAll(file).filter((m) => m.ts > cursor
+    && (!story || m.to === reader || m.from === reader || m.to === 'all'));
+  const messages = visible.slice(0, 50);
+  return { messages, cursor: messages.length ? messages[messages.length - 1].ts : cursor, more: visible.length > messages.length };
+}
+const msg = (t, ts, body, from = 'teamleader', to = t.P1) => ({ ts, from, to, topic: topicFor({ run_id: t.id }, from, to), body, reply_to: null });
+const row = (m) => `${JSON.stringify(m)}\n`;
+
+// 1,000 messages in five hand-appended batches, with one malformed line and ts out of order (one of
+// them at a page boundary); afterBatch runs once each batch is on disk.
+function bigBus(t, afterBatch = () => {}) {
+  const routes = [[t.P1, t.P2], [t.P2, 'teamleader'], ['teamleader', 'all'], ['person', t.P1]];
+  const bodies = ['plain', '한글 본문입니다', 'emoji 🚀🧪 body'];
+  const odd = new Map([[49, 5], [333, 2_000_000], [700, 10], [999, 1500]]);
+  mkdirSync(taskDir(t.id), { recursive: true });
+  for (let b = 0; b < 5; b++) {
+    let chunk = '';
+    for (let i = b * 200; i < (b + 1) * 200; i++) {
+      const [from, to] = routes[i % routes.length];
+      chunk += row(msg(t, odd.get(i) ?? 1000 + i, `${bodies[i % bodies.length]} ${i}`, from, to));
+      if (i === 450) chunk += '{"ts": 1450, broken\n';
+    }
+    appendFileSync(busFile(t.id), chunk);
+    afterBatch();
+  }
+}
+
+function cursorsOf(file) {
+  const all = refAll(file);
+  return [0, ...(all.length >= 500 ? [all[499].ts] : []), all[all.length - 1].ts];
+}
+
+test('cache parity: after every appended batch, reads and unread counts equal a whole-file read', () => {
+  const t = seed();
+  const task = load(t.id);
+  let batches = 0;
+  bigBus(t, () => {
+    batches++;
+    const file = busFile(t.id);
+    for (const reader of [t.P1, 'teamleader', 'person']) {
+      for (const cursor of cursorsOf(file)) {
+        assert.deepEqual(readMessages(task, { reader, cursor }), refRead(file, reader, cursor), `batch ${batches} ${reader} ${cursor}`);
+      }
+    }
+    for (const key of [t.P1, 'teamleader']) {
+      for (const mark of [0, 1100]) {
+        const want = refAll(file).filter((m) => m.to === key && m.ts > mark).length;
+        assert.ok(mark > 0 || want > 0);
+        assert.equal(unreadFor({ ...task, bus_reads: { [key]: mark } }, key), want, `batch ${batches} ${key} ${mark}`);
+      }
+    }
+  });
+  assert.equal(batches, 5);
+  assert.equal(refAll(busFile(t.id)).length, 1000);
+});
+
+test('readAll: equals the readMessages pages joined, sets no read mark; the module exports exactly the contract', () => {
+  const t = seed();
+  bigBus(t);
+  const task = load(t.id);
+  const before = snapshot(t.id);
+  for (const reader of [t.P1, 'teamleader', 'person']) {
+    for (const cursor of cursorsOf(busFile(t.id))) {
+      const messages = [];
+      let page = { cursor };
+      do {
+        page = readMessages(task, { reader, cursor: page.cursor });
+        messages.push(...page.messages);
+      } while (page.more);
+      assert.deepEqual(bus.readAll(task, { reader, cursor }), { messages, cursor: page.cursor }, `${reader} ${cursor}`);
+    }
+  }
+  assert.ok(bus.readAll(task, { reader: 'teamleader' }).messages.length > READ_LIMIT);
+  assert.equal(task.bus_reads, undefined);
+  assert.deepEqual(snapshot(t.id), before);
+  assert.throws(() => bus.readAll(task, { reader: 'teamleader', cursor: -1 }), /^Error: tm_read refused: cursor/);
+  assert.throws(() => bus.readAll(task, { reader: `${t.e}/P9` }), /^Error: tm_read refused: no STORY P9/);
+  assert.throws(() => bus.readAll(task, {}), /^Error: tm_read refused: /);
+  assert.deepEqual(Object.keys(bus).sort(), ['BODY_MAX', 'BUS_FILE', 'PERMISSIONS', 'READ_LIMIT', 'post', 'postMessage', 'readAll', 'readBus', 'readMarked', 'readMessages', 'topicFor', 'unreadFor']);
+});
+
+test('cache: a caller that changes a returned message does not change the next read', () => {
+  const t = seed();
+  say(t, 'person', 'all', 'kept');
+  const task = load(t.id);
+  readMessages(task, { reader: 'teamleader' }).messages[0].body = 'changed';
+  bus.readAll(task, { reader: 'teamleader' }).messages[0].body = 'changed';
+  assert.equal(readMessages(task, { reader: 'teamleader' }).messages[0].body, 'kept');
+});
+
+// A coarse filesystem clock must have ticked before an in-place edit.
+const tick = () => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 25);
+
+// A bus of five hand-written messages, read once so the cache is warm; check() compares a read with
+// the file as it is now.
+function warmBus() {
+  const t = seed();
+  const file = busFile(t.id);
+  const task = load(t.id);
+  const list = [1, 2, 3, 4, 5].map((n) => msg(t, n, `message number ${n}`));
+  mkdirSync(taskDir(t.id), { recursive: true });
+  writeFileSync(file, list.map(row).join(''));
+  const check = () => {
+    const got = readMessages(task, { reader: 'teamleader' });
+    assert.deepEqual(got, refRead(file, 'teamleader', 0));
+    return got.messages.map((m) => m.body);
+  };
+  assert.equal(check().length, 5);
+  return { t, file, list, check };
+}
+
+test('cache hazard: a line appended by another writer is in the next read', () => {
+  const { t, file, check } = warmBus();
+  appendFileSync(file, row(msg(t, 6, 'from another writer')));
+  assert.equal(check().at(-1), 'from another writer');
+});
+
+test('cache hazard: truncation, rename replacement and a longer in-place rewrite are read from 0', () => {
+  const { t, file, list, check } = warmBus();
+  tick();
+  writeFileSync(file, list.slice(0, 2).map(row).join(''));
+  assert.equal(check().length, 2);
+  // a new inode, longer than before and with the same last bytes in place
+  writeFileSync(`${file}.tmp`, [{ ...list[0], body: 'message number X' }, list[1], msg(t, 3, 'after the rename')].map(row).join(''));
+  renameSync(`${file}.tmp`, file);
+  assert.deepEqual(check(), ['message number X', 'message number 2', 'after the rename']);
+  tick();
+  writeFileSync(file, list.map((m) => row({ ...m, body: `${m.body}, rewritten longer` })).join(''));
+  assert.equal(check()[0], 'message number 1, rewritten longer');
+});
+
+test('cache hazard: a same-size edit of the first message with mtime restored is seen', () => {
+  const { file, check } = warmBus();
+  const stamp = new Date(1_700_000_000_000);
+  utimesSync(file, stamp, stamp);
+  check();
+  const old = statSync(file);
+  tick();
+  writeFileSync(file, readFileSync(file, 'utf8').replace('message number 1', 'message number Z'));
+  utimesSync(file, stamp, stamp);
+  assert.equal(statSync(file).size, old.size);
+  assert.equal(statSync(file).mtimeMs, old.mtimeMs);
+  assert.equal(check()[0], 'message number Z');
+});
+
+test('cache hazard: a partial line cut inside a multi-byte character is read once completed', () => {
+  const { t, file, check } = warmBus();
+  const bytes = Buffer.from(row(msg(t, 6, '한글 🚀 끝')));
+  const at = bytes.indexOf(Buffer.from('🚀')) + 2;
+  appendFileSync(file, bytes.subarray(0, at));
+  assert.equal(check().length, 5);
+  appendFileSync(file, bytes.subarray(at));
+  assert.equal(check().at(-1), '한글 🚀 끝');
+});
+
+test('cache: reply_to on a warm cache accepts a ts another writer appended and refuses any other', () => {
+  const { t, file, check } = warmBus();
+  appendFileSync(file, row(msg(t, 6, 'late')));
+  say(t, 'person', 'all', 'reply', { reply_to: 6 });
+  assert.equal(check().at(-1), 'reply');
+  refused(t, { from: 'person', to: 'all', body: 'x', reply_to: 7 }, 'reply_to is not the ts of a message on this bus');
+  refused(t, { from: 'person', to: 'all', body: 'x', reply_to: '6' }, 'reply_to is not the ts of a message on this bus');
+});
+
+test('cache I/O: an unchanged bus is not read again, an append reads only the new bytes plus the tail', () => {
+  const t = seed();
+  for (let i = 0; i < 20; i++) say(t, 'teamleader', t.P1, `message ${i} ${'x'.repeat(100)}`);
+  const file = busFile(t.id);
+  const task = load(t.id);
+  const first = busLines(t.id)[0].ts;
+  const real = { openSync: fs.openSync, readSync: fs.readSync, readFileSync: fs.readFileSync };
+  const paths = new Map();
+  let bytes = 0;
+  const count = (fn) => { bytes = 0; fn(); return bytes; };
+  fs.openSync = (p, ...rest) => { const fd = real.openSync(p, ...rest); paths.set(fd, p); return fd; };
+  fs.readSync = (fd, ...rest) => { const n = real.readSync(fd, ...rest); if (paths.get(fd) === file) bytes += n; return n; };
+  fs.readFileSync = (p, ...rest) => { const r = real.readFileSync(p, ...rest); if (p === file || paths.get(p) === file) bytes += Buffer.byteLength(r); return r; };
+  syncBuiltinESMExports();
+  try {
+    // the counter sees bus.mjs: the cold read is the whole file
+    assert.equal(count(() => readMessages(task, { reader: t.P1 })), statSync(file).size);
+    assert.equal(count(() => readMessages(task, { reader: t.P1 })), 0);
+    assert.equal(count(() => unreadFor(task, t.P1)), 0);
+    assert.equal(count(() => say(t, 'person', 'all', 'reply', { reply_to: first })), 0);
+    readMessages(task, { reader: t.P1 });
+    const line = row(msg(t, Date.now() + 1000, 'one more'));
+    appendFileSync(file, line);
+    const grown = count(() => readMessages(task, { reader: t.P1 }));
+    assert.ok(grown >= Buffer.byteLength(line) && grown <= Buffer.byteLength(line) + 64, `read ${grown} bytes`);
+  } finally {
+    Object.assign(fs, real);
+    syncBuiltinESMExports();
   }
 });

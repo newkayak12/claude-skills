@@ -32,6 +32,8 @@
 //                                 teamleader and person see everything. A trailing line with no
 //                                 newline is left for the next read and the cursor stays before it;
 //                                 a complete line that does not parse is skipped.
+//   readAll(task, {reader, cursor = 0})  pure read, same checks and refusals: {messages, cursor},
+//                                 every readMessages page until more is false, in one file look
 //   readMarked(task, opts)        readMessages + the read mark, inside an open task transaction -
 //                                 what tm_read runs; opts.env (default process.env) is the driver check
 //   readBus(taskId, opts)         readMarked under mutateTask
@@ -49,7 +51,7 @@
 // Identity is trusted the way storyask.mjs validateAsk trusts it (decision U1): a STORY sender is
 // accepted only as a running STORY of this EPIC. A call whose env has TEAMS_ASK_TASK_ID set is a
 // driver and may not post as 'teamleader' or 'person' (nor read as them: default - revisit).
-import { existsSync, readFileSync } from 'node:fs';
+import { closeSync, fstatSync, openSync, readSync } from 'node:fs';
 import { join } from 'node:path';
 import { appendLedger, mutateTask } from './store.mjs';
 import { record, taskDir } from './taskstate.mjs';
@@ -107,23 +109,80 @@ function storyState(task, pkgId) {
 }
 const SETTLED = new Set(['done', 'failed', 'skipped', 'unreachable']);
 
-// Every complete line, parsed; the trailing segment with no newline is left out, and so is a
-// complete line that does not parse (nothing can complete it).
-function allMessages(path) {
-  if (!existsSync(path)) return [];
-  const text = readFileSync(path, 'utf8');
-  const cut = text.lastIndexOf('\n');
-  if (cut < 0) return [];
-  const out = [];
-  for (const line of text.slice(0, cut).split('\n')) {
+// Read cache, per process: path -> {ino, size, mtimeNs, ctimeNs, offset, tail, list, tsSet}.
+// offset is the byte after the last newline parsed, tail the up to TAIL_MAX bytes before it, list
+// the parsed messages in file order. Only reading the file fills it; post() never does. Only a
+// strictly grown file with the same inode and tail is read from offset; any other change is read
+// from 0. Not detected: bytes before the tail window rewritten in place while the file also grows
+// between two reads, or a same-size rewrite within one timestamp tick. bus.jsonl is append-only
+// by contract (written only by post()).
+const CACHE_MAX = 16;
+const TAIL_MAX = 64;
+const cache = new Map();
+
+// The bytes [start, end) of fd; shorter only when the file ends first.
+function readRange(fd, start, end) {
+  const buf = Buffer.alloc(end - start);
+  let got = 0;
+  while (got < buf.length) {
+    const n = readSync(fd, buf, got, buf.length - got, start + got);
+    if (n === 0) break;
+    got += n;
+  }
+  return buf.subarray(0, got);
+}
+
+// Parse into `entry` the complete lines of `chunk`, the bytes that start at entry.offset. The
+// trailing segment with no newline is left out, and so is a complete line that does not parse
+// (nothing can complete it). The cut is at a newline byte, so no character is split.
+function consume(entry, chunk) {
+  const cut = chunk.lastIndexOf(0x0a);
+  if (cut < 0) return;
+  for (const line of chunk.toString('utf8', 0, cut).split('\n')) {
     if (!line.trim()) continue;
     try {
       const m = JSON.parse(line);
-      if (m && typeof m === 'object' && Number.isFinite(m.ts)) out.push(m);
+      if (m && typeof m === 'object' && Number.isFinite(m.ts)) {
+        entry.list.push(m);
+        entry.tsSet.add(m.ts);
+      }
     } catch { /* skipped */ }
   }
-  return out;
+  entry.offset += cut + 1;
+  entry.tail = Buffer.from(Buffer.concat([entry.tail, chunk.subarray(0, cut + 1)]).subarray(-TAIL_MAX));
 }
+
+// The up-to-date cache entry of `path`, or null when there is no file.
+function busEntry(path) {
+  let fd;
+  try {
+    fd = openSync(path, 'r');
+  } catch (e) {
+    if (e.code !== 'ENOENT') throw e;
+    cache.delete(path);
+    return null;
+  }
+  try {
+    const { ino, size, mtimeNs, ctimeNs } = fstatSync(fd, { bigint: true });
+    let entry = cache.get(path);
+    cache.delete(path); // re-set below: Map order is the LRU order
+    if (!entry || entry.ino !== ino || entry.size !== size || entry.mtimeNs !== mtimeNs || entry.ctimeNs !== ctimeNs) {
+      const grown = entry && entry.ino === ino && size > entry.size
+        && readRange(fd, entry.offset - entry.tail.length, entry.offset).equals(entry.tail);
+      if (!grown) entry = { offset: 0, tail: Buffer.alloc(0), list: [], tsSet: new Set() };
+      consume(entry, readRange(fd, entry.offset, Number(size)));
+      Object.assign(entry, { ino, size, mtimeNs, ctimeNs });
+    }
+    cache.set(path, entry);
+    if (cache.size > CACHE_MAX) cache.delete(cache.keys().next().value);
+    return entry;
+  } finally {
+    closeSync(fd);
+  }
+}
+
+// The cached list itself: callers copy what they hand out.
+const allMessages = (path) => busEntry(path)?.list ?? [];
 
 // The topic of a message from `from` to `to` (both already valid keys or role names).
 export function topicFor(task, from, to) {
@@ -163,7 +222,7 @@ export function post(task, input, env = process.env) {
     if (SETTLED.has(state)) throw REFUSED(`STORY ${t.pkgId} is ${state}`);
   }
   const path = busPath(task);
-  if (reply_to !== undefined && reply_to !== null && !allMessages(path).some((m) => m.ts === reply_to)) {
+  if (reply_to !== undefined && reply_to !== null && !busEntry(path)?.tsSet.has(reply_to)) {
     throw REFUSED('reply_to is not the ts of a message on this bus');
   }
   const ts = Math.max(Date.now(), (Number.isFinite(task.bus_last_ts) ? task.bus_last_ts : 0) + 1);
@@ -179,19 +238,43 @@ export function postMessage(taskId, input, env = process.env) {
   return mutateTask(taskId, (task) => post(task, input, env));
 }
 
-// {messages, cursor, more} for `reader`; changes nothing.
-export function readMessages(task, opts = {}) {
+// The checked reader and starting cursor of a read.
+function readQuery(task, opts) {
   const { reader } = opts;
   const r = roleOf(task, reader, 'from');
   if (r.error || r.role === 'all') throw REFUSED_READ('key must be teamleader, person or a STORY key (E-xxxxxxxx/<package>) of this task');
   if (r.role === 'story' && storyState(task, r.pkgId) === null) throw REFUSED_READ(`no STORY ${r.pkgId} in this task`);
   const raw = opts.cursor === undefined || opts.cursor === null ? 0 : Number(opts.cursor);
   if (!Number.isFinite(raw) || raw < 0) throw REFUSED_READ('cursor must be a non-negative number');
+  return { reader, role: r.role, raw };
+}
+
+// One page of `list` past `after`; the messages are copies.
+function pageOf(list, { reader, role }, after, limit) {
+  const visible = list.filter((m) => m.ts > after
+    && (role !== 'story' || m.to === reader || m.from === reader || m.to === 'all'));
+  const messages = visible.slice(0, limit).map((m) => ({ ...m }));
+  return { messages, cursor: messages.length ? messages[messages.length - 1].ts : after, more: visible.length > messages.length };
+}
+
+// {messages, cursor, more} for `reader`; changes nothing.
+export function readMessages(task, opts = {}) {
+  const q = readQuery(task, opts);
   const limit = Math.min(READ_LIMIT, Number.isInteger(opts.limit) && opts.limit > 0 ? opts.limit : READ_LIMIT);
-  const visible = allMessages(busPath(task)).filter((m) => m.ts > raw
-    && (r.role !== 'story' || m.to === reader || m.from === reader || m.to === 'all'));
-  const messages = visible.slice(0, limit);
-  return { messages, cursor: messages.length ? messages[messages.length - 1].ts : raw, more: visible.length > messages.length };
+  return pageOf(allMessages(busPath(task)), q, q.raw, limit);
+}
+
+// Every page of readMessages until `more` is false, from one look at the file: {messages, cursor}.
+export function readAll(task, opts = {}) {
+  const q = readQuery(task, opts);
+  const list = allMessages(busPath(task));
+  const messages = [];
+  let page = { cursor: q.raw };
+  do {
+    page = pageOf(list, q, page.cursor, READ_LIMIT);
+    messages.push(...page.messages);
+  } while (page.more);
+  return { messages, cursor: page.cursor };
 }
 
 // What tm_read runs: the read, and the reader's mark moved to the highest ts it returned.

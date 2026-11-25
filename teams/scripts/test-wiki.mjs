@@ -16,6 +16,8 @@ import { spawn, spawnSync } from 'node:child_process';
 import {
   mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, rmSync, existsSync, utimesSync,
 } from 'node:fs';
+import fs, { renameSync } from 'node:fs';
+import { syncBuiltinESMExports } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -693,4 +695,124 @@ test('card177 e2: one session, _meta call then plain call -> workspace first, sp
   assert.ok(!existsSync(join(wd(cwd), 's', 'first.md')));
   assert.ok(existsSync(join(wd(cwd), 's', 'second.md')));
   assert.ok(!existsSync(join(wd(ws), 's', 'second.md')));
+});
+
+// ---------- card 178 F6: the row cache gives the same results and re-reads only what changed ----------
+
+// An earlier case clears WIKI_FORCE_SCAN, so each case below restores the file's mode to match MODE.
+function freshInMode() {
+  if (MODE === 'scan') process.env.WIKI_FORCE_SCAN = '1';
+  return fresh();
+}
+const write = (space, slug, body, extra = {}) => wiki.callToolSync('wiki_write', { space, slug, title: `T ${slug}`, body, ...extra });
+const pageFile = (root, id) => join(wd(root), `${id}.md`);
+
+// INDEX.md rendered here from the md files alone: sorted space dirs, then sorted files, accepted only.
+function referenceIndex(root) {
+  const lines = [];
+  const spaces = readdirSync(wd(root), { withFileTypes: true })
+    .filter((d) => d.isDirectory() && !d.name.startsWith('.') && !d.name.startsWith('_')).map((d) => d.name).sort();
+  for (const space of spaces) {
+    for (const f of readdirSync(join(wd(root), space)).filter((n) => n.endsWith('.md')).sort()) {
+      const [, head, body] = /^---\n([\s\S]*?)\n---\n([\s\S]*)$/.exec(readFileSync(join(wd(root), space, f), 'utf8'));
+      if (/^status: "superseded"$/m.test(head)) continue;
+      const line = body.split('\n').map((l) => l.trim()).find((l) => l !== '' && l[0] !== '#') ?? '';
+      lines.push(`[[${space}/${f.slice(0, -3)}]] — ${line.length > 160 ? `${line.slice(0, 159)}…` : line}`);
+    }
+  }
+  return `# Wiki index\n\n${lines.join('\n')}\n`;
+}
+const indexOf = (root) => readFileSync(join(wd(root), 'INDEX.md'), 'utf8');
+
+test('F6 INDEX.md is byte-identical to a render from the md files after writes, an update, a supersede and an accept', async () => {
+  const root = freshInMode();
+  const step = () =>assert.equal(indexOf(root), referenceIndex(root));
+  write('a', 'x', '결제 승인 요청은 게이트웨이로 전달된다.'); step();
+  write('a.b', 'y', '# Heading first\n\n  the summary line  \nmore'); step();
+  write('a', 'long', `${'long '.repeat(40)}end`); step();
+  write('pay', 'v1', 'old rule'); step();
+  write('pay', 'other', 'untouched [[a/x]]'); step();
+  write('z', 'only-heading', '# just a heading'); step();
+  write('a', 'x', 'updated summary'); step();
+  write('pay', 'v2', 'new rule', { supersedes: 'pay/v1' }); step();
+  await accept('a.b', 'z', 'Accepted', 'accepted body'); step();
+  const index = indexOf(root);
+  assert.ok(index.indexOf('[[a/x]]') < index.indexOf('[[a.b/y]]'), 'dir order, not id order');
+  assert.ok(index.includes('[[a/x]] — updated summary') && index.includes('…') && !index.includes('[[pay/v1]]'));
+});
+
+test('F6 an in-place edit keeping mtime and size is seen by scan reads and by the next INDEX.md', async () => {
+  const root = freshInMode();
+  write('h', 'p','alphaword stays here');
+  write('h', 'q', 'neighbour page');
+  const path = pageFile(root, 'h/p');
+  const stamp = new Date('2026-01-02T03:04:05Z');
+  utimesSync(path, stamp, stamp);
+  await ids('alphaword'); // warm
+  const before = fs.statSync(path);
+  sleepMs(25);
+  writeFileSync(path, readFileSync(path, 'utf8').replace('alphaword', 'omegaword'));
+  utimesSync(path, stamp, stamp);
+  const after = fs.statSync(path);
+  assert.deepEqual([after.mtimeMs, after.size, after.ino], [before.mtimeMs, before.size, before.ino]);
+  assert.equal(wiki.wikiMode(), MODE);
+  if (MODE === 'scan') {
+    assert.deepEqual(await ids('omegaword'), ['h/p']);
+    assert.deepEqual(await ids('alphaword'), []);
+  }
+  write('h', 'r', 'another page');
+  assert.equal(indexOf(root), referenceIndex(root));
+  assert.ok(indexOf(root).includes('[[h/p]] — omegaword stays here'));
+});
+
+test('F6 a page deleted by hand or replaced by rename with a restored mtime is not served from the cache', async () => {
+  const root = freshInMode();
+  write('h', 'gone','vanishterm body');
+  write('h', 'swap', 'beforeterm body');
+  const path = pageFile(root, 'h/swap');
+  const stamp = new Date('2026-01-02T03:04:05Z');
+  utimesSync(path, stamp, stamp);
+  assert.deepEqual(await ids('vanishterm'), ['h/gone']); // warm
+  sleepMs(25);
+  rmSync(pageFile(root, 'h/gone'));
+  const tmp = `${path}.new`;
+  writeFileSync(tmp, readFileSync(path, 'utf8').replace('beforeterm', 'afterxterm'));
+  utimesSync(tmp, stamp, stamp);
+  renameSync(tmp, path);
+  assert.deepEqual(await ids('vanishterm'), []);
+  if (MODE === 'scan') assert.deepEqual(await ids('afterxterm'), ['h/swap']);
+  write('h', 'third', 'third page');
+  assert.equal(indexOf(root), referenceIndex(root));
+  assert.ok(indexOf(root).includes('[[h/swap]] — afterxterm body') && !indexOf(root).includes('[[h/gone]]'));
+});
+
+test('F6 I/O count: a warm search reads no page file; one warm write reads at most 2', () => {
+  const root = freshInMode();
+  for (let i = 0; i < 8; i++) write(`s${i % 2}`, `p${i}`, `countterm body ${i}`);
+  const real = fs.readFileSync;
+  let reads = [];
+  fs.readFileSync = (...args) => { reads.push(String(args[0])); return real(...args); };
+  syncBuiltinESMExports();
+  // <root>/.teams_wiki/<space>/<slug>.md, so INDEX.md, _proposed and _rejected are not counted
+  const pageReads = (fn) => {
+    reads = [];
+    fn();
+    return reads.filter((p) => p.startsWith(wd(root)) && /^\/[^/._][^/]*\/[^/]+\.md$/.test(p.slice(wd(root).length))).length;
+  };
+  try {
+    assert.equal(pageReads(() => wiki.callToolSync('wiki_get', { id: 's0/p0' })) >= 1, true, 'a known page read is counted');
+    write('s0', 'warmup', 'warm up');
+    const search = () => assert.ok(wiki.callToolSync('wiki_search', { query: 'countterm' }).results.length > 0);
+    search();
+    assert.equal(pageReads(search), 0);
+    const added = pageReads(() => write('s1', 'added', 'countterm added'));
+    assert.ok(added >= 1 && added <= 2, `new page: ${added} page reads`);
+    const updated = pageReads(() => write('s0', 'p0', 'countterm updated'));
+    assert.ok(updated >= 1 && updated <= 2, `update: ${updated} page reads`);
+    assert.equal(pageReads(search), 0);
+  } finally {
+    fs.readFileSync = real;
+    syncBuiltinESMExports();
+  }
+  assert.equal(indexOf(root), referenceIndex(root));
 });
