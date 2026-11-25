@@ -36,7 +36,7 @@ import path from 'node:path';
 const PARTS = ['meta.md', 'problem.md', 'decision.md', 'result.md', 'learned.md', 'gaps.md', 'history.md'];
 // selected / excluded: manage's step 2 (sources/선정.md); written: its draft step
 const STATUSES = ['raw', 'shaped', 'selected', 'excluded', 'written', 'rendered', 'reviewed'];
-const FLAGS = new Set(['id', 'source', 'title', 'period', 'role', 'tags', 'note', 'status', 'later-step', 'question', 'citation', 'add-source', 'item', 'line', 'project', 'part']);
+const FLAGS = new Set(['id', 'source', 'title', 'period', 'role', 'tags', 'note', 'status', 'later-step', 'question', 'citation', 'add-source', 'item', 'line', 'project', 'part', 'row']);
 const ANSWERED = '[답변됨]';
 const ID_RE = /^[\p{L}\p{N}][\p{L}\p{N}-]*$/u;
 const SRC = path.resolve(process.cwd(), 'sources');
@@ -64,6 +64,10 @@ function needStatus(s) {
 function needLaterStep(a) {
   if (!one(a['later-step'])) fail('--status belongs to later steps: pass --later-step <name> (step 1 never changes status)');
 }
+function sceneHash(s) {
+  return crypto.createHash('sha256').update(String(s).normalize('NFC').trim()).digest('hex').slice(0, 8);
+}
+
 function today() {
   const env = process.env.MATERIAL_DATE;
   if (env) {
@@ -135,6 +139,7 @@ function ledgerItems() {
         header: /^>[^\n]*·[^\n]*·\s*원자료:\s*\S/.test(text.replace(/^\s+/, '').replace(/^#[ \t][^\n]*\n\s*/, '')),
         // `> 장면: <the moment the person's judgment shows> — "<quote>"`
         scene: (text.match(/^>\s*장면\s*[:：]\s*(\S.*)$/m) || [, null])[1],
+        review: (text.match(/^>\s*장면 검수\s*[:：]\s*(\S+)\s*\(([0-9a-f]+)\)/m) || []).slice(1),
         file,
         title: (text.match(/^#[ \t]+(.+)$/m) || [, f.name.normalize('NFC').replace(/\.md$/, '')])[1].trim(),
         written: /^- \d{4}-\d{2}-\d{2} .*\(status: written\b/m.test(text),
@@ -354,6 +359,9 @@ const cmd = {
       // an A item names the scene its judgment shows in (user, 2026-11-24: 글감 is picked by
       // "how the person judges", not by what looks good)
       noScene: items.filter((i) => i.grade === 'A' && !i.scene).map((i) => i.id),
+      // a scene with no review mark, or one changed after its review (bench25: two of three runs
+      // edited scenes after review and never sent them back)
+      unreviewed: items.filter((i) => i.grade === 'A' && i.scene && i.review[1] !== sceneHash(i.scene)).map((i) => i.id),
       notInReadme: [],
       noExcluded: t.projects.filter((p) => !p.x.length).map((p) => p.name),
       noReadme: t.projects.filter((p) => !p.readme).map((p) => p.name),
@@ -418,6 +426,43 @@ const cmd = {
       made.push('README.md (rows added)');
     }
     return { created: made };
+  },
+
+  // Writes or replaces an A item's `> 장면:` line under its header (NFD names need no file tool).
+  // A changed scene drops its review mark, so it shows as `unreviewed` until reviewed again.
+  scene(a) {
+    need(a, 'item', 'line');
+    const it = ledgerItems().find((x) => x.id === one(a.item).normalize('NFC'));
+    if (!it) fail(`no ledger item ${a.item}`);
+    const full = path.join(SRC, it.file);
+    const want = `> 장면: ${one(a.line).trim()}`;
+    let lines = fs.readFileSync(full, 'utf8').split('\n');
+    const at = lines.findIndex((l) => /^>\s*장면\s*[:：]/.test(l));
+    if (at >= 0 && lines[at] === want) return { result: 'unchanged', id: it.id };
+    lines = lines.filter((l) => !/^>\s*장면 검수\s*[:：]/.test(l));
+    const i = lines.findIndex((l) => /^>\s*장면\s*[:：]/.test(l));
+    if (i >= 0) lines[i] = want;
+    else {
+      const h = lines.findIndex((l) => /^>[^\n]*원자료\s*[:：]/.test(l));
+      lines.splice(h >= 0 ? h + 1 : 0, 0, want);
+    }
+    fs.writeFileSync(full, lines.join('\n'));
+    return { result: at >= 0 ? 'replaced' : 'written', id: it.id };
+  },
+
+  // A reviewer's verdict on the current scene: `> 장면 검수: <row> (<hash of the scene line>)`.
+  'scene-review'(a) {
+    need(a, 'item', 'row');
+    const it = ledgerItems().find((x) => x.id === one(a.item).normalize('NFC'));
+    if (!it) fail(`no ledger item ${a.item}`);
+    if (!/^(P[1-9]|weak|F[1-4])$/.test(one(a.row))) fail('--row is P1–P9, weak or F1–F4 (references/scene.md)');
+    if (!it.scene) fail(`${it.id} has no scene to review: run scene first`);
+    const full = path.join(SRC, it.file);
+    const lines = fs.readFileSync(full, 'utf8').split('\n').filter((l) => !/^>\s*장면 검수\s*[:：]/.test(l));
+    const i = lines.findIndex((l) => /^>\s*장면\s*[:：]/.test(l));
+    lines.splice(i + 1, 0, `> 장면 검수: ${one(a.row)} (${sceneHash(it.scene)})`);
+    fs.writeFileSync(full, lines.join('\n'));
+    return { result: 'reviewed', id: it.id, row: one(a.row) };
   },
 
   'ledger-log'(a) {
@@ -538,7 +583,7 @@ function parse(argv) {
 
 try {
   const [sub, ...rest] = process.argv.slice(2);
-  if (!Object.hasOwn(cmd, sub ?? '')) fail(`unknown subcommand: ${sub ?? ''} (id|match|init|index|log|answer|gaps|foreign|ledger|ledger-scaffold|ledger-log|update|item-pages)`);
+  if (!Object.hasOwn(cmd, sub ?? '')) fail(`unknown subcommand: ${sub ?? ''} (id|match|init|index|log|answer|gaps|foreign|ledger|ledger-scaffold|ledger-log|scene|scene-review|update|item-pages)`);
   process.stdout.write(JSON.stringify(cmd[sub](parse(rest))) + '\n');
 } catch (e) {
   process.stdout.write(JSON.stringify({ error: e.message }) + '\n');

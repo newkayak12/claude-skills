@@ -40,6 +40,8 @@ Script, run from the project root: `node ${CLAUDE_PLUGIN_ROOT}/skills/material/s
 | `ledger` | none | A workspace that keeps material as `sources/NN_프로젝트/A1….md`: lists each graded file (A, B, C + n) as item `NN_프로젝트/A1` with grade, title, `header` (first line `> 등급 · 프로젝트 · 원자료: <path>`) and whether it is `written`; `excluded` = the `X_` files; `analysis` = whether the `analysis/` link exists; `problems` = other grade letters, no header, not in the project README, no `X_` file, no README, not in the project table. Writes nothing |
 | `ledger-scaffold` | opt. `--project NN_이름 --period P` | Creates what `problems` lists as missing, never overwriting: the project `README.md` (items and grades), `X_쓰지않을것.md`, the `sources/README.md` project table (folder, project, period; a missing row is appended) |
 | `ledger-log` | `--item --note` (opt. `--status --later-step`) | Appends one line under `## 이력` at the end of that ledger file, nothing above it touched; a note already there is `unchanged` |
+| `scene` | `--item --line` | Writes or replaces the A item's `> 장면:` line under its header (NFD names fine); a change drops the review mark |
+| `scene-review` | `--item --row` | Records the reviewer's verdict (`P1`–`P9`, `weak`, `F1`–`F4`) on the current scene; `ledger` lists scenes without a current mark as `unreviewed` |
 | `update` | `--item --note --source` (opt. `--line N` or `N-M`; folder item: `--part problem\|decision\|result\|learned`, default result) | Ledger file, or a folder item's part: appends `## 갱신 — <date>` with the note and `출처: <source>:<line>` at the end, nothing above it touched; the same note and source again is `unchanged`. A folder item refreshed during collection is still filled in place (step 4) |
 | `item-pages` | none | Reads `portfolio-skeleton.md` (old `skeleton.md` too): item → pages from the `글감:` lines; `stale` = pages whose item text changed since the table kept in `sources/item-pages.json` (first run: baseline, none stale); `missing` = cited ids with no item |
 
@@ -77,13 +79,16 @@ Trigger: "글감 원장 정리해줘". One item = one file `<grade><n>_<title>.m
 1. `ledger`; say each `problems` entry. Wrong grade letters and missing headers are the user's to fix (ask which grade); do not rename or rewrite their files.
 1b. **Pick the scene, then verify it.** Grade A means the item shows how this person judges, not
    that it looks good (user, 2026-11-24: "나한테 무슨 이득인가... 내가 납득이 안되는 부분이야").
-   For each A item, write under its header `> 장면: <one line> — "<verbatim quote>" (<원자료 path +
-   heading>)`, matched to one row of `references/scene.md` (pass P1–P8, weak, fail F1–F4) — the
+   For each A item, write `material scene --item <id> --line '<one line> — "<verbatim quote>" (<원자료
+   path + heading>)'` (never a script: the command handles NFD names), matched to one row of
+   `references/scene.md` (pass P1–P9, weak, fail F1–F4) — the
    writer reads it first, and a separate reviewer subagent gets that page pasted whole into its
    prompt with only the item and its 원자료, and names the row behind each verdict (three runs judged
    the same 27 items with 2, 8 and 11 failures when the bar was prose, 2026-11-24). A banned number
-   never fails a scene, and a later 정정 is the scene, not a failure (scene.md F4). Every scene changed
-   after review goes back to the reviewer before step 2. A scene that still fails keeps the item A
+   never fails a scene, and a later 정정 is the scene, not a failure (scene.md F4). Each verdict is
+   recorded `material scene-review --item <id> --row <P1…|weak|F1…>`; changing a scene afterwards
+   drops the mark, and `ledger` lists it as `unreviewed` until reviewed again — step 2 starts only
+   when `unreviewed` is empty (two of three runs skipped the re-review when it was prose, 2026-11-25). A scene that still fails keeps the item A
    with a question for the user (an item's `gaps.md`; in a ledger workspace `manage questions --add`, which writes `docs/확인할-것.md`) (rule b), or regrades with the user's yes — never dropped by the
    writer. `ledger` lists A items without a 장면 as `noScene`.
 2. `ledger-scaffold` for missing READMEs, `X_쓰지않을것.md` and project rows; ask the period for a new project.

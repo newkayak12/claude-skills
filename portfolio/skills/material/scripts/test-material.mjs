@@ -418,6 +418,24 @@ test('every subcommand prints exactly one JSON object; script imports only node:
 });
 
 // Card 69 (a): a workspace whose material is a per-project ledger, sources/NN_프로젝트/A1….md, is read as it is.
+test('scene writes the line under the header on an NFD file; review marks it; a later edit makes it unreviewed', () => {
+  const cwd = ledgerProject({ nfd: true });
+  const d = fs.readdirSync(path.join(cwd, 'sources')).find((n) => n.normalize('NFC') === '01_가상검색');
+  const f = fs.readdirSync(path.join(cwd, 'sources', d)).find((n) => n.startsWith('A1'));
+  fs.writeFileSync(path.join(cwd, 'sources', d, f), '# 검색 개편\n> 등급: A · 가상검색 · 원자료: analysis/01/retro.md\n\n본문\n');
+  const id = '01_가상검색/A1';
+  assert.equal(run(cwd, ['scene', '--item', id, '--line', '내 안이 리뷰에서 바뀌었다 — "복합 인덱스로"']).json.result, 'written');
+  const lines = fs.readFileSync(path.join(cwd, 'sources', d, f), 'utf8').split('\n');
+  assert.match(lines[2], /^> 장면: 내 안이/);
+  const un = () => run(cwd, ['ledger']).json.problems.unreviewed;
+  assert.ok(un().includes(id));
+  assert.equal(run(cwd, ['scene-review', '--item', id, '--row', 'P1']).json.result, 'reviewed');
+  assert.ok(!un().includes(id));
+  assert.equal(run(cwd, ['scene', '--item', id, '--line', '내 안이 리뷰에서 바뀌었고 이유를 적었다 — "복합 인덱스로"']).json.result, 'replaced');
+  assert.ok(un().includes(id), 'a scene changed after review is unreviewed again');
+  assert.equal(fs.readFileSync(path.join(cwd, 'sources', d, f), 'utf8').match(/^> 장면:/gm).length, 1);
+});
+
 function ledgerProject({ nfd = false } = {}) {
   const { cwd } = project();
   const n = (s) => (nfd ? s.normalize('NFD') : s);
