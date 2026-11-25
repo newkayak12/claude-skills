@@ -141,7 +141,7 @@ context or in a figure either; `claims` flags it on any page citing the item), w
    subagent that did not write it; it returns rule-numbered findings, the writer revises, and the
    chapter is done when the reviewer has none left or after three rounds, whichever is first. The
    first round walks every rubric rule against every page at once; later rounds check the edits only.
-   Third-round findings are not edited but go to `docs/확인할-것.md`; page count, items and conflicts:
+   Third-round findings are not edited but listed under `## 남은 검수` at the chapter's end; `docs/확인할-것.md` holds only facts the user alone knows (a ratio's base, what "2건" names); a grade, title or placement the material settles is decided and written, never asked; page count, items and conflicts:
    `references/principles.md` § Chapters. Assemble after the last chapter, then review the
    whole once for what spans chapters: contents vs titles, one cover archetype, appendix size,
    figure forms by page role (user, 2026-11-24: "작은 단위로 작성-퇴고 나중에 모아서 진행").

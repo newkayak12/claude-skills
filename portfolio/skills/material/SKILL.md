@@ -88,9 +88,10 @@ Trigger: "글감 원장 정리해줘". One item = one file `<grade><n>_<title>.m
    never fails a scene, and a later 정정 is the scene, not a failure (scene.md F4). Each verdict is
    recorded `material scene-review --item <id> --row <P1…|weak|F1…>`; changing a scene afterwards
    drops the mark, and `ledger` lists it as `unreviewed` until reviewed again — step 2 starts only
-   when `unreviewed` is empty (two of three runs skipped the re-review when it was prose, 2026-11-25). A scene that still fails keeps the item A
-   with a question for the user (an item's `gaps.md`; in a ledger workspace `manage questions --add`, which writes `docs/확인할-것.md`) (rule b), or regrades with the user's yes — never dropped by the
-   writer. `ledger` lists A items without a 장면 as `noScene`.
+   when `unreviewed` is empty (two of three runs skipped the re-review when it was prose, 2026-11-25). A scene that still fails is the writer's call, not a
+   question: the file stays A, but the item never leads a page — the writer places it as evidence for another item or
+   in the appendix and says why in one line (three runs asked the user "B로 내릴까요?" for every failed scene; user, 2026-11-25: "이런 판단이 아쉬운거임").
+   Only a fact the material lacks goes to `manage questions --add` (rule b). Never dropped by the writer. `ledger` lists A items without a 장면 as `noScene`.
 2. `ledger-scaffold` for missing READMEs, `X_쓰지않을것.md` and project rows; ask the period for a new project.
 3. Raw material is read from the `analysis/` link (a read-only archive): read it, never write there; cite it as the `원자료:` path.
 4. `X_` files list topics not to use and why (interview attack risk): never made into items, never cited by `portfolio:manage` `claims`; a new such topic is appended to the project's `X_` file with its reason, from the user's words.
