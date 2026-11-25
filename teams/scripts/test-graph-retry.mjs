@@ -5,9 +5,10 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { settleFailure, retryReport, retrySubgoal, retrySpec } from '../mcp/graph-retry.mjs';
+import { stopRule, settleFailure, retryReport, retrySubgoal, retrySpec } from '../mcp/graph-retry.mjs';
 import { expandSubgoals } from '../mcp/graph-expand.mjs';
-import { createRun, getNode } from '../mcp/graph-nodes.mjs';
+import { createRun, getNode, node } from '../mcp/graph-nodes.mjs';
+import { saveRun, loadRun } from '../mcp/graph-runfile.mjs';
 import { goalGateSiblings } from '../mcp/graph-goalgate.mjs';
 
 const withRun = (opts, specSubgoals, fn) => {
@@ -146,5 +147,249 @@ test('retrySpec: over budget returns no attempt and settles the dead setgoal / c
     const out = retrySpec(run, 'f');
     assert.deepEqual([out.attempt, out.reason], [null, 'retry budget exhausted']);
     assert.equal(getNode(run, 'critique').final, true);
+  });
+});
+
+// Local copy of the old decision: toolDenied / rejectionSig / priorSig / goalRejectionSig from
+// teams/mcp/broker-independence.mjs (lines 144, 170-174, 177-182, 189-192) and the two
+// comparisons in autoReassign (line 321) and autoReassignGoalGate (line 249).
+const toolDenied = (result) => Boolean(result) && result.blocked === 'tool denied';
+const rejectionSig = (result) => {
+  if (!result || toolDenied(result)) return '';
+  const gaps = [...(result.gaps || []), ...(result.blocking || [])].map((g) => String(g).trim().toLowerCase());
+  return [String(result.reason || '').trim().toLowerCase(), ...gaps.sort()].filter(Boolean).join('|');
+};
+const priorSig = (run, sid, attempt) => {
+  const prior = run.nodes.filter((x) => x.subgoal_id === sid && x.state === 'failed' && (x.attempt || 1) === attempt - 1 && x.result).pop();
+  return prior ? rejectionSig(prior.result) : '';
+};
+const goalRejectionSig = (c) => [...(c.gaps || []), ...(c.spec_drift || [])].map((g) => String(g).trim().toLowerCase()).sort().join('|');
+
+test('stopRule: subgoal stops at the third gate (F2-AC-14, max_retries=2), not the second', () => {
+  withRun({ max_retries: 2 }, [{ id: 'U1' }], (run) => {
+    assert.deepEqual(stopRule(run, { loop: 'subgoal', subgoal_id: 'U1' }), { stop: false });
+    retrySubgoal(run, 'U1', 'f');
+    assert.deepEqual(stopRule(run, { loop: 'subgoal', subgoal_id: 'U1' }), { stop: false }, 'two gates: one attempt left');
+    retrySubgoal(run, 'U1', 'f');
+    assert.deepEqual(stopRule(run, { loop: 'subgoal', subgoal_id: 'U1' }), { stop: true, reason: 'retry budget exhausted', action: 'settle' });
+    assert.equal(retrySubgoal(run, 'U1', 'f').attempt, null);
+  });
+});
+
+test('stopRule: spec stops at the third setgoal (F2-AC-14), not the second', () => {
+  withRun({ max_retries: 2 }, [{ id: 'U1' }], (run) => {
+    assert.equal(stopRule(run, { loop: 'spec' }).stop, false, 'one setgoal');
+    run.nodes.push(node('setgoal:2', 'setgoal', []));
+    assert.equal(stopRule(run, { loop: 'spec' }).stop, false);
+    run.nodes.push(node('setgoal:3', 'setgoal', []));
+    assert.deepEqual(stopRule(run, { loop: 'spec' }), { stop: true, reason: 'retry budget exhausted', action: 'settle' });
+  });
+});
+
+test('stopRule: report stops at report_attempts 3 (F2-AC-14), not 2; no failed report never stops', () => {
+  withRun({ max_retries: 2 }, [{ id: 'U1' }], (run) => {
+    assert.equal(stopRule(run, { loop: 'report' }).stop, false, 'no failed report');
+    const r = getNode(run, 'report');
+    fail(r);
+    r.report_attempts = 2;
+    assert.equal(stopRule(run, { loop: 'report' }).stop, false);
+    r.report_attempts = 3;
+    assert.deepEqual(stopRule(run, { loop: 'report' }), { stop: true, reason: 'retry budget exhausted', action: 'settle' });
+  });
+});
+
+test('stopRule: repair and goal_round share the repair bound and its reason; an unknown loop never stops', () => {
+  const run = { max_retries: 2, nodes: [node('repair:1', 'repair')] };
+  assert.equal(stopRule(run, { loop: 'repair' }).stop, false);
+  assert.equal(stopRule(run, { loop: 'goal_round' }).stop, false);
+  run.nodes.push(node('repair:2', 'repair'));
+  for (const loop of ['repair', 'goal_round']) {
+    assert.deepEqual(stopRule(run, { loop }), { stop: true, reason: 'repair budget exhausted', action: 'settle' });
+  }
+  assert.deepEqual(stopRule(run, { loop: 'nope' }), { stop: false });
+});
+
+test('stopRule F2-AC-12: same signature wins over a spent count on subgoal; stalled wins over a spent repair bound', () => {
+  withRun({ max_retries: 0 }, [{ id: 'U1' }], (run) => {
+    assert.equal(stopRule(run, { loop: 'subgoal', subgoal_id: 'U1' }).reason, 'retry budget exhausted', 'count alone is spent here');
+    assert.deepEqual(stopRule(run, { loop: 'subgoal', subgoal_id: 'U1', sig: 'x', prior_sig: 'x' }), { stop: true, reason: 'same signature', action: 'escalate' });
+    assert.equal(stopRule(run, { loop: 'subgoal', subgoal_id: 'U1', sig: '', prior_sig: '' }).reason, 'retry budget exhausted', 'empty never matches');
+    assert.equal(stopRule(run, { loop: 'subgoal', subgoal_id: 'U1', sig: 'x', prior_sig: 'y' }).reason, 'retry budget exhausted');
+  });
+  const run = { max_retries: 0, nodes: [], last_goal_sig: 'g' };
+  assert.equal(stopRule(run, { loop: 'goal_round', sig: 'h' }).reason, 'repair budget exhausted');
+  assert.deepEqual(stopRule(run, { loop: 'goal_round', sig: 'g' }), { stop: true, reason: 'stalled', action: 'settle' });
+  assert.equal(stopRule(run, { loop: 'goal_round', sig: '' }).reason, 'repair budget exhausted', 'empty never matches');
+  run.last_goal_sig = '';
+  assert.equal(stopRule(run, { loop: 'goal_round', sig: '' }).reason, 'repair budget exhausted', 'empty equal empty is no match');
+});
+
+test('stopRule F2-AC-13: helper decision equals the old signature decision, toolDenied => empty', () => {
+  const results = [
+    { reason: 'Bad', gaps: ['B', 'a'] }, { reason: ' bad ', gaps: ['a', 'b'] }, { reason: 'other' },
+    { reason: 'Bad', blocked: 'tool denied' }, { blocking: ['x'] }, {}, null,
+  ];
+  for (const a of results) for (const b of results) {
+    withRun({ max_retries: 5 }, [{ id: 'U1' }], (run) => {
+      const prior = getNode(run, 'gate:U1:1');
+      prior.state = 'failed';
+      prior.result = b;
+      const sig = rejectionSig(a);
+      const pSig = priorSig(run, 'U1', 2);
+      const got = stopRule(run, { loop: 'subgoal', subgoal_id: 'U1', sig, prior_sig: pSig });
+      assert.equal(got.stop && got.action === 'escalate', Boolean(sig) && sig === pSig, JSON.stringify([a, b]));
+    });
+  }
+  assert.equal(rejectionSig(results[3]), '', 'toolDenied => empty signature');
+  const cons = [{ gaps: ['A'], spec_drift: ['b'] }, { gaps: ['b', 'a'] }, { gaps: [] }, {}];
+  for (const c of cons) for (const last of ['', ...cons.map(goalRejectionSig)]) {
+    const sig = goalRejectionSig(c);
+    const got = stopRule({ max_retries: 5, nodes: [], last_goal_sig: last }, { loop: 'goal_round', sig });
+    assert.equal(got.stop && got.reason === 'stalled', Boolean(sig) && sig === last, JSON.stringify([c, last]));
+  }
+});
+
+test('F2-AC-15: settleFailure over an order-only edge settles nothing downstream', () => {
+  const run = { nodes: [node('a', 'implement'), node('b', 'test', [], { after: ['a'] })] };
+  fail(run.nodes[0]);
+  assert.deepEqual(settleFailure(run, run.nodes[0]), []);
+  assert.equal(run.nodes[1].state, 'pending');
+  assert.equal(run.nodes[0].final, true);
+});
+
+test('F2-AC-20: retrySubgoal leaves the old head and pushes a fresh pending head with a new node id', () => {
+  withRun({ max_retries: 2 }, [{ id: 'U1' }], (run) => {
+    const old = getNode(run, 'implement:U1:1');
+    fail(old);
+    const out = retrySubgoal(run, 'U1', 'f');
+    assert.equal(out.attempt, 2);
+    const head = getNode(run, 'implement:U1:2');
+    assert.ok(head && head.node_id !== old.node_id);
+    assert.equal(head.state, 'pending');
+    assert.equal(old.state, 'failed', 'the old attempt stays as evidence');
+  });
+});
+
+test('stopRule does not mutate run', () => {
+  withRun({ max_retries: 0 }, [{ id: 'U1' }], (run) => {
+    const before = JSON.parse(JSON.stringify(run));
+    for (const loop of ['subgoal', 'spec', 'report', 'repair', 'goal_round']) stopRule(run, { loop, subgoal_id: 'U1', sig: 's', prior_sig: 's' });
+    assert.deepEqual(run, before);
+  });
+});
+
+// F2-US-4: spec-escalation carry-over of a passed sibling.
+const passSubgoal = (run, sid) => run.nodes.filter((n) => n.subgoal_id === sid).forEach((n) => { n.state = 'done'; n.result = { stage_ok: true }; });
+const respec = (run, specSubgoals) => {
+  retrySpec(run, 'fb');
+  run.spec = { goal: 'g', acceptance: ['a'], subgoals: specSubgoals };
+  const before = run.nodes.length;
+  expandSubgoals(run, specSubgoals);
+  return run.nodes.slice(before);
+};
+const twoSpec = () => [{ id: 'U1', acceptance: ['x', 'y'] }, { id: 'U2', deps: ['U1'] }];
+
+test('F2-AC-17: a passed sibling kept as it was gets no new nodes, keeps its done nodes and gate result', () => {
+  withRun({}, twoSpec(), (run) => {
+    passSubgoal(run, 'U1');
+    getNode(run, 'gate:U1:1').result = { stage_ok: true, mark: 'kept' };
+    const pushed = respec(run, twoSpec());
+    assert.ok(pushed.every((n) => n.subgoal_id !== 'U1'), 'no node for the carried sibling');
+    assert.equal(pushed.filter((n) => n.subgoal_id === 'U2').length, 3);
+    assert.equal(pushed.length, 6, 'U2 chain, reduce, goal gate, report: 6 where a full rebuild pushes 9');
+    assert.equal(run.nodes.filter((n) => n.subgoal_id === 'U1').length, 3);
+    assert.ok(run.nodes.filter((n) => n.subgoal_id === 'U1').every((n) => n.state === 'done'));
+    assert.equal(getNode(run, 'gate:U1:1').result.mark, 'kept');
+    assert.deepEqual(run.carry, []);
+  });
+});
+
+test('F2-AC-17: a rebuilt sibling that depends on the carried one waits on the carried gate', () => {
+  withRun({}, twoSpec(), (run) => {
+    passSubgoal(run, 'U1');
+    respec(run, twoSpec());
+    assert.deepEqual(getNode(run, 'implement:U2:2').deps, ['critique:2', 'gate:U1:1']);
+  });
+});
+
+test('F2-AC-18: a changed id gives a full chain', () => {
+  withRun({}, twoSpec(), (run) => {
+    passSubgoal(run, 'U1');
+    const pushed = respec(run, [{ id: 'U1b', acceptance: ['x', 'y'] }, { id: 'U2' }]);
+    assert.equal(pushed.filter((n) => n.subgoal_id === 'U1b').length, 3);
+  });
+});
+
+test('F2-AC-18: a changed kind gives a full chain', () => {
+  withRun({}, twoSpec(), (run) => {
+    passSubgoal(run, 'U1');
+    const pushed = respec(run, [{ id: 'U1', kind: 'document', acceptance: ['x', 'y'] }, { id: 'U2' }]);
+    assert.ok(pushed.filter((n) => n.subgoal_id === 'U1').length > 0);
+    assert.ok(getNode(run, 'draft:U1:2'));
+  });
+});
+
+test('F2-AC-18: a changed acceptance gives a full chain', () => {
+  withRun({}, twoSpec(), (run) => {
+    passSubgoal(run, 'U1');
+    const pushed = respec(run, [{ id: 'U1', acceptance: ['x', 'z'] }, { id: 'U2' }]);
+    assert.equal(pushed.filter((n) => n.subgoal_id === 'U1').length, 3);
+  });
+});
+
+test('F2-AC-19: the carried gate feeds reduce and the new goal-gate round; goal gate and report are still pushed', () => {
+  withRun({}, twoSpec(), (run) => {
+    passSubgoal(run, 'U1');
+    const pushed = respec(run, twoSpec());
+    assert.deepEqual(pushed.find((n) => n.stage === 'reduce').deps, ['gate:U1:1', 'gate:U2:2']);
+    const goal = pushed.find((n) => n.stage === 'gate' && n.subgoal_id === null);
+    assert.ok(goal && goal.after.includes('gate:U1:1') && goal.after.includes('gate:U2:2'));
+    assert.ok(pushed.some((n) => n.stage === 'report'));
+  });
+});
+
+test('F2-AC-19: with every sibling carried the goal gate and report are still pushed', () => {
+  withRun({}, [{ id: 'U1' }], (run) => {
+    passSubgoal(run, 'U1');
+    const pushed = respec(run, [{ id: 'U1' }]);
+    assert.deepEqual(pushed.map((n) => n.stage), ['gate', 'report']);
+    assert.deepEqual(pushed[0].deps, ['gate:U1:1']);
+  });
+});
+
+test('carry cleared: durable through saveRun/loadRun, and a second escalation carries only what passed', () => {
+  withRun({}, twoSpec(), (run) => {
+    passSubgoal(run, 'U1');
+    retrySpec(run, 'fb');
+    assert.deepEqual(run.carry, [{ id: 'U1', kind: 'subgoal', acceptance: ['x', 'y'], gate: 'gate:U1:1' }]);
+    run.spec = { goal: 'g', acceptance: ['a'], subgoals: twoSpec() };
+    expandSubgoals(run, twoSpec());
+    saveRun(run);
+    assert.deepEqual(loadRun(run.cwd, run.run_id).carry, [], 'a deleted field would come back from disk');
+    // U2 was rebuilt under the second spec and has not passed: only U1 is carried again.
+    retrySpec(run, 'fb2');
+    assert.deepEqual(run.carry.map((c) => c.id), ['U1']);
+  });
+});
+
+test('a run with no carry expands exactly as before: same ids and deps, no carry field written', () => {
+  withRun({}, twoSpec(), (run) => {
+    assert.equal('carry' in run, false);
+    assert.deepEqual(run.nodes.map((n) => [n.node_id, n.deps]).slice(3), [
+      ['implement:U1:1', ['critique']], ['test:U1:1', ['implement:U1:1']], ['gate:U1:1', ['test:U1:1']],
+      ['implement:U2:1', ['critique', 'gate:U1:1']], ['test:U2:1', ['implement:U2:1']], ['gate:U2:1', ['test:U2:1']],
+      ['reduce', ['gate:U1:1', 'gate:U2:1']], ['gate:goal:1', ['reduce']], ['report', []],
+    ]);
+  });
+});
+
+test('retrySubgoal after a carry-over finds the rebuilt subgoal head and the carried gate', () => {
+  withRun({}, twoSpec(), (run) => {
+    passSubgoal(run, 'U1');
+    respec(run, twoSpec());
+    fail(getNode(run, 'implement:U2:2'));
+    const r = retrySubgoal(run, 'U2', 'again');
+    assert.equal(r.attempt, 3, 'gate:U2:1 (superseded) and gate:U2:2 came before');
+    assert.deepEqual(getNode(run, 'implement:U2:3').deps, ['critique:2', 'gate:U1:1']);
   });
 });

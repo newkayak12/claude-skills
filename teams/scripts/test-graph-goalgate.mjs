@@ -85,6 +85,35 @@ test('openRepair: repair follows the rejecting round by `after`, a fresh round g
   } finally { rmSync(cwd, { recursive: true, force: true }); }
 });
 
+test('F2-AC-14: repair bound at max_retries=2 - the second repair opens, the third does not', () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'graph-goalgate-'));
+  try {
+    const run = { run_id: 'rr', cwd, max_retries: 2, nodes: [] };
+    pushGoalGateRound(run, [], {}, 1);
+    getNode(run, 'gate:goal:1').state = 'failed';
+    assert.equal(openRepair(run, 1, 'x', 1).attempt, 1);
+    getNode(run, 'gate:goal:2').state = 'failed';
+    assert.equal(openRepair(run, 2, 'x', 1).attempt, 2);
+    getNode(run, 'gate:goal:3').state = 'failed';
+    const out = openRepair(run, 3, 'x', 1);
+    assert.deepEqual([out.attempt, out.reason], [null, 'repair budget exhausted']);
+  } finally { rmSync(cwd, { recursive: true, force: true }); }
+});
+
+test('F2-AC-21: openRepair changes no subgoal node state', () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'graph-goalgate-'));
+  try {
+    const sg = node('gate:U1:1', 'gate', [], { subgoal_id: 'U1' });
+    sg.state = 'done';
+    const run = { run_id: 'rr', cwd, max_retries: 2, nodes: [sg, node('implement:U1:1', 'implement', [], { subgoal_id: 'U1' })] };
+    pushGoalGateRound(run, ['gate:U1:1'], {}, 1);
+    getNode(run, 'gate:goal:1').state = 'failed';
+    const before = JSON.stringify(run.nodes.filter((n) => n.subgoal_id === 'U1'));
+    assert.equal(openRepair(run, 1, 'x', 1).attempt, 1);
+    assert.equal(JSON.stringify(run.nodes.filter((n) => n.subgoal_id === 'U1')), before);
+  } finally { rmSync(cwd, { recursive: true, force: true }); }
+});
+
 test('openRepair: over budget it marks the rejecting judges final and opens nothing', () => {
   const cwd = mkdtempSync(join(tmpdir(), 'graph-goalgate-'));
   try {

@@ -52,7 +52,7 @@ export {
 
 export { expandSubgoals, computeWriteScope } from './graph-expand.mjs';
 
-export { settleFailure, retryReport, retrySubgoal, retrySpec } from './graph-retry.mjs';
+export { stopRule, settleFailure, retryReport, retrySubgoal, retrySpec } from './graph-retry.mjs';
 
 export { unmetDeps, readyNodes, promoteWaitingHuman } from './graph-ready.mjs';
 

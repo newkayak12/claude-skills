@@ -51,3 +51,51 @@ test('promoteWaitingHuman: parks a ready human-pinned node and leaves everything
   assert.deepEqual(promoteWaitingHuman(run), [], 'a parked node is not parked again');
   assert.deepEqual(readyNodes(run).map((n) => n.node_id), ['r', 's'], 'a parked node is never offered to a driver');
 });
+
+test('F2-AC-7: a pending node is returned the moment its last data dep becomes done', () => {
+  const a = st(node('a', 'plan'), 'done');
+  const b = node('b', 'plan');
+  const c = node('c', 'setgoal', ['a', 'b']);
+  const run = { nodes: [a, b, c] };
+  assert.deepEqual(readyNodes(run).map((n) => n.node_id), ['b']);
+  st(b, 'done');
+  assert.deepEqual(readyNodes(run).map((n) => n.node_id), ['c']);
+});
+
+test('F2-AC-7: a pending node is returned the moment its last after dep is done, skipped, unreachable or failed+final', () => {
+  for (const [state, extra] of [['done', {}], ['skipped', {}], ['unreachable', {}], ['failed', { final: true }]]) {
+    const dep = node('dep', 'plan');
+    const x = node('x', 'gate', [], { after: ['dep'] });
+    const run = { nodes: [dep, x] };
+    assert.deepEqual(readyNodes(run).map((n) => n.node_id), ['dep'], `before ${state}`);
+    st(dep, state, extra);
+    assert.deepEqual(readyNodes(run).map((n) => n.node_id), ['x'], state);
+  }
+});
+
+test('F2-AC-8: a plain failed after dep (final not true) does not release the node', () => {
+  for (const extra of [{}, { final: false }]) {
+    const dep = st(node('dep', 'plan'), 'failed', extra);
+    const x = node('x', 'gate', [], { after: ['dep'] });
+    assert.deepEqual(readyNodes({ nodes: [dep, x] }).map((n) => n.node_id), []);
+  }
+});
+
+test('F2-AC-9: a report is not returned while another node is running, waiting_human, or pending and ready', () => {
+  for (const [state, ready] of [['running', false], ['waiting_human', false], ['pending', true]]) {
+    const other = st(node('other', 'implement'), state);
+    const rep = node('report', 'report');
+    const ids = readyNodes({ nodes: [other, rep] }).map((n) => n.node_id);
+    assert.equal(ids.includes('report'), false, state);
+    assert.deepEqual(ids, ready ? ['other'] : [], state);
+  }
+});
+
+test('F2-AC-9: a report is returned once no other node is live', () => {
+  const other = st(node('other', 'implement'), 'running');
+  const rep = node('report', 'report');
+  const run = { nodes: [other, rep] };
+  assert.deepEqual(readyNodes(run), []);
+  st(other, 'done');
+  assert.deepEqual(readyNodes(run).map((n) => n.node_id), ['report']);
+});

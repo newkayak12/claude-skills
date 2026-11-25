@@ -28,10 +28,28 @@ export function expandSubgoals(run, subgoals) {
     ...subgoals.flatMap((sg) => chainStages.map((stage) => nextIndex(run, `${stage}:${String(sg.id)}`))),
   );
 
+  // A sibling that passed under the old spec and is unchanged (id, kind, acceptance) keeps its
+  // gate: no chain is pushed for it, and its gate feeds reduce and the new goal-gate round.
+  const sameList = (a, b) => a.length === b.length && a.every((x, i) => String(x) === String(b[i]));
+  const carried = new Map();
+  for (const c of run.carry || []) {
+    const sg = subgoals.find((s) => String(s.id) === String(c.id));
+    const gate = getNode(run, c.gate);
+    if (sg && kindOf(sg) === c.kind && sameList(sg.acceptance || [], c.acceptance || []) && gate && gate.state === 'done') {
+      carried.set(String(sg.id), c.gate);
+    }
+  }
+  if (run.carry) run.carry = []; // assigned, not deleted: saveRun merges {...disk, ...mine}
+  const gateOf = (d) => carried.get(String(d)) || `gate:${d}:${round}`;
+
   for (const sg of subgoals) {
     const id = String(sg.id);
-    const deps = (sg.deps || []).map((d) => `gate:${d}:${round}`);
-    const after = (sg.after || []).map((d) => `gate:${d}:${round}`);
+    if (carried.has(id)) {
+      gateIds.push(carried.get(id));
+      continue;
+    }
+    const deps = (sg.deps || []).map(gateOf);
+    const after = (sg.after || []).map(gateOf);
     gateIds.push(pushChain(run, (KINDS[kindOf(sg)] || KINDS[DEFAULT_KIND]).chain, id, round, [critiqueDep, ...deps], after, {}));
     // A STORY-level pin (run.subgoal_assignee: the package's own assignee from shape, or
     // tm_assign on the STORY) covers every subgoal the package's setgoal produced - the STORY

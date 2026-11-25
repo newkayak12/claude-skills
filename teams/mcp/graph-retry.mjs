@@ -7,13 +7,42 @@
 import { KINDS, DEFAULT_KIND, kindOf, authorStage } from './graph-kinds.mjs';
 import { node, getNode, pushChain } from './graph-nodes.mjs';
 import { applyHumanPin } from './graph-pins.mjs';
-import { goalRoundOf, goalGateSiblings, pushGoalGateRound } from './graph-goalgate.mjs';
+import { goalRoundOf, goalGateSiblings, pushGoalGateRound, nextRepairIndex } from './graph-goalgate.mjs';
 import { saveRun } from './graph-runfile.mjs';
 
 // The gate that closes a subgoal's attempt, by its kind - the last stage in the chain.
 function gateStage(kind) {
   const { chain } = KINDS[kind] || KINDS[DEFAULT_KIND];
   return chain[chain.length - 1];
+}
+
+// Whether a loop must stop, and how. Pure: reads run, writes nothing. Counts are the bounds each
+// retry used inline (subgoal/spec/report: max_retries + 1 attempts; repair/goal_round: max_retries
+// repairs). A non-empty signature equal to the last one is checked first on 'subgoal' (escalate:
+// the shape has to change) and 'goal_round' (settle: stalled); an empty signature never matches.
+export function stopRule(run, { loop, subgoal_id, sig, prior_sig } = {}) {
+  const spent = (reason) => ({ stop: true, reason, action: 'settle' });
+  const budget = run.max_retries + 1;
+  if (loop === 'subgoal') {
+    if (sig && sig === prior_sig) return { stop: true, reason: 'same signature', action: 'escalate' };
+    const sg = ((run.spec && run.spec.subgoals) || []).find((x) => String(x.id) === String(subgoal_id));
+    const gateOf = gateStage(kindOf(sg));
+    const prior = run.nodes.filter((n) => n.subgoal_id === subgoal_id && n.stage === gateOf);
+    return prior.length + 1 > budget ? spent('retry budget exhausted') : { stop: false };
+  }
+  if (loop === 'spec') {
+    const priors = run.nodes.filter((n) => n.stage === 'setgoal');
+    return priors.length + 1 > budget ? spent('retry budget exhausted') : { stop: false };
+  }
+  if (loop === 'report') {
+    const n = run.nodes.filter((x) => x.stage === 'report' && x.state === 'failed').at(-1);
+    return n && (n.report_attempts || 0) >= budget ? spent('retry budget exhausted') : { stop: false };
+  }
+  if (loop === 'repair' || loop === 'goal_round') {
+    if (loop === 'goal_round' && sig && sig === run.last_goal_sig) return { stop: true, reason: 'stalled', action: 'settle' };
+    return nextRepairIndex(run) > run.max_retries ? spent('repair budget exhausted') : { stop: false };
+  }
+  return { stop: false };
 }
 
 // Failure becomes definitive at exactly one point: when the retry budget is gone.
@@ -104,7 +133,7 @@ export function retrySubgoal(run, subgoalId, feedback) {
   const gateOf = gateStage(kind);
   const prior = run.nodes.filter((n) => n.subgoal_id === subgoalId && n.stage === gateOf);
   const attempt = prior.length + 1;
-  if (attempt > run.max_retries + 1) {
+  if (stopRule(run, { loop: 'subgoal', subgoal_id: subgoalId }).stop) {
     const dead = run.nodes.filter((n) => n.subgoal_id === subgoalId && n.state === 'failed' && !n.final);
     const unreachable = dead.flatMap((n) => settleFailure(run, n));
     return { run: saveRun(run), attempt: null, reason: 'retry budget exhausted', unreachable };
@@ -230,7 +259,7 @@ export function retrySubgoal(run, subgoalId, feedback) {
 export function retrySpec(run, feedback) {
   const priors = run.nodes.filter((n) => n.stage === 'setgoal');
   const attempt = priors.length + 1;
-  if (attempt > run.max_retries + 1) {
+  if (stopRule(run, { loop: 'spec' }).stop) {
     const dead = run.nodes.filter((n) => (n.stage === 'setgoal' || n.stage === 'critique') && n.state === 'failed' && !n.final);
     const unreachable = dead.flatMap((n) => settleFailure(run, n));
     return { run: saveRun(run), attempt: null, reason: 'retry budget exhausted', unreachable };
@@ -250,6 +279,14 @@ export function retrySpec(run, feedback) {
       }
     }
   }
+  // A sibling whose gate already passed is remembered, so expandSubgoals can keep its nodes when
+  // the new spec leaves it unchanged. Read before the spec is dropped.
+  run.carry = ((run.spec && run.spec.subgoals) || []).flatMap((s) => {
+    const gate = run.nodes.filter((n) => String(n.subgoal_id) === String(s.id) && n.stage === gateStage(kindOf(s))).at(-1);
+    return gate && gate.state === 'done'
+      ? [{ id: String(s.id), kind: kindOf(s), acceptance: (s.acceptance || []).slice(), gate: gate.node_id }]
+      : [];
+  });
   run.spec = null;
 
   const sg = `setgoal:${attempt}`;

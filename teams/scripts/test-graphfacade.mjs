@@ -32,15 +32,15 @@ const EXPORTS = {
   appendDecisions: ['function', 'decisions'], planDecisions: ['function', 'decisions'], settledDecisions: ['function', 'decisions'],
   routeExecutionQuestions: ['function', 'decisions'], openAsk: ['function', 'decisions'],
   expandSubgoals: ['function', 'expand'], computeWriteScope: ['function', 'expand'],
-  settleFailure: ['function', 'retry'], retryReport: ['function', 'retry'], retrySubgoal: ['function', 'retry'], retrySpec: ['function', 'retry'],
+  stopRule: ['function', 'retry'], settleFailure: ['function', 'retry'], retryReport: ['function', 'retry'], retrySubgoal: ['function', 'retry'], retrySpec: ['function', 'retry'],
   unmetDeps: ['function', 'ready'], readyNodes: ['function', 'ready'], promoteWaitingHuman: ['function', 'ready'],
   HUMAN_GATE_VERDICT_FIELD: ['object', 'humangate'], humanGateIdentity: ['function', 'humangate'], humanGateVerdictField: ['function', 'humangate'],
   autoPassHumanGateResult: ['function', 'humangate'], promoteHumanGates: ['function', 'humangate'], humanGateResultFromPayload: ['function', 'humangate'],
   runState: ['function', 'state'], nodeBriefing: ['function', 'state'],
 };
 
-test('graph.mjs still exports exactly the 70 names it had, with the same typeof', () => {
-  assert.equal(Object.keys(EXPORTS).length, 70);
+test('graph.mjs still exports exactly the 71 names it has, with the same typeof', () => {
+  assert.equal(Object.keys(EXPORTS).length, 71);
   assert.deepEqual(Object.keys(graph).sort(), Object.keys(EXPORTS).sort());
   for (const [name, [type]] of Object.entries(EXPORTS)) assert.equal(typeof graph[name], type, name);
 });
