@@ -48,6 +48,56 @@ export function takeEffectLedger() {
   return held;
 }
 
+// ---------- hold (a task stopped on purpose, recorded in state) ----------
+//
+// task.hold = {reason, since (ISO), by: 'person' | 'engine'}. The ONE writer of the key and of the
+// task_held / task_resumed events: every other file calls these. Both run inside a transaction on
+// the task they are given. The lift deletes the key (a null would read as held to a `in` test).
+
+// Places a hold; refuses (false) when one already stands, so an engine park never overwrites a
+// person's hold.
+export function setHold(task, { reason, by }) {
+  if (task.hold) return false;
+  const hold = { reason: String(reason || '').slice(0, 300), since: new Date().toISOString(), by };
+  task.hold = hold;
+  record(task, { event: 'task_held', task_id: task.run_id, ...hold });
+  return true;
+}
+
+// Lifts the hold. by 'engine' lifts only an engine hold (and, with reasonPrefix, only the park it
+// names); by 'person' lifts any. Returns whether a hold was lifted.
+export function clearHold(task, { by, reasonPrefix } = {}) {
+  const h = task.hold;
+  if (!h) return false;
+  if (by === 'engine' && h.by !== 'engine') return false;
+  if (reasonPrefix && !String(h.reason).startsWith(reasonPrefix)) return false;
+  if (task.worktree_gone && String(h.reason).startsWith('worktree_gone:')) return false; // that stop ends only by tm_cancel / tm_clean
+  delete task.hold;
+  record(task, { event: 'task_resumed', task_id: task.run_id, by, reason: h.reason, since: h.since, held_by: h.by });
+  return true;
+}
+
+export function personHeld(task) {
+  return !!(task && task.hold && task.hold.by === 'person');
+}
+
+// An engine park holds the task only when nothing else can run: no node still working (a parked
+// child, or a STORY parked on its question, is not working) and no pending node whose data deps
+// are all done. A park of one node while others run writes nothing.
+export function holdIfIdle(task, reason) {
+  if (task.hold || task.cancelled) return false;
+  const nodes = task.nodes || [];
+  const asking = new Set((task.story_asks || []).filter((a) => a.state !== 'delivered').map((a) => a.node_id));
+  const byId = new Map(nodes.map((n) => [n.node_id, n]));
+  for (const n of nodes) {
+    if (n.state === 'running' && !(n.child && n.child.waiting_capacity) && !asking.has(n.node_id)) return false;
+    if (n.state !== 'pending' || !(n.deps || []).every((d) => (byId.get(d) || {}).state === 'done')) continue;
+    const settled = (d) => ['done', 'skipped', 'unreachable'].includes(d.state) || (d.state === 'failed' && d.final === true);
+    if ((n.after || []).every((d) => byId.get(d) && settled(byId.get(d)))) return false;
+  }
+  return setHold(task, { reason, by: 'engine' });
+}
+
 // ---------- sleep/wake (../teams-mac-sleep/finding.md) ----------
 //
 // A laptop that sleeps stops every process, and on wake each wall-clock judgement (stall, timebox,

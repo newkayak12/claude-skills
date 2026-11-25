@@ -5,11 +5,12 @@ import { appendFileSync, closeSync, existsSync, mkdirSync, openSync, readdirSync
 import { FLOWS, KINDS } from './graph-kinds.mjs';
 import { leanEnv, leanLaunchArgs, resolveStageModel, stageSkillList } from './nodelaunch.mjs';
 import { storyKey } from './tickets.mjs';
-import { __clock, countedDriverRestarts, driverAlive, harnessState, record, restartBudget, stampAfterWake, taskDir, tasksRoot, unfinishedWork } from './taskstate.mjs';
+import { SUSPEND_GAP_MS, __clock, countedDriverRestarts, driverAlive, harnessState, holdIfIdle, noteSuspend, personHeld, record, restartBudget, stampAfterWake, taskDir, tasksRoot, unfinishedWork } from './taskstate.mjs';
 import { spawn } from 'node:child_process';
 import { loadRun, peekHumanActions, runState, saveRun } from './graph.mjs';
 import { TEAM_DEFAULTS } from './teamconfig.mjs';
 import { fileURLToPath } from 'node:url';
+import { mutateTask } from './store.mjs';
 import { HARNESS_SKILLS } from './taskmanager-harness.mjs';
 import { deliverStoryAnswers, storyAsksOf } from './taskmanager-asks.mjs';
 import { reserveSpawn, respawnDriver, spawning } from './taskmanager-claims.mjs';
@@ -326,7 +327,7 @@ export function driverRestartsSpent(task, child) {
 // Returns true when it changed anything (so the caller knows to persist the task).
 export function serviceDeadDriver(task, child, nodeId) {
   const driver = child.driver;
-  if (!driver || driverAlive(driver) || spawning(child)) return false;
+  if (!driver || driverAlive(driver) || spawning(child) || personHeld(task)) return false;
   // A STORY parked on its question (tm_ask) is not a dead run: its driver exited on purpose. The
   // one thing it needs is the answer, once every question it asked has one (no restart spent).
   if (storyAsksOf(task, nodeId).length) return deliverStoryAnswers(task, nodeId, child);
@@ -348,6 +349,7 @@ export function serviceDeadDriver(task, child, nodeId) {
     child.waiting_capacity = parkCapacity(child.last_capacity || null, String(run.routing_blocked_capacity).slice(0, 500), Date.now());
     recordFailureKind(task, task.nodes.find((x) => x.node_id === nodeId) || { node_id: nodeId }, 'capacity', { via: 'park' });
     record(task, { event: 'child_driver_capacity', task_id: task.run_id, node_id: nodeId, pid: driver.pid, reason: child.waiting_capacity.reason.slice(0, 300), at_probe: true });
+    holdIfIdle(task, `waiting_capacity: ${child.waiting_capacity.reason}`);
     return true;
   } else if (cs.state !== 'running') {
     return false; // the run finished; an ordinary fold reads that
@@ -467,7 +469,7 @@ function childProgressMtime(child, driver, run) {
 // contract as serviceDeadDriver.
 export function serviceStalledDriver(task, child, nodeId) {
   const driver = child.driver;
-  if (!driver || !driverAlive(driver)) return false; // dead is serviceDeadDriver's job, not this one
+  if (!driver || !driverAlive(driver) || personHeld(task)) return false; // dead is serviceDeadDriver's job, not this one
   const stallMinutes = Number.isInteger(task.stall_minutes) ? task.stall_minutes : TEAM_DEFAULTS.stall_minutes;
   if (!stallMinutes) return false; // 0 disables the check
   const run = loadRun(child.cwd, child.run_id);
@@ -550,11 +552,13 @@ export function noDaemon() {
 // (reserveSpawn). A task.daemon holding only a reservation is not a prior daemon: no restart.
 // { reset: true } is tm_retry's fresh budget for an exhausted dead daemon: the respawn counts
 // restarts: 0 (not prior+1) and its daemon_restarted event carries reason: 'reset'.
-function spawnDaemon(task, { reset = false } = {}) {
+// { free: true } is the MCP-start sweep's restart of a daemon its session took down: the respawn
+// keeps the restart count (no budget spent) and its event says so.
+function spawnDaemon(task, { reset = false, free = false } = {}) {
   const prior = !!(task.daemon && task.daemon.started_at);
   const attempt = prior ? (task.daemon.spawn_count || 0) : 0;
   const priorRestarts = prior ? (task.daemon.restarts || 0) : 0;
-  const restarts = reset ? 0 : prior ? priorRestarts + 1 : 0;
+  const restarts = reset ? 0 : prior ? priorRestarts + (free ? 0 : 1) : 0;
   if (!task.daemon) task.daemon = {};
   return reserveSpawn(task, 'daemon', task.daemon, {
     attempt, reason: reset ? 'reset' : prior ? 'restart' : 'spawn', restarts,
@@ -566,7 +570,7 @@ function spawnDaemon(task, { reset = false } = {}) {
         return;
       }
       t.daemon = { ...d, spawn_count: attempt + 1, restarts, exhausted: false };
-      record(t, { event: prior ? 'daemon_restarted' : 'daemon_spawned', task_id: t.run_id, pid: d.pid, log: d.log, ...(reset ? { reason: 'reset' } : {}) });
+      record(t, { event: prior ? 'daemon_restarted' : 'daemon_spawned', task_id: t.run_id, pid: d.pid, log: d.log, ...(reset ? { reason: 'reset' } : free && prior ? { reason: 'session_death', free: true } : {}) });
     },
   });
 }
@@ -710,8 +714,11 @@ function sState(cs) {
 // watcher branch, no inbox: any caller may read or mutate the task at any time, the same as it
 // always could when there was no daemon at all. This only re-raises a dead daemon while work
 // remains - taskState() is the only thing that decides whether there is anything left to drive.
-export function serviceDaemon(task) {
-  if (noDaemon()) return false;
+// opts.sweep (the MCP-start sweep): the test seam does not stop it; opts.free: a restart that
+// spends no daemon restart.
+export function serviceDaemon(task, { sweep = false, free = false } = {}) {
+  if (!sweep && noDaemon()) return false;
+  if (personHeld(task)) return false; // tm_hold resume raises it after task_resumed, not the call's pre-step
   const st = taskState(task).state;
   if (st === 'complete' || st === 'partial' || st === 'blocked' || st === 'cancelled') return false;
   if (task.daemon && driverAlive(task.daemon)) return false;
@@ -728,9 +735,55 @@ export function serviceDaemon(task) {
     saveRun(task);
     return true;
   }
-  if (!spawnDaemon(task)) return false;
+  if (!spawnDaemon(task, { free })) return false;
   saveRun(task);
   return true;
+}
+
+// ---------- MCP-start sweep ----------
+
+// A session's death takes its daemon with it, and nothing raised the task again until some tm_*
+// call named it. server.mjs starts this once, not awaited: it finds every running task whose daemon
+// is dead and raises one, under the task's lock. A person's hold and a finished, cancelled or
+// cleaned task are left alone; an engine hold does not stop it. A daemon whose own last words were
+// daemon_tick_exit died of the task, so its restart is spent; any other death is the session's and
+// is free: the restart keeps the daemon's count, and a suspend note lets each dead driver's restart
+// in the next WAKE_WINDOW_MS ride free once (freeRestarts). Never throws; returns the raised ids.
+function sweepLedger(id) {
+  try {
+    return readFileSync(join(taskDir(id), 'ledger.jsonl'), 'utf8').split('\n').filter(Boolean)
+      .map((l) => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
+  } catch { return []; }
+}
+
+function sweepRaise(task) {
+  if (task.cancelled || personHeld(task) || !task.daemon || !task.daemon.pid || driverAlive(task.daemon)) return false;
+  if (taskState(task).state !== 'running') return false;
+  const events = sweepLedger(task.run_id);
+  const closing = events.filter((e) => e.event === 'clean').pop();
+  if (closing) return false;
+  const fault = events.some((e) => e.event === 'daemon_tick_exit' && e.ts >= (task.daemon.started_at || 0));
+  const before = task.daemon.pid;
+  if (!fault) noteSuspend(task, Date.now(), SUSPEND_GAP_MS);
+  serviceDaemon(task, { sweep: true, free: !fault });
+  return task.daemon.pid !== before || !!task.daemon.spawning;
+}
+
+export async function sweepDeadDaemons() {
+  const raised = [];
+  try {
+    const root = tasksRoot();
+    for (const id of readdirSync(root)) {
+      try {
+        await new Promise((r) => setImmediate(r)); // the server's own stdio keeps its turn between tasks
+        const t = JSON.parse(readFileSync(join(root, id, 'task.json'), 'utf8'));
+        if (!t || t.run_id !== id || t.cancelled || personHeld(t) || !t.daemon || !t.daemon.pid || driverAlive(t.daemon)) continue;
+        if (taskState(t).state !== 'running') continue;
+        if (mutateTask(id, (task) => sweepRaise(task))) raised.push(id);
+      } catch { /* one unreadable or busy task never stops the sweep */ }
+    }
+  } catch { /* no tasks root yet */ }
+  return raised;
 }
 
 export { currentSessionId, daemonExhaustedNext, driverExitInfo, driverUsageLimitText, killDriver, nextSpawnAttempt, resumeDaemon, spawnChildDriver, spawnDaemon };

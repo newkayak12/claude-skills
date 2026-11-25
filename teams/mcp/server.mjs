@@ -46,4 +46,5 @@ if (isEntryPoint(import.meta.url)) {
     call = all.makeCall({ wikiOff });
   }
   serve({ serverInfo: SERVER, protocolVersion: DEFAULT_PROTOCOL, tools, call });
+  if (only < 0 && !argv.includes('--stage') && process.env.HARNESS_NODE !== '1') import('./taskmanager-drivers.mjs').then((m) => m.sweepDeadDaemons()).catch(() => {}); // raise daemons a dead session left behind; not for node/judge processes (HARNESS_NODE)
 }

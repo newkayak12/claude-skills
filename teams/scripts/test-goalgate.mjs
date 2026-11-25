@@ -52,7 +52,7 @@ test('a second judge on a round is biased away from the primary\'s resolved iden
 
 class Client {
   constructor(env = {}) {
-    this.proc = spawn('node', [BROKER], { stdio: ['pipe', 'pipe', 'inherit'], env: { ...process.env, ...env } });
+    this.proc = spawn('node', [BROKER], { stdio: ['pipe', 'pipe', 'inherit'], env: { ...process.env, HARNESS_TASKS_DIR: mkdtempSync(join(tmpdir(), 'goalgate-tasks-')), ...env } });
     this.buf = '';
     this.id = 0;
     this.queue = [];

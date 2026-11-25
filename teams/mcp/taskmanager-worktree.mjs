@@ -2,7 +2,7 @@
 import { spawnSync } from 'node:child_process';
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
-import { record, taskDir, tasksRoot } from './taskstate.mjs';
+import { record, setHold, taskDir, tasksRoot } from './taskstate.mjs';
 import { taskFigure, costByStage } from './drivercost.mjs';
 import { writeDocs } from './docs.mjs';
 import { packageName } from './names.mjs';
@@ -453,7 +453,11 @@ export function findGoneWorktree(task) {
 // (tm_cancel, or tm_clean once it is settled). Inside a transaction; the flag rides its commit.
 // Returns the stop, whether it was written now or already stood.
 export function worktreeGoneStop(task, found = null) {
-  if (task.worktree_gone || task.cancelled) return task.worktree_gone || null;
+  if (task.worktree_gone && !task.cancelled) {
+    if (!task.hold) setHold(task, { reason: `worktree_gone: ${task.worktree_gone.reason}`, by: 'engine' }); // the stop stands, so its record does
+    return task.worktree_gone;
+  }
+  if (task.cancelled) return task.worktree_gone || null;
   const f = found || findGoneWorktree(task);
   if (!f) return null;
   const key = f.key || (f.node_id ? taskKey(task.run_id, f.subgoal_id, f.node_id) : epicKey(task.run_id));
@@ -462,6 +466,9 @@ export function worktreeGoneStop(task, found = null) {
     : `the ${f.kind === 'integration' ? 'integration' : 'package'} worktree ${f.path} is gone`;
   task.worktree_gone = { kind: f.kind, node_id: f.node_id, key, path: f.path, reason, at: Date.now() };
   record(task, { event: 'worktree_gone', task_id: task.run_id, node_id: f.node_id, key, path: f.path, kind: f.kind, reason });
+  // Nothing is spawned into a gone directory, so the stop always leaves no runnable work. No lift:
+  // this stop ends only by tm_cancel / tm_clean, so the hold stays on record until then.
+  setHold(task, { reason: `worktree_gone: ${reason}`, by: 'engine' });
   return task.worktree_gone;
 }
 

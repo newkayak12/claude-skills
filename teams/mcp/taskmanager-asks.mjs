@@ -1,5 +1,5 @@
 // taskmanager-asks.mjs - a running STORY's question and ask_timeout; split out of taskmanager.mjs (card 128 step 1), moved verbatim.
-import { applySuspends, driverAlive, record, suspendedSince } from './taskstate.mjs';
+import { applySuspends, clearHold, driverAlive, holdIfIdle, record, suspendedSince } from './taskstate.mjs';
 import { getNode, loadRun, openAsk, peekHumanActions, queueHumanAction } from './graph.mjs';
 import { latestBySubgoal } from './tickets.mjs';
 import { finish } from './taskmanager-finish.mjs';
@@ -103,6 +103,7 @@ function toolAsk(a) {
     try { question_ts = post(task, { from: v.key, to: 'teamleader', body: busBody(a.question), reply_to: null }, {}).ts; } catch { /* the ask still parks */ }
     (task.story_asks || (task.story_asks = [])).push({ ask_id, key: v.key, pkg: v.pkgId, node_id: dispatch.node_id, question: a.question, question_ts, state: 'pending', at: Date.now() });
     record(task, askedEvent({ task_id: task.run_id, key: v.key, node_id: dispatch.node_id, question: a.question, ask_id }));
+    holdIfIdle(task, `ask: ${v.key} waits on its question`);
     return { task_id: task.run_id, key: v.key, ask_id, state: 'parked', next: 'End your turn now. You are resumed, at no cost while you wait, with the answer in your prompt.' };
   });
 }
@@ -141,6 +142,7 @@ function storyAskAnswered(task, a, { answer, by, route }) {
   a.by = by;
   a.route = route;
   record(task, answeredEvent({ task_id: task.run_id, key: a.key, node_id: a.node_id, answer, by, route, ask_id: a.ask_id }));
+  clearHold(task, { by: 'engine', reasonPrefix: 'ask:' });
   const n = getNode(task, a.node_id);
   // The answer is a bus line replying to the question; skipped when the STORY is no longer running.
   if (n && n.state === 'running') {

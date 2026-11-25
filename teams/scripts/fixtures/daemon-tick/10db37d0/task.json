@@ -1,0 +1,1901 @@
+{
+ "run_id": "10db37d0-85d2-4a0d-9c8a-311ad20c707f",
+ "kind": "task",
+ "store_path": "__TASK_DIR__/task.json",
+ "cwd": "__CWD__",
+ "initiative": null,
+ "slug": "local-failure-records-become",
+ "name": "local failure records become backlog cards without…",
+ "opener": {
+  "session_id": "837e430a-2619-4296-b140-818317f8d2f3",
+  "entrypoint": "cli"
+ },
+ "request": "Card 179 (_repo/docs/backlog.md): local failure records become backlog cards without copy-paste. Findings from a prior look: the failure log is the Claude Code plugin-store key `trophy.failures` (array of Entry records, cap 500, shape in trophy/hooks/failures.ts), not ~/.claude/trophy/profile.json; where the store sits on disk is unverified — find it (search ~/.claude for a file holding \"trophy\" and \"failures\"). Write _repo/scripts/failures-to-backlog.mjs + _repo/scripts/test-failures-to-backlog",
+ "requests": null,
+ "title": null,
+ "context": "",
+ "base_ref": null,
+ "base_commit": "070d79f43a286625e676235d03f986bd6a78f616",
+ "flow": "auto",
+ "flow_chosen": null,
+ "size": "L",
+ "size_pinned": "L",
+ "size_pin_source": "caller",
+ "stage_skills": null,
+ "max_retries": 2,
+ "driver_restarts": 2,
+ "stall_minutes": 20,
+ "restart_period_minutes": 0,
+ "isolated": false,
+ "mixed": true,
+ "goal_threshold": 90,
+ "interactive": false,
+ "ask_timeout": null,
+ "human_gates": [],
+ "daemon": {
+  "pid": 4194303,
+  "started_at": 1795519729445,
+  "log": "__TASK_DIR__/daemon/daemon.restart1.log.jsonl",
+  "stderr": "__TASK_DIR__/daemon/daemon.restart1.stderr.txt",
+  "exit": "__TASK_DIR__/daemon/daemon.restart1.exit.json",
+  "command": "node __PLUGIN_DIR__/mcp/daemon.mjs --task __TASK_ID__",
+  "spawn_count": 2,
+  "restarts": 1,
+  "exhausted": false
+ },
+ "team": {
+  "opts": {
+   "max_parallel_teams": "auto",
+   "max_parallel_ceiling": null,
+   "interactive": false,
+   "ask_timeout": null,
+   "brainstorm": true,
+   "human_gates": [],
+   "qa_rounds": 2,
+   "upstream_fix_rounds": 2,
+   "roles": {
+    "planning": "auto",
+    "qa": true,
+    "audit": true
+   },
+   "goal_threshold": 90,
+   "max_retries": 2,
+   "driver_restarts": 2,
+   "stall_minutes": 20,
+   "restart_period_minutes": 0,
+   "max_live_drivers": 4,
+   "vendor": "auto",
+   "allocation": "ordered",
+   "docs_dir": ".teams_output/team",
+   "plugin_dirs": [],
+   "models": {},
+   "retry_policy": "continue",
+   "budget_usd": 20,
+   "timebox_minutes": null,
+   "budget_grace_usd": null,
+   "budget_grace_minutes": 5,
+   "initiative": null
+  },
+  "sources": {
+   "max_parallel_teams": "team.json",
+   "max_parallel_ceiling": "team.json",
+   "interactive": "team.json",
+   "ask_timeout": "team.json",
+   "brainstorm": "team.json",
+   "human_gates": "team.json",
+   "qa_rounds": "team.json",
+   "upstream_fix_rounds": "team.json",
+   "roles": "team.json",
+   "goal_threshold": "team.json",
+   "max_retries": "team.json",
+   "driver_restarts": "team.json",
+   "stall_minutes": "team.json",
+   "restart_period_minutes": "team.json",
+   "max_live_drivers": "default",
+   "vendor": "team.json",
+   "allocation": "team.json",
+   "docs_dir": "team.json",
+   "plugin_dirs": "team.json",
+   "models": "default",
+   "retry_policy": "team.json",
+   "budget_usd": "args",
+   "timebox_minutes": "team.json",
+   "budget_grace_usd": "team.json",
+   "budget_grace_minutes": "team.json",
+   "initiative": "team.json"
+  },
+  "notes": [],
+  "file_status": "ok"
+ },
+ "child_opts": {
+  "vendor": "auto",
+  "allocation": "ordered",
+  "host_vendor": null,
+  "host_model": null,
+  "native_models": null,
+  "model": null,
+  "policy": {},
+  "candidates": null,
+  "sandbox": null,
+  "max_retries": 2,
+  "auto_reassign": true,
+  "goal_threshold": 90,
+  "interactive": false,
+  "human_gates": [],
+  "goal_judges": 1,
+  "retry_policy": "continue",
+  "models": {}
+ },
+ "created_at": 1795499691252,
+ "spec": {
+  "acceptance": [
+   "`node --test _repo/scripts/test-failures-to-backlog.mjs` passes on the merged tree with pass/fail counts reported, and uses only fixture records and temp backlog copies (never ~/.claude/plugins/store or the real _repo/docs/backlog.md).",
+   "`node _repo/scripts/failures-to-backlog.mjs` (dry run, no flags) runs on this machine's real store, exits 0, prints cards holding only scrubbed text (no absolute or ~ path, no uuid or 32-hex id, no session id, no prompt text), and `git status` shows no change caused by it afterwards.",
+   "`python3 _repo/scripts/validate_plugins.py` and `node _repo/scripts/check-copies.mjs` pass on the merged tree with counts reported; no file outside _repo/scripts/ is changed by the packages, and no file under trophy/hooks/ is touched.",
+   "The script makes no network call: it imports no http/https/net/dgram/fetch-using module and calls no fetch.",
+   "No plugin version, marketplace version or README/KOR status line changes."
+  ],
+  "packages": [
+   {
+    "id": "P1",
+    "title": "failures-to-backlog.mjs: discover, read, group, scrub, tag, dry run and --write",
+    "flow": "develop",
+    "skills": [
+     "develop:cli-developer",
+     "develop:clean-code"
+    ],
+    "brief": "Write `_repo/scripts/failures-to-backlog.mjs`, a standalone Node ESM script (node built-ins only, no dependencies, no network) in the style of the sibling scripts in `_repo/scripts/` (e.g. build-trophy-index.mjs, diag-report.mjs). It turns the local trophy failure records into one deduplicated backlog card per group. Read the PRD at __CWD__/.teams_output/team/E-10db37d0/10-prd.md (feature F1, stories F1-US-1..F1-US-8) and `.claude/rules/backlog.md` (card shape) first.\n\nInput: the Claude Code plu",
+    "acceptance": [
+     "F1-AC-1: Given a store dir with a named trophy file holding `trophy.failures`, an inline trophy file without the key, and a `*.json.tmp.*` leftover, When the script runs with `--store <dir>`, Then records come from the named file only.",
+     "F1-AC-2: Given two files both holding the key, one inline, When discovery runs, Then the non-inline file is used.",
+     "F1-AC-3: Given no file holds the key, When the script runs, Then it prints no cards (a one-line \"no records\" note) and exits 0.",
+     "F1-AC-4: Given `--from <json>`, When the script runs, Then discovery is skipped and that file is read; if both `--from` and `--store` are given, `--from` wins (default - revisit with maintainer).",
+     "F1-AC-5: Given no `--store`, When the script runs, Then it globs the `trophy_*.json` pattern under the plugin store in the user's home Claude directory.",
+     "F1-AC-6: Given a bug record with `local: {}` (no text), When read, Then it is kept, its first line is empty, and it groups under plugin · target · reason · empty line.",
+     "F1-AC-7: Given a report record with neither plugin nor skill nor tool, When read, Then the target and plugin fall back to `-` and no exception occurs.",
+     "F1-AC-8: Given a record missing `version`, `cc` or `day`, When read, Then the card shows no value for it and the script exits 0.",
+     "F1-AC-9: Given a fixture with bug, report, `subgoal_failed` and `goal_failed` entries, When the script runs, Then only bug and report entries are counted and no card mentions an outcome.",
+     "F1-AC-10: Given three records with the same plugin, target, reason and first line but different versions, When grouped, Then there is one group with count 3.",
+     "F1-AC-11: Given first lines containing an absolute path, a `~` path, a uuid and a 32-char hex id, When scrubbed, Then they read `<path>` and `<id>`, digits elsewhere are unchanged, and no original value remains in the output.",
+     "F1-AC-12: Given a first line longer than 120 characters, When scrubbed, Then it is cut at 120 characters after scrubbing and an ellipsis is appended (default - revisit with maintainer).",
+     "F1-AC-13: Given `local.text` empty and `local.note` set, When the line is chosen, Then the first non-empty line of the note is used.",
+     "F1-AC-14: Given any output, When searched, Then it holds no prompt text, session id or path.",
+     "F1-AC-15: Given the same group in two runs with different counts and versions, When tagged, Then the tag is identical.",
+     "F1-AC-16: Given two groups differing in any one key part, When tagged, Then their tags differ.",
+     "F1-AC-17: Given a tag, When printed, Then it is `[fail:` plus the first 8 hex characters of the sha1 of the key (default - revisit with maintainer).",
+     "F1-AC-18: Given no `--write`, When the script runs against a temp backlog, Then the backlog file is byte-identical afterwards and the cards are on stdout.",
+     "F1-AC-19: Given `--write` absent and `--backlog` given, When it runs, Then the file is still not written.",
+     "F1-AC-20: Given a backlog whose highest number is N and no auto section, When `--write` runs with G groups, Then the section appears as the last `###` group of `## Ready` before `## Frozen` (default - revisit with maintainer) with cards numbered N+1..N+G.",
+     "F1-AC-21: Given any `--write`, When the diff is read, Then lines outside the auto section are unchanged.",
+     "F1-AC-22: Given a card, When written, Then it has the bold title `<plugin> <skill|tool>: <reason> — <scrubbed line>` with its tag appended (default - revisit with maintainer), a Why line with count, day range, plugin versions, Claude Code versions, reason and scrubbed line, and an Acceptance line `the failure no longer recurs in a later run of failures-to-backlog.mjs` (default - revisit with maintainer).",
+     "F1-AC-23: Given `--backlog` is not given, When `--write` runs, Then it targets `_repo/docs/backlog.md` of this repo; the build and the task never run `--write` on it.",
+     "F1-AC-24: Given a backlog written by `--write`, When the same input runs again with `--write`, Then the file is byte-identical.",
+     "F1-AC-25: Given the same group with more records or a later day, When `--write` re-runs, Then only that card's Why count and day range change; number, title, tag and Acceptance stay.",
+     "F1-AC-26: Given a hand-edited Acceptance line on an auto card, When re-run, Then the edit is kept.",
+     "F1-AC-27: Given a deleted auto card and a store where the failure no longer occurs, When `--write` runs, Then it is not recreated; if the failure recurs it is recreated with the next free number (stated limitation).",
+     "Contract (owned here, consumed by P2): the script exports its pure parts as named ESM exports (findStore, readRecords, scrubLine, groupRecords, tagOf, renderCards, applyToBacklog or a stated equivalent list at the top of the file), and `node -e \"import('./_repo/scripts/failures-to-backlog.mjs')\"` prints nothing and writes nothing; the CLI runs only when the file is executed directly.",
+     "The script imports only node built-ins (fs, path, os, crypto, url) and makes no network call; it is verified in this worktree by ad-hoc runs on fixture JSON and a backlog copy under the gitignored tmp/, which is emptied afterwards."
+    ],
+    "touches": [
+     "_repo/scripts/failures-to-backlog.mjs"
+    ],
+    "deps": [],
+    "implements": [
+     "F1-US-1",
+     "F1-US-2",
+     "F1-US-3",
+     "F1-US-4",
+     "F1-US-5",
+     "F1-US-6",
+     "F1-US-7",
+     "F1-US-8"
+    ],
+    "enables": [
+     "F1-US-9"
+    ],
+    "priority": 0
+   },
+   {
+    "id": "P2",
+    "title": "test-failures-to-backlog.mjs with fixtures, plus the one real dry run",
+    "flow": "develop",
+    "skills": [
+     "develop:test-master",
+     "develop:clean-code"
+    ],
+    "brief": "Write `_repo/scripts/test-failures-to-backlog.mjs`, a `node:test` suite for `_repo/scripts/failures-to-backlog.mjs` (delivered by P1; read its header for the export list and CLI flags, and P1's report). Style: match the sibling tests in `_repo/scripts/` (test-build-trophy-index.mjs, test-diag-report.mjs). Fixtures go under `_repo/scripts/fixtures/failures-to-backlog/` (a fake store dir with a named `trophy_<x>.json` holding `trophy.failures`, a `trophy_inline-*.json` without the key, a `*.json.t",
+    "acceptance": [
+     "F1-AC-28: Given `_repo/scripts/test-failures-to-backlog.mjs`, When `node --test` runs it, Then it uses fixture records and a temp backlog copy, never the real store or backlog, and covers grouping, scrubbing, skipping outcomes, dry run not writing, `--write` adding and re-run updating; pass/fail counts are reported.",
+     "F1-AC-29: Given this machine's real store, When the dry run is executed once, Then its output (scrubbed text only) is pasted into the report and `git status` shows no change.",
+     "F1-AC-30: Given Sprint close, When card 179 is closed, Then the orchestrator deletes it and the script contains no code touching card 179.",
+     "Every CLI spawn in the test sets HOME to a temp dir and passes `--backlog` with a temp copy, so no test path can reach the real `_repo/docs/backlog.md` or `~/.claude/plugins/store`; the sha1 of the real backlog is identical before and after `node --test _repo/scripts/test-failures-to-backlog.mjs`.",
+     "`python3 _repo/scripts/validate_plugins.py` and `node _repo/scripts/check-copies.mjs` pass, counts reported."
+    ],
+    "touches": [
+     "_repo/scripts/test-failures-to-backlog.mjs",
+     "_repo/scripts/fixtures/failures-to-backlog/"
+    ],
+    "deps": [
+     "P1"
+    ],
+    "implements": [
+     "F1-US-9"
+    ],
+    "enables": [],
+    "priority": 1
+   }
+  ]
+ },
+ "s_run": null,
+ "planning_pkgs": [
+  {
+   "id": "PLAN-F1",
+   "area": "F1",
+   "area_title": "Local failure records become backlog cards without copy-paste",
+   "phase": "planning",
+   "flow": "plan",
+   "planning_mode": "full",
+   "title": "PRD: Local failure records become backlog cards without copy-paste",
+   "brief": "Feature area F1 - Local failure records become backlog cards without copy-paste\n\nThe maintainer runs one repo-only script, _repo/scripts/failures-to-backlog.mjs, and gets backlog cards built from the local trophy failure records. These are the Claude Code plugin-store key 'trophy.failures', an array of Entry records with the shape in trophy/hooks/failures.ts. By default the script finds the file by globbing ~/.claude/plugins/store/trophy_*.json and taking the file whose JSON has that key. It pre",
+   "acceptance": [
+    "the PRD section for feature area F1 states its goal, its scope and non-goals, its user stories - each with acceptance criteria, ids F1-US-1, F1-US-2, ... - and its open questions"
+   ],
+   "deps": [],
+   "touches": []
+  }
+ ],
+ "areas": [
+  {
+   "id": "F1",
+   "title": "Local failure records become backlog cards without copy-paste",
+   "brief": "The maintainer runs one repo-only script, _repo/scripts/failures-to-backlog.mjs, and gets backlog cards built from the local trophy failure records. These are the Claude Code plugin-store key 'trophy.failures', an array of Entry records with the shape in trophy/hooks/failures.ts. By default the script finds the file by globbing ~/.claude/plugins/store/trophy_*.json and taking the file whose JSON has that key. It prefers the non-inline file, and an absent key means no records, not an error. It al"
+  }
+ ],
+ "planning_mode": "full",
+ "planning_mode_reason": "roles.planning: 'auto' - acceptance not declared (no numbered backlog (found 0 numbered items, need 2+))",
+ "nodes": [
+  {
+   "node_id": "size",
+   "stage": "size",
+   "deps": [],
+   "after": [],
+   "state": "done",
+   "attempt": 1,
+   "ticket": null,
+   "result": {
+    "stage_ok": true,
+    "size": "L",
+    "size_source": "pinned",
+    "sizing": [],
+    "handoff": "Size pinned L by the entry: the user said the request must be split into packages. Nothing was measured; shape decides the packages from the request and the tree.",
+    "evidence": "no measurement: pinned by the caller"
+   },
+   "finished_at": 1795499691253
+  },
+  {
+   "node_id": "brainstorm",
+   "stage": "brainstorm",
+   "deps": [
+    "size"
+   ],
+   "after": [],
+   "state": "done",
+   "attempt": 1,
+   "ticket": null,
+   "result": {
+    "stage_ok": true,
+    "intent": "Write a repo-only node script that turns the local trophy failure records into one deduplicated backlog card per group, plus a fixture test. Run it once as a dry run on this machine's real records, and close card 179.",
+    "scope": {
+     "in": [
+      "_repo/scripts/failures-to-backlog.mjs: reads the trophy store file (auto-found under ~/.claude/plugins/store/trophy_*.json, key trophy.failures) or --from <json>",
+      "Grouping by plugin · skill/tool · reason · first text line with paths scrubbed; default dry run prints the cards",
+      "--write adds or updates one card per group in _repo/docs/backlog.md, keyed by a [fail:<hash>] tag so a re-run updates the count instead of duplicating",
+      "_repo/scripts/test-failures-to-backlog.mjs: node:test with fixtures, using a temp backlog copy",
+      "One dry run on the real records, with the output pasted in the report",
+      "Close card 179: delete it from the backlog at Sprint close, with the report"
+     ],
+     "out": [
+      "Any network call or telemetry change",
+      "Changes to trophy/hooks/*",
+      "Version bump",
+      "A mod or skill; this is a repo script only",
+      "Auto-running the script from a hook",
+      "Prompts, ids, paths or session ids in card text",
+      "Running --write on the real backlog beyond what the card asks, unless the planner decides it does"
+     ]
+    },
+    "approaches": [
+     {
+      "approach": "Standalone .mjs that reads the store JSON directly and re-implements the small grouping in plain JS. It has its own Entry typedef comment and its own path scrub.",
+      "tradeoff": "No build or TS step, matches the other _repo/scripts/*.mjs, and tests run under plain `node --test`. The grouping logic can drift from trophy/hooks/failures.ts (targetOf), so keep the key shape explicit and cite failures.ts in a comment."
+     },
+     {
+      "approach": "Import trophy/hooks/failures.ts (targetOf, foldRows) from the script.",
+      "tradeoff": "No drift, but it needs TS type-stripping. Node version support is unverified, and the repo scripts are plain mjs. It also couples a repo tool to a plugin's internals."
+     },
+     {
+      "approach": "Have the trophy mod export the records to a file on demand, and have the script read that file.",
+      "tradeoff": "Cleaner contract, but it changes a plugin (behaviour change, bump, mod rules) and is far beyond the card."
+     }
+    ],
+    "chose": "Standalone .mjs (approach 1). It finds the store by globbing ~/.claude/plugins/store/trophy_*.json, takes the file whose JSON has trophy.failures, prefers the non-inline one, and honours --from. It also takes --backlog <path> and --store <dir> so the test can use a temp copy.",
+    "because": "It fits the existing scripts and needs no toolchain. It is the smallest change that meets the acceptance criteria. A copy of targetOf is about 10 lines, and the test pins it.",
+    "assumptions": [
+     "The store is verified: ~/.claude/plugins/store/trophy_newkayak12-claude-skills-b50a8464da51.json is a flat JSON object with key 'trophy.failures', an array of 35 Entry records. The trophy_inline-*.json file has no failures key and the store dir has other plugins' files, so the script picks files by name and by key, and an absent key means no records, not an error.",
+     "Entry shape follows trophy/hooks/failures.ts: ts, day, kind (bug|outcome|report), reason, plugin?, skill?, tool?, version?, cc?, session, local{text?,note?,slug?,subgoal?,path?}. Real records may lack fields (the sample outcome has no plugin and has local.slug '—'), so every field is read defensively.",
+     "Group key = plugin · (skill|tool) · reason · first non-empty line of local.text or note, scrubbed: absolute and ~ paths become <path>, uuids and long hex ids become <id>, digits are not touched, and the line is truncated to about 120 characters. The [fail:<hash>] tag is a short sha1 over that key, so it is stable across runs. Counts and versions are excluded from the hash.",
+     "Outcome entries (kind outcome: subgoal_failed or goal_failed) have no plugin or skill and carry the project path in local. They are skipped by default, since they record harness run results, not bugs to file. Only kind bug and report become cards. The planner may flip this.",
+     "A card follows backlog.md's shape: '**Title**' with Why (count, day range, plugin versions, Claude Code versions, reason, first scrubbed line) and Acceptance, placed in a `### Failure records (auto)` section so --write never touches hand-written cards. Updating a card rewrites only its Why line count and day range, matched by [fail:<hash>]. A card the person edited or closed (deleted) is not recreated unless the failure recurs; that is a limitation, and a deleted tag is not remembered.",
+     "Card numbering: --write assigns the next free number after the highest N. in the backlog. Re-runs reuse the number found by tag.",
+     "Dry run prints to stdout only and never writes. The real-record dry run prints scrubbed text only, so the report holds no paths, prompts or ids.",
+     "Sprint close, committing, and deleting card 179 are the orchestrator's steps; the script does not edit card 179."
+    ],
+    "questions": [
+     {
+      "question": "Should outcome-kind entries (goal_failed / subgoal_failed from the harness) become cards?",
+      "options": [
+       {
+        "option": "No, only bug and report kinds (the default)",
+        "consequence": "Cards are real skill and MCP bugs, as in the example (database query ×17). The pane's outcome rows stay out."
+       },
+       {
+        "option": "Yes, include them",
+        "consequence": "One card per harness gate failure, noisy: the sample shows 'goal_failed' with an empty slug and no plugin, so the title would be generic and the text empty."
+       }
+      ],
+      "default": "No, only bug and report kinds",
+      "why": "Whether harness gate rejections count as backlog-worthy is a call for the maintainer."
+     }
+    ],
+    "handoff": "Build a plain-mjs script, no TS import. The store is ~/.claude/plugins/store/trophy_<marketplace>-<hash>.json; read key 'trophy.failures' (an array of Entry, shape in trophy/hooks/failures.ts, 35 records on this machine). Skip the inline file, which has no failures key. Group by plugin · skill|tool · reason · first scrubbed text line, and hash that key for [fail:<hash>]. A dry run is the default; --write inserts or updates cards under a dedicated '### Failure records (auto)' section of _repo/doc",
+    "evidence": "Card 179 at backlog.md:348-350 gives the acceptance criteria. trophy/hooks/failures.ts defines Entry, targetOf and foldRows, KEEP=500, and says local text stays on the machine. mod.tsx:195,198,263,685 reads and writes $.store key 'trophy.failures'. On disk, ~/.claude/plugins/store/ holds trophy_newkayak12-claude-skills-b50a8464da51.json (225 KB, 15 keys including trophy.failures with 35 entries, first one an outcome with reason goal_failed and local.slug '—') and trophy_inline-b91df077f500.json "
+   },
+   "vendor": "claude",
+   "model": "claude-sonnet-5-5",
+   "finished_at": 1795499776034
+  },
+  {
+   "node_id": "areas",
+   "stage": "areas",
+   "deps": [
+    "brainstorm"
+   ],
+   "after": [],
+   "state": "done",
+   "attempt": 1,
+   "ticket": null,
+   "result": {
+    "stage_ok": true,
+    "skills_used": [
+     "none"
+    ],
+    "areas": [
+     {
+      "id": "F1",
+      "title": "Local failure records become backlog cards without copy-paste",
+      "brief": "The maintainer runs one repo-only script, _repo/scripts/failures-to-backlog.mjs, and gets backlog cards built from the local trophy failure records. These are the Claude Code plugin-store key 'trophy.failures', an array of Entry records with the shape in trophy/hooks/failures.ts. By default the script finds the file by globbing ~/.claude/plugins/store/trophy_*.json and taking the file whose JSON has that key. It prefers the non-inline file, and an absent key means no records, not an error. It al",
+      "deps": []
+     }
+    ],
+    "handoff": "This is one feature, so there is one area. Pin these points. The store files are under ~/.claude/plugins/store/; this machine has trophy_newkayak12-claude-skills-b50a8464da51.json, which holds the key, and trophy_inline-b91df077f500.json, which does not. Entry type: trophy/hooks/failures.ts:12-26. kind is bug|outcome|report, and local holds {text,note,slug,subgoal,path}. failures.ts:144 targetOf and failures.ts:197 copyBody are the reference for target and text. Copy about 10 lines of targetOf i",
+    "evidence": "Read card 179 at _repo/docs/backlog.md:348-350. Its acceptance asks for grouping by plugin · skill/tool · reason · text, add or update with no duplicates, no paths, prompts or ids, a fixture test, and no network. ls ~/.claude/plugins/store shows two trophy_* files, trophy_inline-* and trophy_newkayak12-claude-skills-*. In trophy/hooks/failures.ts, grep showed the Entry type (lines 12-26), targetOf (144), rowDetail (185) and copyBody (197), and that outcome entries carry local.path and local.slug"
+   },
+   "vendor": "claude",
+   "model": "claude-opus-5-5",
+   "finished_at": 1795499799524
+  },
+  {
+   "node_id": "areas-critique",
+   "stage": "areas-critique",
+   "deps": [
+    "areas"
+   ],
+   "after": [],
+   "state": "done",
+   "attempt": 1,
+   "ticket": null,
+   "result": {
+    "stage_ok": true,
+    "skills_used": [
+     "think:devils-advocate"
+    ],
+    "sound": true,
+    "blocking": [],
+    "problems": [
+     "granularity (advice only): the split has one area. That is right for one script plus its test, but the brief carries everything the card needs, so the PRD card should not split it into STORY cards by file (script and test). Fixture tests and the code they check belong in one story.",
+     "The text part of the group key can split one failure into many groups. The motivating row (database · query, mcp_error ×17, 'optimizer hint /*+ ... */ is not allowed') may carry a different SQL fragment in each first line. Scrubbing only paths and ids would then give up to 17 cards for one bug. The PRD should say how the 17 real database·query records group. A dry run on real records is the check: if they don't fold into roughly one card, the scrub has to be tuned (for example, cut at the first ",
+     "Section placement is unpinned. The brief does not say where '### Failure records (auto)' goes in backlog.md when it is missing: append at the end, before '## Frozen', or under a fixed heading. backlog.md requires Frozen items to stay under '## Frozen'. Appending after that section would put live cards under Frozen.",
+     "Numbering by 'next free after the highest N.' can reuse the number of a closed card that was the highest. Card 179 itself is deleted at close. Harmless for the dry run, but the PRD should say this is accepted.",
+     "The Why line must quote no prompt text. local.text for kind 'report' (user_report) is the person's free-text note and may hold prose or code beyond paths and ids. The first-line scrub covers paths and ids only. The PRD should accept that the first line is shown as-is, or cap it, and say so."
+    ],
+    "checks": [
+     "Coverage. Card 179's Acceptance at _repo/docs/backlog.md:348-350 asks for six things: a repo-only script; reading the local records; grouping by plugin · skill/tool · reason · text; add or update one card per group with count, versions and the first text line (no paths, prompts or ids); a re-run updates instead of duplicating; a fixture test with nothing sent. All six are in F1's brief. The request's extras are in F1 too: --from, the dry-run default, --write, the [fail:<hash>] tag, the real dry ",
+     "Overlap. There is one area, so no two areas plan the same file or function. The orchestrator's backlog edit for card 179 is outside the script's scope (Assumption 8), and the script writes only its own auto section.",
+     "Criterion. F1 is cut by what the maintainer does: run one script and get cards. It is not cut by layer or file.",
+     "Facts. trophy/hooks/failures.ts:12-26 has the Entry shape the brief cites: kind bug|outcome|report, reason includes subgoal_failed/goal_failed, local{text,note,slug,subgoal,path}. targetOf (failures.ts ~144) and copyBody exist as the brief describes. ~/.claude/plugins/store/ holds trophy_inline-b91df077f500.json and trophy_newkayak12-claude-skills-b50a8464da51.json, as the handoff says.",
+     "Idiom anchors exist: _repo/scripts/build-trophy-index.mjs, diag-report.mjs, test-*.mjs and a fixtures/ dir.",
+     "Steel-man and attack (devils-advocate). Strongest form: one standalone .mjs, deterministic hash over a scrubbed key, a dry-run default, and tag-matched updates. The most likely failure is the text part of the group key splitting a real recurring error into many cards (problem 2). It shows up in the required real dry run, so it can be fixed after the fact and does not block the split."
+    ],
+    "handoff": "Split is sound: one area, F1, which covers every part of card 179 and the request. For the PRD card, pin four things: (a) where '### Failure records (auto)' is inserted (before '## Frozen' if that exists, never inside it); (b) the real dry run must show whether the ~17 database·query mcp_error records fold into one group, and the scrub gets tuned if not; (c) reuse of the highest card number after it is closed is accepted; (d) first-line handling for user_report notes. Keep the script and its tes",
+    "evidence": "Read failures.ts:1-40 and 140-215 (Entry type, targetOf, foldRows, copyBody), listed ~/.claude/plugins/store (two trophy_*.json files), read backlog.md:340-365 (card 179's Why and Acceptance) and listed _repo/scripts (idiom files and fixtures/ are there)."
+   },
+   "vendor": "claude",
+   "model": "claude-opus-5-5",
+   "finished_at": 1795499832253
+  },
+  {
+   "node_id": "dispatch:PLAN-F1:1",
+   "stage": "dispatch",
+   "deps": [
+    "areas-critique"
+   ],
+   "after": [],
+   "state": "done",
+   "attempt": 1,
+   "ticket": null,
+   "result": {
+    "child_run_id": "2ffb453c-0974-4625-8589-206fa0823fd0",
+    "child_cwd": "__TASK_DIR__/worktrees/PLAN-F1-prd-local-failure",
+    "branch": "teams/local-failure-records-become/PLAN-F1-prd-local-failure",
+    "child_state": "complete",
+    "child_counts": {
+     "pending": 0,
+     "running": 0,
+     "done": 9,
+     "failed": 0,
+     "skipped": 0,
+     "unreachable": 0,
+     "waiting_human": 0
+    },
+    "changed_files": [
+     ".teams_output/team/E-10db37d0/10-prd-F1-findings.md",
+     ".teams_output/team/E-10db37d0/10-prd-F1.md"
+    ],
+    "plan_decisions": [
+     {
+      "question": "Tag hash length",
+      "chose": "8-hex sha1 prefix",
+      "owner": "maintainer (newkayak12)",
+      "decided_in": "PLAN",
+      "source": "default"
+     },
+     {
+      "question": "Exact truncation rule for the scrubbed line",
+      "chose": "cut at 120 chars after scrubbing, append an ellipsis",
+      "owner": "maintainer (newkayak12)",
+      "decided_in": "PLAN",
+      "source": "default"
+     },
+     {
+      "question": "Card title template",
+      "chose": "'<plugin> <skill|tool>: <reason> — <scrubbed line>' with tag appended",
+      "owner": "maintainer (newkayak12)",
+      "decided_in": "PLAN",
+      "source": "default"
+     },
+     {
+      "question": "Where `### Failure records (auto)` is created when the backlog lacks it",
+      "chose": "as the last ### group of ## Ready, just before ## Frozen",
+      "owner": "maintainer (newkayak12)",
+      "decided_in": "PLAN",
+      "source": "default"
+     }
+    ],
+    "report": "PLAN-F1 report: the F1 PRD section is written and accepted.\n\nDeliverables:\n- .teams_output/team/E-10db37d0/10-prd-F1.md (129 lines). This is the F1 PRD section for the manager to merge into 10-prd.md.\n- .teams_output/team/E-10db37d0/10-prd-F1-findings.md. These are the investigator's findings, with sources cited.\n\nWhat the section holds:\n- **Headings:** Goal, Problem, Target users, Solution overview, Success criteria, Scope (settled rules), User stories, Verification, Out of scope and Open quest",
+    "commit": null,
+    "stage_ok": true,
+    "accept": true,
+    "match_pct": 91,
+    "gaps": [],
+    "observations": [
+     "F1-AC-4 (--from beats --store) and F1-AC-20 (auto section placed last in ## Ready, before ## Frozen) are extra defaults marked 'revisit' in the acceptance criteria rather than listed as open questions. They are small and do not reopen a settled decision, but the list of open questions is not strictly limited to four items.",
+     "F1-AC-27 says a deleted card is recreated only if the failure recurs. But the store keeps up to 500 old records, so the next --write would regroup the same old records and recreate the deleted card even without a new failure. 'The failure no longer occurs' only holds once those records have left the store. The builder should know that the limitation is weaker than the wording suggests.",
+     "F1-AC-26 (a hand edit to the Acceptance line survives a re-run) follows from the rule that only the Why count and day range are rewritten. It is a reasonable, testable addition.",
+     "The PRD names the maintainer's handle as owner. That is not a path, uuid or record text, so it is allowed."
+    ],
+    "spec_drift": [],
+    "reason": "",
+    "evidence": "child 2ffb453c-0974-4625-8589-206fa0823fd0: 9 done, 0 failed, 0 unreachable",
+    "user_stories": [
+     {
+      "id": "F1-US-1",
+      "title": "Find the store without being told",
+      "acceptance": [
+       "F1-AC-1: Given a store dir with a named trophy file holding `trophy.failures`, an inline trophy file without the key, and a `*.json.tmp.*` leftover, When the script runs with `--store <dir>`, Then records come from the named file only.",
+       "F1-AC-2: Given two files both holding the key, one inline, When discovery runs, Then the non-inline file is used.",
+       "F1-AC-3: Given no file holds the key, When the script runs, Then it prints no cards (a one-line \"no records\" note) and exits 0.",
+       "F1-AC-4: Given `--from <json>`, When the script runs, Then discovery is skipped and that file is read; if both `--from` and `--store` are given, `--from` wins (default - revisit with maintainer).",
+       "F1-AC-5: Given no `--store`, When the script runs, Then it globs the `trophy_*.json` pattern under the plugin store in the user's home Claude directory."
+      ]
+     },
+     {
+      "id": "F1-US-2",
+      "title": "Read odd records without crashing",
+      "acceptance": [
+       "F1-AC-6: Given a bug record with `local: {}` (no text), When read, Then it is kept, its first line is empty, and it groups under plugin · target · reason · empty line.",
+       "F1-AC-7: Given a report record with neither plugin nor skill nor tool, When read, Then the target and plugin fall back to `-` and no exception occurs.",
+       "F1-AC-8: Given a record missing `version`, `cc` or `day`, When read, Then the card shows no value for it and the script exits 0."
+      ]
+     },
+     {
+      "id": "F1-US-3",
+      "title": "Only bugs and reports become cards",
+      "acceptance": [
+       "F1-AC-9: Given a fixture with bug, report, `subgoal_failed` and `goal_failed` entries, When the script runs, Then only bug and report entries are counted and no card mentions an outcome."
+      ]
+     },
+     {
+      "id": "F1-US-4",
+      "title": "One card per group, text scrubbed",
+      "acceptance": [
+       "F1-AC-10: Given three records with the same plugin, target, reason and first line but different versions, When grouped, Then there is one group with count 3.",
+       "F1-AC-11: Given first lines containing an absolute path, a `~` path, a uuid and a 32-char hex id, When scrubbed, Then they read `<path>` and `<id>`, digits elsewhere are unchanged, and no original value remains in the output.",
+       "F1-AC-12: Given a first line longer than 120 characters, When scrubbed, Then it is cut at 120 characters after scrubbing and an ellipsis is appended (default - revisit with maintainer).",
+       "F1-AC-13: Given `local.text` empty and `local.note` set, When the line is chosen, Then the first non-empty line of the note is used.",
+       "F1-AC-14: Given any output, When searched, Then it holds no prompt text, session id or path."
+      ]
+     },
+     {
+      "id": "F1-US-5",
+      "title": "A stable tag per group",
+      "acceptance": [
+       "F1-AC-15: Given the same group in two runs with different counts and versions, When tagged, Then the tag is identical.",
+       "F1-AC-16: Given two groups differing in any one key part, When tagged, Then their tags differ.",
+       "F1-AC-17: Given a tag, When printed, Then it is `[fail:` plus the first 8 hex characters of the sha1 of the key (default - revisit with maintainer)."
+      ]
+     },
+     {
+      "id": "F1-US-6",
+      "title": "Dry run by default",
+      "acceptance": [
+       "F1-AC-18: Given no `--write`, When the script runs against a temp backlog, Then the backlog file is byte-identical afterwards and the cards are on stdout.",
+       "F1-AC-19: Given `--write` absent and `--backlog` given, When it runs, Then the file is still not written."
+      ]
+     },
+     {
+      "id": "F1-US-7",
+      "title": "`--write` adds cards",
+      "acceptance": [
+       "F1-AC-20: Given a backlog whose highest number is N and no auto section, When `--write` runs with G groups, Then the section appears as the last `###` group of `## Ready` before `## Frozen` (default - revisit with maintainer) with cards numbered N+1..N+G.",
+       "F1-AC-21: Given any `--write`, When the diff is read, Then lines outside the auto section are unchanged.",
+       "F1-AC-22: Given a card, When written, Then it has the bold title `<plugin> <skill|tool>: <reason> — <scrubbed line>` with its tag appended (default - revisit with maintainer), a Why line with count, day range, plugin versions, Claude Code versions, reason and scrubbed line, and an Acceptance line `the failure no longer recurs in a later run of failures-to-backlog.mjs` (default - revisit with maintainer).",
+       "F1-AC-23: Given `--backlog` is not given, When `--write` runs, Then it targets `_repo/docs/backlog.md` of this repo; the build and the task never run `--write` on it."
+      ]
+     },
+     {
+      "id": "F1-US-8",
+      "title": "Re-run updates, never duplicates",
+      "acceptance": [
+       "F1-AC-24: Given a backlog written by `--write`, When the same input runs again with `--write`, Then the file is byte-identical.",
+       "F1-AC-25: Given the same group with more records or a later day, When `--write` re-runs, Then only that card's Why count and day range change; number, title, tag and Acceptance stay.",
+       "F1-AC-26: Given a hand-edited Acceptance line on an auto card, When re-run, Then the edit is kept.",
+       "F1-AC-27: Given a deleted auto card and a store where the failure no longer occurs, When `--write` runs, Then it is not recreated; if the failure recurs it is recreated with the next free number (stated limitation)."
+      ]
+     },
+     {
+      "id": "F1-US-9",
+      "title": "Test file and one real run",
+      "acceptance": [
+       "F1-AC-28: Given `_repo/scripts/test-failures-to-backlog.mjs`, When `node --test` runs it, Then it uses fixture records and a temp backlog copy, never the real store or backlog, and covers grouping, scrubbing, skipping outcomes, dry run not writing, `--write` adding and re-run updating; pass/fail counts are reported.",
+       "F1-AC-29: Given this machine's real store, When the dry run is executed once, Then its output (scrubbed text only) is pasted into the report and `git status` shows no change.",
+       "F1-AC-30: Given Sprint close, When card 179 is closed, Then the orchestrator deletes it and the script contains no code touching card 179."
+      ]
+     }
+    ],
+    "prd_paths": [
+     ".teams_output/team/E-10db37d0/10-prd-F1-findings.md",
+     ".teams_output/team/E-10db37d0/10-prd-F1.md"
+    ]
+   },
+   "subgoal_id": "PLAN-F1",
+   "started_at": 1795499833519,
+   "child": {
+    "cwd": "__TASK_DIR__/worktrees/PLAN-F1-prd-local-failure",
+    "run_id": "2ffb453c-0974-4625-8589-206fa0823fd0",
+    "branch": "teams/local-failure-records-become/PLAN-F1-prd-local-failure",
+    "flow": "plan",
+    "based_on": [],
+    "spawn_count": 8,
+    "driver": {
+     "pid": 77767,
+     "started_at": 1795500420528,
+     "log": "__TASK_DIR__/drivers/dispatch_PLAN-F1_1.restart8.stream.jsonl",
+     "stderr": "__TASK_DIR__/drivers/dispatch_PLAN-F1_1.restart8.stderr.txt",
+     "exit": "__TASK_DIR__/drivers/dispatch_PLAN-F1_1.restart8.exit.json",
+     "command": "claude -p --output-format stream-json --verbose --dangerously-skip-permissions --setting-sources project --model sonnet --strict-mcp-config --mcp-config {\"mcpServers\":{\"teams\":{\"command\":\"node\",\"args\":[\"__PLUGIN_DIR__/mcp/server.mjs\",\"--stage\",\"driver\"]}}} --tools=Agent,Task,Bash,Edit,Read,Write,Skill,ToolSearch,Workflow,TaskStop,Glob,Grep --plugin-dir __PLUGIN_DIR__ --plugin-dir __HOME__/.claude/plugins/cache/newkayak12-claude-skills/agents/1.3.2 --plugin-dir __HOME__/.claude/plugins/cache/newk",
+     "settled": 8,
+     "restarts": []
+    }
+   },
+   "base_commit": "070d79f43a286625e676235d03f986bd6a78f616",
+   "finished_at": 1795500462430,
+   "vendor": "claude"
+  },
+  {
+   "node_id": "accept:PLAN-F1:1",
+   "stage": "accept",
+   "deps": [
+    "dispatch:PLAN-F1:1"
+   ],
+   "after": [],
+   "state": "done",
+   "attempt": 1,
+   "ticket": null,
+   "result": {
+    "stage_ok": true,
+    "skills_used": [
+     "none"
+    ],
+    "accept": true,
+    "match_pct": 93,
+    "checks": [
+     "Read the worktree file .teams_output/team/E-10db37d0/10-prd-F1.md. It is 129 lines, as reported. Its headings are Goal (line 5), Problem, Target users, Solution overview, Success criteria, Scope (line 33), User stories (line 52), Verification, Out of scope (line 110) and Open questions (line 122).",
+     "The user story ids are F1-US-1 to F1-US-9, and every one uses the F1-US- prefix. Each story has numbered acceptance criteria, F1-AC-1 to F1-AC-30, written as Given/When/Then; grep found 30 lines with Given/When/Then.",
+     "Goal: Scope lists the settled decisions as rules. It matches the brainstorm decisions: the file names; the flags --from, --store, --backlog and --write; discovery that prefers the non-inline file, skips tmp leftovers, and treats an absent key as exit 0; skipping outcome entries; the group key and scrub rules; a tag hash that leaves out counts and versions; dry run by default; the auto section; a re-run that updates by tag; and card 179 left to the orchestrator.",
+     "Non-goals: Out of scope matches the brainstorm list and adds that outcome records do not become cards and that deleted tags are not remembered.",
+     "Open questions: there are 4. Each names the maintainer as owner and gives a default.",
+     "Privacy: grep for /Users/ and the uuid pattern found 0 matches in 10-prd-F1.md and 10-prd-F1-findings.md."
+    ],
+    "gaps": [],
+    "observations": [
+     "F1-US-2 to F1-US-9 have no 'As the maintainer…' user-story sentence; only F1-US-1 has one. Their titles and acceptance criteria still carry the intent.",
+     "Some defaults are marked inline as '(default - revisit)' and are not listed under Open questions: the --from-wins rule (AC-4) and where the auto section is placed (AC-20).",
+     "F1-AC-23 says --write targets the real backlog when --backlog is absent. That fits the design, but the build must make sure the test never takes that path."
+    ],
+    "out_of_scope": [
+     {
+      "gap": "Script and test not built, real dry run not executed, card 179 not closed",
+      "belongs_to": "none"
+     }
+    ],
+    "reason": "This package asks for a PRD section for F1 with a goal, scope and non-goals, user stories with acceptance criteria under F1-US-n ids, and open questions. The worktree file has all of these. Its content matches the settled decisions, and it contains no private paths or ids.",
+    "evidence": "Headings at lines 5/33/52/110/122 of 10-prd-F1.md; story ids F1-US-1 to F1-US-9 found by grep; 30 Given/When/Then criteria, F1-AC-1 to F1-AC-30; Open questions 1 to 4 with defaults; 0 matches for /Users/ or uuids.",
+    "reviewer_independence": "unverifiable-self"
+   },
+   "subgoal_id": "PLAN-F1",
+   "vendor": "claude",
+   "model": "claude-opus-5-5",
+   "finished_at": 1795500489138
+  },
+  {
+   "node_id": "plan-integrate:1",
+   "stage": "plan-integrate",
+   "deps": [
+    "accept:PLAN-F1:1"
+   ],
+   "after": [],
+   "state": "done",
+   "attempt": 1,
+   "ticket": null,
+   "result": {
+    "stage_ok": true,
+    "skills_used": [
+     "none"
+    ],
+    "accept": true,
+    "checks": [
+     "Read the whole merged PRD at .teams_output/team/E-10db37d0/10-prd.md (155 lines). It merges one card, PLAN-F1, with stories F1-US-1..F1-US-9 and criteria F1-AC-1..F1-AC-30.",
+     "Check 1, unique story ids: F1-US-1..9 each appear once in the story index and once in the body. AC ids 1..30 run in sequence with no repeats. No other card exists, so there can be no cross-card duplicate.",
+     "Check 2, contradictions: with one area there is no cross-area conflict. Inside F1, the out-of-scope line '--write on the real backlog: only the temp copy in the test' agrees with F1-AC-23 ('the build and the task never run --write on it'). Skipping outcome records (F1-AC-9) matches the settled decision. F1-AC-30 leaves card 179 to the orchestrator, which matches Assumption 8. F1-AC-27's recreate-on-recurrence is stated as a limitation and matches Assumption 5.",
+     "Check 3, request coverage: reading the store file or --from is F1-US-1 (AC-1..5). Grouping by plugin · skill/tool · reason · scrubbed first line is F1-US-4 (AC-10..14). The default dry run that prints cards is F1-US-6 (AC-18..19). --write adding or updating one card per group with a [fail:<hash>] tag, where a re-run updates the count, is F1-US-5, US-7 and US-8 (AC-15..27). The node:test fixture test file is F1-US-9 (AC-28). One real dry run on this machine with the output pasted is AC-29. Closin",
+     "Each story's acceptance carries the full text of every criterion, not an id list or a pointer."
+    ],
+    "duplicates": [],
+    "contradictions": [],
+    "uncovered": [],
+    "retry": [],
+    "new_areas": [],
+    "reason": "One feature area, so there are no cross-card duplicates or contradictions. Every feature the request names maps to at least one F1 story with full-text acceptance criteria. The defaults marked 'revisit' (8-hex tag, 120-char cut, title template, Acceptance wording, section placement, --from winning over --store) all match the 'Decided already' list.",
+    "evidence": "PRD sections 'User stories' (F1-US-1..9, AC-1..30), 'Scope', 'Success criteria' 1-5 and 'Out of scope' were checked against the request: store/--from, grouping, scrubbing, dry run, --write with a [fail:<hash>] tag that updates on re-run, the node:test fixture test, one real dry run pasted in the report, closing card 179, no network and no bump."
+   },
+   "subgoal_id": null,
+   "prd": {
+    "docs": [
+     {
+      "card": "PLAN-F1",
+      "dispatch": "dispatch:PLAN-F1:1",
+      "path": ".teams_output/team/E-10db37d0/10-prd-F1.md",
+      "text": "# PRD F1 — Local failure records become backlog cards without copy-paste\n\nDomain: a plugin-marketplace repo whose maintainer files work as numbered cards in `_repo/docs/backlog.md` (shape in `.claude/rules/backlog.md`: bold title, Why, Acceptance; \"a bug is seen → a card, never left in chat\"). The failure log is the local trophy store: the Claude Code plugin-store key `trophy.failures`, an array of Entry records (cap 500, shape in `trophy/hooks/failures.ts`). Specific to this domain: the same bu"
+     }
+    ],
+    "path": "__CWD__/.teams_output/team/E-10db37d0/10-prd.md",
+    "cards": [
+     {
+      "id": "PLAN-F1",
+      "title": "Local failure records become backlog cards without copy-paste",
+      "stories": [
+       "F1-US-1",
+       "F1-US-2",
+       "F1-US-3",
+       "F1-US-4",
+       "F1-US-5",
+       "F1-US-6",
+       "F1-US-7",
+       "F1-US-8",
+       "F1-US-9"
+      ]
+     }
+    ],
+    "stories": [
+     {
+      "id": "F1-US-1",
+      "title": "Find the store without being told",
+      "card": "PLAN-F1"
+     },
+     {
+      "id": "F1-US-2",
+      "title": "Read odd records without crashing",
+      "card": "PLAN-F1"
+     },
+     {
+      "id": "F1-US-3",
+      "title": "Only bugs and reports become cards",
+      "card": "PLAN-F1"
+     },
+     {
+      "id": "F1-US-4",
+      "title": "One card per group, text scrubbed",
+      "card": "PLAN-F1"
+     },
+     {
+      "id": "F1-US-5",
+      "title": "A stable tag per group",
+      "card": "PLAN-F1"
+     },
+     {
+      "id": "F1-US-6",
+      "title": "Dry run by default",
+      "card": "PLAN-F1"
+     },
+     {
+      "id": "F1-US-7",
+      "title": "`--write` adds cards",
+      "card": "PLAN-F1"
+     },
+     {
+      "id": "F1-US-8",
+      "title": "Re-run updates, never duplicates",
+      "card": "PLAN-F1"
+     },
+     {
+      "id": "F1-US-9",
+      "title": "Test file and one real run",
+      "card": "PLAN-F1"
+     }
+    ],
+    "duplicates": []
+   },
+   "vendor": "claude",
+   "model": "claude-opus-5-5",
+   "finished_at": 1795500512644
+  },
+  {
+   "node_id": "shape",
+   "stage": "shape",
+   "deps": [
+    "plan-integrate:1"
+   ],
+   "after": [],
+   "state": "done",
+   "attempt": 1,
+   "ticket": null,
+   "result": {
+    "stage_ok": true,
+    "skills_used": [
+     "none"
+    ],
+    "acceptance": [
+     "`node --test _repo/scripts/test-failures-to-backlog.mjs` passes on the merged tree with pass/fail counts reported, and uses only fixture records and temp backlog copies (never ~/.claude/plugins/store or the real _repo/docs/backlog.md).",
+     "`node _repo/scripts/failures-to-backlog.mjs` (dry run, no flags) runs on this machine's real store, exits 0, prints cards holding only scrubbed text (no absolute or ~ path, no uuid or 32-hex id, no session id, no prompt text), and `git status` shows no change caused by it afterwards.",
+     "`python3 _repo/scripts/validate_plugins.py` and `node _repo/scripts/check-copies.mjs` pass on the merged tree with counts reported; no file outside _repo/scripts/ is changed by the packages, and no file under trophy/hooks/ is touched.",
+     "The script makes no network call: it imports no http/https/net/dgram/fetch-using module and calls no fetch.",
+     "No plugin version, marketplace version or README/KOR status line changes."
+    ],
+    "packages": [
+     {
+      "id": "P1",
+      "title": "failures-to-backlog.mjs: discover, read, group, scrub, tag, dry run and --write",
+      "flow": "develop",
+      "skills": [
+       "develop:cli-developer",
+       "develop:clean-code"
+      ],
+      "brief": "Write `_repo/scripts/failures-to-backlog.mjs`, a standalone Node ESM script (node built-ins only, no dependencies, no network) in the style of the sibling scripts in `_repo/scripts/` (e.g. build-trophy-index.mjs, diag-report.mjs). It turns the local trophy failure records into one deduplicated backlog card per group. Read the PRD at __CWD__/.teams_output/team/E-10db37d0/10-prd.md (feature F1, stories F1-US-1..F1-US-8) and `.claude/rules/backlog.md` (card shape) first.\n\nInput: the Claude Code plu",
+      "acceptance": [
+       "F1-AC-1: Given a store dir with a named trophy file holding `trophy.failures`, an inline trophy file without the key, and a `*.json.tmp.*` leftover, When the script runs with `--store <dir>`, Then records come from the named file only.",
+       "F1-AC-2: Given two files both holding the key, one inline, When discovery runs, Then the non-inline file is used.",
+       "F1-AC-3: Given no file holds the key, When the script runs, Then it prints no cards (a one-line \"no records\" note) and exits 0.",
+       "F1-AC-4: Given `--from <json>`, When the script runs, Then discovery is skipped and that file is read; if both `--from` and `--store` are given, `--from` wins (default - revisit with maintainer).",
+       "F1-AC-5: Given no `--store`, When the script runs, Then it globs the `trophy_*.json` pattern under the plugin store in the user's home Claude directory.",
+       "F1-AC-6: Given a bug record with `local: {}` (no text), When read, Then it is kept, its first line is empty, and it groups under plugin · target · reason · empty line.",
+       "F1-AC-7: Given a report record with neither plugin nor skill nor tool, When read, Then the target and plugin fall back to `-` and no exception occurs.",
+       "F1-AC-8: Given a record missing `version`, `cc` or `day`, When read, Then the card shows no value for it and the script exits 0.",
+       "F1-AC-9: Given a fixture with bug, report, `subgoal_failed` and `goal_failed` entries, When the script runs, Then only bug and report entries are counted and no card mentions an outcome.",
+       "F1-AC-10: Given three records with the same plugin, target, reason and first line but different versions, When grouped, Then there is one group with count 3.",
+       "F1-AC-11: Given first lines containing an absolute path, a `~` path, a uuid and a 32-char hex id, When scrubbed, Then they read `<path>` and `<id>`, digits elsewhere are unchanged, and no original value remains in the output.",
+       "F1-AC-12: Given a first line longer than 120 characters, When scrubbed, Then it is cut at 120 characters after scrubbing and an ellipsis is appended (default - revisit with maintainer).",
+       "F1-AC-13: Given `local.text` empty and `local.note` set, When the line is chosen, Then the first non-empty line of the note is used.",
+       "F1-AC-14: Given any output, When searched, Then it holds no prompt text, session id or path.",
+       "F1-AC-15: Given the same group in two runs with different counts and versions, When tagged, Then the tag is identical.",
+       "F1-AC-16: Given two groups differing in any one key part, When tagged, Then their tags differ.",
+       "F1-AC-17: Given a tag, When printed, Then it is `[fail:` plus the first 8 hex characters of the sha1 of the key (default - revisit with maintainer).",
+       "F1-AC-18: Given no `--write`, When the script runs against a temp backlog, Then the backlog file is byte-identical afterwards and the cards are on stdout.",
+       "F1-AC-19: Given `--write` absent and `--backlog` given, When it runs, Then the file is still not written.",
+       "F1-AC-20: Given a backlog whose highest number is N and no auto section, When `--write` runs with G groups, Then the section appears as the last `###` group of `## Ready` before `## Frozen` (default - revisit with maintainer) with cards numbered N+1..N+G.",
+       "F1-AC-21: Given any `--write`, When the diff is read, Then lines outside the auto section are unchanged.",
+       "F1-AC-22: Given a card, When written, Then it has the bold title `<plugin> <skill|tool>: <reason> — <scrubbed line>` with its tag appended (default - revisit with maintainer), a Why line with count, day range, plugin versions, Claude Code versions, reason and scrubbed line, and an Acceptance line `the failure no longer recurs in a later run of failures-to-backlog.mjs` (default - revisit with maintainer).",
+       "F1-AC-23: Given `--backlog` is not given, When `--write` runs, Then it targets `_repo/docs/backlog.md` of this repo; the build and the task never run `--write` on it.",
+       "F1-AC-24: Given a backlog written by `--write`, When the same input runs again with `--write`, Then the file is byte-identical.",
+       "F1-AC-25: Given the same group with more records or a later day, When `--write` re-runs, Then only that card's Why count and day range change; number, title, tag and Acceptance stay.",
+       "F1-AC-26: Given a hand-edited Acceptance line on an auto card, When re-run, Then the edit is kept.",
+       "F1-AC-27: Given a deleted auto card and a store where the failure no longer occurs, When `--write` runs, Then it is not recreated; if the failure recurs it is recreated with the next free number (stated limitation).",
+       "Contract (owned here, consumed by P2): the script exports its pure parts as named ESM exports (findStore, readRecords, scrubLine, groupRecords, tagOf, renderCards, applyToBacklog or a stated equivalent list at the top of the file), and `node -e \"import('./_repo/scripts/failures-to-backlog.mjs')\"` prints nothing and writes nothing; the CLI runs only when the file is executed directly.",
+       "The script imports only node built-ins (fs, path, os, crypto, url) and makes no network call; it is verified in this worktree by ad-hoc runs on fixture JSON and a backlog copy under the gitignored tmp/, which is emptied afterwards."
+      ],
+      "touches": [
+       "_repo/scripts/failures-to-backlog.mjs"
+      ],
+      "deps": [],
+      "implements": [
+       "F1-US-1",
+       "F1-US-2",
+       "F1-US-3",
+       "F1-US-4",
+       "F1-US-5",
+       "F1-US-6",
+       "F1-US-7",
+       "F1-US-8"
+      ],
+      "enables": [
+       "F1-US-9"
+      ]
+     },
+     {
+      "id": "P2",
+      "title": "test-failures-to-backlog.mjs with fixtures, plus the one real dry run",
+      "flow": "develop",
+      "skills": [
+       "develop:test-master",
+       "develop:clean-code"
+      ],
+      "brief": "Write `_repo/scripts/test-failures-to-backlog.mjs`, a `node:test` suite for `_repo/scripts/failures-to-backlog.mjs` (delivered by P1; read its header for the export list and CLI flags, and P1's report). Style: match the sibling tests in `_repo/scripts/` (test-build-trophy-index.mjs, test-diag-report.mjs). Fixtures go under `_repo/scripts/fixtures/failures-to-backlog/` (a fake store dir with a named `trophy_<x>.json` holding `trophy.failures`, a `trophy_inline-*.json` without the key, a `*.json.t",
+      "acceptance": [
+       "F1-AC-28: Given `_repo/scripts/test-failures-to-backlog.mjs`, When `node --test` runs it, Then it uses fixture records and a temp backlog copy, never the real store or backlog, and covers grouping, scrubbing, skipping outcomes, dry run not writing, `--write` adding and re-run updating; pass/fail counts are reported.",
+       "F1-AC-29: Given this machine's real store, When the dry run is executed once, Then its output (scrubbed text only) is pasted into the report and `git status` shows no change.",
+       "F1-AC-30: Given Sprint close, When card 179 is closed, Then the orchestrator deletes it and the script contains no code touching card 179.",
+       "Every CLI spawn in the test sets HOME to a temp dir and passes `--backlog` with a temp copy, so no test path can reach the real `_repo/docs/backlog.md` or `~/.claude/plugins/store`; the sha1 of the real backlog is identical before and after `node --test _repo/scripts/test-failures-to-backlog.mjs`.",
+       "`python3 _repo/scripts/validate_plugins.py` and `node _repo/scripts/check-copies.mjs` pass, counts reported."
+      ],
+      "touches": [
+       "_repo/scripts/test-failures-to-backlog.mjs",
+       "_repo/scripts/fixtures/failures-to-backlog/"
+      ],
+      "deps": [
+       "P1"
+      ],
+      "implements": [
+       "F1-US-9"
+      ],
+      "enables": []
+     }
+    ],
+    "handoff": "Two packages, split by file ownership. P1 owns the only runtime file, `_repo/scripts/failures-to-backlog.mjs`, and the shared contract (its named exports and CLI flags), and delivers F1-US-1..8; it checks itself with ad-hoc runs under tmp/. P2 depends on P1 and starts from its tree. It owns the node:test file and its fixtures and delivers F1-US-9: the fixture suite plus the one real dry run, whose output goes in its report. P2 does not edit the script; a bug it finds goes back as a failing case.",
+    "evidence": "Checked a draft of this shape with `shapecheck.mjs --prd .../E-10db37d0/10-prd.md`: `shape: ok`, rc=0. The draft file was written to tmp/ and then removed. Read the backlog's headings: `## Ready` at line 8, the last ### group 'Skeleton and length' at line 698, `## Frozen` at line 730. Card 179 is at line 348. `_repo/scripts/` already has sibling script/test pairs (build-trophy-index, diag-report, check-skeleton) and a `fixtures/` dir holding diag-events.json and skeleton/. That is where P2's fix",
+    "diagram": {
+     "type": "architecture",
+     "title": "Card 179 — failures-to-backlog packages",
+     "nodes": [
+      {
+       "id": "store",
+       "label": "trophy store (trophy.failures)",
+       "kind": "store",
+       "row": 0,
+       "col": 0,
+       "note": "~/.claude/plugins/store/trophy_*.json, read-only"
+      },
+      {
+       "id": "P1",
+       "label": "P1 failures-to-backlog.mjs",
+       "kind": "package",
+       "row": 0,
+       "col": 1
+      },
+      {
+       "id": "contract",
+       "label": "exports + CLI flags contract",
+       "kind": "service",
+       "row": 1,
+       "col": 1,
+       "note": "owned by P1"
+      },
+      {
+       "id": "P2",
+       "label": "P2 test + fixtures + real dry run",
+       "kind": "package",
+       "row": 1,
+       "col": 2
+      },
+      {
+       "id": "backlog",
+       "label": "_repo/docs/backlog.md",
+       "kind": "store",
+       "row": 0,
+       "col": 2,
+       "note": "only --write; never by the build"
+      }
+     ],
+     "edges": [
+      {
+       "from": "store",
+       "to": "P1",
+       "label": "Entry records (read)",
+       "style": "data"
+      },
+      {
+       "from": "P1",
+       "to": "contract",
+       "label": "named exports, --from/--store/--backlog/--write",
+       "style": "sync"
+      },
+      {
+       "from": "contract",
+       "to": "P2",
+       "label": "import + spawn with temp HOME/backlog",
+       "style": "sync"
+      },
+      {
+       "from": "P1",
+       "to": "backlog",
+       "label": "auto section via --write (temp copies only here)",
+       "style": "data"
+      }
+     ]
+    }
+   },
+   "vendor": "claude",
+   "model": "claude-opus-5-5",
+   "finished_at": 1795500608425
+  },
+  {
+   "node_id": "critique",
+   "stage": "critique",
+   "deps": [
+    "shape"
+   ],
+   "after": [],
+   "state": "done",
+   "attempt": 1,
+   "ticket": null,
+   "result": {
+    "stage_ok": true,
+    "skills_used": [
+     "none"
+    ],
+    "sound": true,
+    "blocking": [],
+    "problems": [
+     "Privacy gap: the real store holds IDs that the planned scrub would keep. I read `~/.claude/plugins/store/trophy_newkayak12-claude-skills-b50a8464da51.json`: 35 entries (27 bug/mcp_error, 7 subgoal_failed, 1 goal_failed). Several bug entries start with `<tool_use_error>profile apn2-north · account 590451311615 · region ap-northeast-2`. That is a 12-digit AWS account ID plus a profile name. F1-AC-11 says 'digits elsewhere are unchanged' and only turns paths into `<path>` and uuid/32-hex into `<id>",
+     "Group split from that ID: the same mcp_error gives 'account 590451311615' in some lines and 'account -' in others, so it splits into separate groups. Scrubbing long digit runs fixes this too.",
+     "'No prompt text' in the goal criterion cannot be checked mechanically. The real bug records hold tool error text in `local.text`, not prompts. Check it by reading the record kinds: only bug and report entries are used, and report `local.text` is the user's own note. Do not try a grep for it.",
+     "`_repo/scripts/fixtures/` already exists for other scripts. P2 must create only the `failures-to-backlog/` subdirectory and touch no sibling fixtures.",
+     "Serial shape P1→P2 is justified. The brief names a real data dependency: P2 imports P1's named exports and runs P1's CLI, and the real dry run needs the script. Both packages are required, nothing is tolerated to fail, and they share no touches[]. Size L is pinned by the repo's Sprint rule ('A Sprint opens with tm_open and size: \"L\"'), not by inflation, so this is not an S task sized as L.",
+     "F1-AC-20 places the new section before `## Frozen (do not pull)`. The real heading carries that suffix, so P1 should match the `## Frozen` prefix, not the exact text."
+    ],
+    "handoff": "The shape is sound: two packages, one real dependency (P2 imports and runs P1), no overlapping touches, size L pinned by repo rule. Main advice for P1: scrub long digit runs (the real store contains AWS account ID 590451311615) and add a fixture for it in P2. Before pasting the real dry run into the report, grep it for 10 or more digits.",
+    "evidence": "Read trophy/hooks/failures.ts (Entry shape matches Assumption 2). Store dir has trophy_inline-b91df077f500.json and trophy_newkayak12-claude-skills-b50a8464da51.json. A node one-liner on the store showed 35 entries {outcome/goal_failed:1, outcome/subgoal_failed:7, bug/mcp_error:27}; first text lines include 'profile apn2-north · account 590451311615 · region ap-northeast-' and 'account - '. backlog.md: card 179 at line 348, ## Ready at line 8, '## Frozen (do not pull)' at line 730. _repo/scripts",
+    "reviewer_independence": "unverifiable-self"
+   },
+   "vendor": "claude",
+   "model": "claude-opus-5-5",
+   "finished_at": 1795500646686
+  },
+  {
+   "node_id": "dispatch:P1:1",
+   "stage": "dispatch",
+   "deps": [
+    "critique"
+   ],
+   "after": [],
+   "state": "done",
+   "attempt": 1,
+   "ticket": null,
+   "result": {
+    "child_run_id": "a319c889-d132-44b2-b351-5837cac281ce",
+    "child_cwd": "__TASK_DIR__/worktrees/P1-discover-read-group",
+    "branch": "teams/local-failure-records-become/P1-discover-read-group",
+    "child_state": "complete",
+    "child_counts": {
+     "pending": 0,
+     "running": 0,
+     "done": 9,
+     "failed": 1,
+     "skipped": 1,
+     "unreachable": 0,
+     "waiting_human": 0
+    },
+    "changed_files": [
+     "_repo/scripts/failures-to-backlog.mjs"
+    ],
+    "report": "P1 is done and accepted. gate:U1:2 accepted at 90% and gate:goal:1 at 91%. The only file in the worktree is the new, untracked `_repo/scripts/failures-to-backlog.mjs`. It is not committed: committing and integrating are the manager's steps. `_repo/docs/backlog.md` is untouched (`git diff --quiet` is clean), and the script has no code that touches card 179.\n\n**Contract for P2**\n- The top comment lists the named ESM exports: findStore, readRecords, firstLine, scrubLine, keyOf, tagOf, groupRecords,",
+    "commit": "b932518d01776956c98b7630ecb0f81551f05d34",
+    "stage_ok": true,
+    "accept": true,
+    "match_pct": 91,
+    "gaps": [],
+    "observations": [
+     "The main guard compares import.meta.url with pathToFileURL(process.argv[1]) and does not realpath argv[1]. If the script is invoked through a symlinked path, Node resolves the module URL to the real path, so the CLI silently does nothing (exit 0, no output). That is not an issue for the repo's normal use, but it is the known fragile pattern.",
+     "Unknown flags (e.g. a typo of --write) are silently ignored, and the script falls back to a dry run. That is safe, but a user gets no warning.",
+     "AC-28 (10+ digit runs become <id>) departs on purpose from settled Assumption 3 ('digits not touched'). The departure is named in the implement handoff, and the account id in the real store justifies it.",
+     "A card whose records have no day, version or cc renders 'Why: 1 records, –; plugin versions: ; Claude Code: ;'. That is 'missing shown as nothing', and the singular reads '1 records'.",
+     "New cards use a 3-space indent where existing 3-digit cards use 4. This is cosmetic.",
+     "The fixture CLI discovery checks were not re-run by this gate because it is write-denied. They rely on test:U1:2's fresh run plus a code read."
+    ],
+    "spec_drift": [
+     "The request's fixture test file (_repo/scripts/test-failures-to-backlog.mjs) and the pasted real dry run belong to P2 and the orchestrator, not to this package, so this run does not deliver them."
+    ],
+    "reason": "",
+    "evidence": "child a319c889-d132-44b2-b351-5837cac281ce: 9 done, 1 failed, 0 unreachable"
+   },
+   "subgoal_id": "P1",
+   "started_at": 1795500654141,
+   "child": {
+    "cwd": "__TASK_DIR__/worktrees/P1-discover-read-group",
+    "run_id": "a319c889-d132-44b2-b351-5837cac281ce",
+    "branch": "teams/local-failure-records-become/P1-discover-read-group",
+    "flow": "develop",
+    "based_on": [],
+    "spawn_count": 9,
+    "driver": {
+     "pid": 71487,
+     "started_at": 1795501679039,
+     "log": "__TASK_DIR__/drivers/dispatch_P1_1.restart9.stream.jsonl",
+     "stderr": "__TASK_DIR__/drivers/dispatch_P1_1.restart9.stderr.txt",
+     "exit": "__TASK_DIR__/drivers/dispatch_P1_1.restart9.exit.json",
+     "command": "claude -p --output-format stream-json --verbose --dangerously-skip-permissions --setting-sources project --model sonnet --strict-mcp-config --mcp-config {\"mcpServers\":{\"teams\":{\"command\":\"node\",\"args\":[\"__PLUGIN_DIR__/mcp/server.mjs\",\"--stage\",\"driver\"]}}} --tools=Agent,Task,Bash,Edit,Read,Write,Skill,ToolSearch,Workflow,TaskStop,Glob,Grep --plugin-dir __PLUGIN_DIR__ --plugin-dir __HOME__/.claude/plugins/cache/newkayak12-claude-skills/agents/1.3.2 --plugin-dir __HOME__/.claude/plugins/cache/newk",
+     "settled": 10,
+     "restarts": []
+    }
+   },
+   "base_commit": "070d79f43a286625e676235d03f986bd6a78f616",
+   "finished_at": 1795501741371,
+   "vendor": "claude"
+  },
+  {
+   "node_id": "accept:P1:1",
+   "stage": "accept",
+   "deps": [
+    "dispatch:P1:1"
+   ],
+   "after": [],
+   "state": "done",
+   "attempt": 1,
+   "ticket": null,
+   "result": {
+    "stage_ok": true,
+    "skills_used": [
+     "none"
+    ],
+    "accept": true,
+    "match_pct": 94,
+    "checks": [
+     "Worktree: _repo/scripts/failures-to-backlog.mjs is committed on the branch as b932518d and is 206 lines long. The working tree is clean.",
+     "Imports: only node:fs, os, path, crypto and url. A grep found no fetch or http. The top comment lists the exports, and main runs only when argv[1] is this file. A plain import with HOME set to a temp dir printed nothing.",
+     "AC-1/3: in a store holding a named file with the key, an inline file without it and a .json.tmp.123 leftover, records came only from the named file; the TMP record was not shown. An empty store printed 'no records' and exited 0.",
+     "AC-2: with an inline file and a named file both holding the key, the named one was used (output 'NAMED'). AC-5: with HOME=<tmp> and no --store, it found <tmp>/.claude/plugins/store/trophy_z.json.",
+     "AC-4: --from more.json together with --store /nonexistent read more.json.",
+     "AC-6/7/8: a bug with local:{} gave the card 'p s: x' with an empty line. A report with no plugin, skill or tool gave '- -: r'. Missing version, cc or day printed empty values or '–' and exited 0.",
+     "AC-9: two outcome entries in the fixture (goal_failed and subgoal_failed) were dropped. The output has no 'outcome' and no goal_failed.",
+     "AC-10: three records with the same key but versions 1.0, 1.1 and none made one group with count 3.",
+     "AC-11/14: /Users/bob/x.txt and ~/z became <path>. A uuid and a 32-hex id became <id>. 'account 590451311615' became 'account <id>' and 'port 8080' was left alone. The session id never appears in the output.",
+     "AC-12: a 130-char line came out 121 chars long (120 plus …). AC-15/16/17: tagOf is stable, differs when one part of the key differs, and has the form [fail:8hex].",
+     "AC-18/19: a dry run with --backlog left the backlog byte-identical (cmp) and printed the cards numbered from the highest N (9) + 1 = 10.",
+     "AC-20/21/22: --write put '### Failure records (auto)' just before '## Frozen (do not pull)'. Lines outside it were unchanged. The title, Why and Acceptance lines have the stated shape.",
+     "AC-24: a second --write printed 'backlog unchanged' and cmp found the file identical.",
+     "AC-25/26: after one more record on a later day, the diff touched only the Why line ('3 records, 2026-11-01–2026-11-03' became '4 records, 2026-11-01–2026-11-09'). A hand-edited Acceptance 'HAND' line was kept.",
+     "AC-27: after deleting card 11 and leaving its group out of the input, --write did not recreate it (diff empty). The code adds a missing tag back with the next number if the group recurs.",
+     "AC-23: the default backlog is resolved as ../docs/backlog.md from the script's own directory. My ad-hoc runs used only temp dirs, which are now removed."
+    ],
+    "gaps": [],
+    "observations": [
+     "Updating a card rewrites only the count and day range. The plugin and Claude Code version lists in that Why line go stale: a new version 2.0 was not added. This is what AC-25 says, but the card can mislead.",
+     "Digit runs of 10 or more become <id>, which goes beyond Assumption 3 ('digits are not touched'). This follows the privacy critique (AWS account id) and is reasonable. P2 should pin it with an 'account 123456789012' fixture.",
+     "A path with a space in it is scrubbed only up to the space, so the rest of the path can leak.",
+     "Cards use a 3-space indent and hand-written cards use 4. This is cosmetic.",
+     "A singular count reads '1 records'.",
+     "The child did not test recreating a deleted card when its failure recurs. Here it was checked by reading the code (title<0 → added with next++), not by a run."
+    ],
+    "out_of_scope": [
+     {
+      "gap": "Fixture test file _repo/scripts/test-failures-to-backlog.mjs and node --test counts",
+      "belongs_to": "P2"
+     },
+     {
+      "gap": "Real-store dry run output pasted into the report",
+      "belongs_to": "P2"
+     },
+     {
+      "gap": "Closing card 179",
+      "belongs_to": "P2"
+     }
+    ],
+    "reason": "I re-ran every P1 acceptance criterion as ad-hoc CLI and export runs on temp fixtures, and each one behaved as stated: discovery, --from precedence, reading records that lack fields, skipping outcomes, grouping, scrubbing including long digit ids, 120-char truncation, stable tags, a dry run that writes nothing, where --write puts the auto section, idempotent re-runs, count-only updates, kept hand edits, and no recreation of a deleted card. The export contract holds, and the script uses only node",
+    "evidence": "Ad-hoc runs in the worktree, temp dir now removed. The dry run output started '10. **database query: mcp_error — Error at <path> id <id> [fail:5ebe543c]**' with 'Why: 3 records, 2026-11-01–2026-11-03'. After the extra record the diff changed only the Why line to '4 records, 2026-11-01–2026-11-09'. The second --write printed 'backlog unchanged' and cmp found the file identical. scrubLine on a 130-char line returned length 121. 'account 590451311615 port 8080' became 'account <id> port 8080'.",
+    "reviewer_independence": "unverifiable-self"
+   },
+   "subgoal_id": "P1",
+   "vendor": "claude",
+   "model": "claude-opus-5-5",
+   "finished_at": 1795501807377
+  },
+  {
+   "node_id": "dispatch:P2:1",
+   "stage": "dispatch",
+   "deps": [
+    "critique",
+    "accept:P1:1"
+   ],
+   "after": [],
+   "state": "done",
+   "attempt": 1,
+   "ticket": null,
+   "result": {
+    "child_run_id": "f5bbd0d7-75fd-485a-abc0-f5c098139f68",
+    "child_cwd": "__TASK_DIR__/worktrees/P2-fixtures-plus-one-real",
+    "branch": "teams/local-failure-records-become/P2-fixtures-plus-one-real",
+    "child_state": "complete",
+    "child_counts": {
+     "pending": 0,
+     "running": 0,
+     "done": 8,
+     "failed": 0,
+     "skipped": 0,
+     "unreachable": 0,
+     "waiting_human": 0
+    },
+    "changed_files": [
+     "_repo/scripts/fixtures/failures-to-backlog/backlog.md",
+     "_repo/scripts/fixtures/failures-to-backlog/store/trophy_fixture-abc.json",
+     "_repo/scripts/fixtures/failures-to-backlog/store/trophy_fixture-abc.json.tmp.123",
+     "_repo/scripts/fixtures/failures-to-backlog/store/trophy_inline-abc.json",
+     "_repo/scripts/test-failures-to-backlog.mjs"
+    ],
+    "report": "P2 is done and accepted. Both gates accepted it: gate:U1:1 at 90% and gate:goal:1 at 92%.\n\n**What was built** (both untracked and uncommitted; the manager commits them):\n- `_repo/scripts/test-failures-to-backlog.mjs`: 22 node:test cases.\n- Fixtures under `_repo/scripts/fixtures/failures-to-backlog/`:\n  - `backlog.md` with cards 1, 2 and 7, plus card 9 under ## Frozen.\n  - `store/trophy_fixture-abc.json` with 9 bug, 2 report and 2 outcome records, all synthetic.\n  - `store/trophy_inline-abc.json`",
+    "commit": "423716015abcbd508288334a61fae218b732d4ef",
+    "stage_ok": true,
+    "accept": true,
+    "match_pct": 92,
+    "gaps": [],
+    "observations": [
+     "The implement handoff that carried the real dry-run stdout was cut off at 1500 chars, so the earlier gate never saw the full text. I re-ran it here from outside the tree and put the full 21-card output in this gate's evidence, so F1-AC-29's paste exists.",
+     "The setgoal checks `grep -E '^# (pass|fail) '` and `grep -qE '^# fail 0$'` assume TAP output. Node 24's default spec reporter prints `ℹ pass 22` instead, so those two checks fail as written even though the suite is green. This is a defect in the check, not in the work.",
+     "P1 script, reported for P1 and not this package: card 192 shows `optimizer hint <path> ... */`. The path scrub ate the `/*+` of a SQL comment. This over-scrubs but leaks nothing.",
+     "The real dry-run text still holds DB table and column names (cfms.outbox, out_info_id, ord_nm, sub.rcv_nm2), profile names (apn2-north, local, prod) and an internal node id (ask:story-P3:1). These are not paths or ids under the scrub rules, but a person should look before running --write on the real backlog.",
+     "Generated cards use a 3-space indent; hand-written cards use 4 (cosmetic, P1)."
+    ],
+    "spec_drift": [
+     "F1-AC-29 says `git status` shows no change. The checks scope it to _repo/docs and the named paths, because the package's own new files are untracked by design. The real dry run added nothing to git status."
+    ],
+    "reason": "",
+    "evidence": "child f5bbd0d7-75fd-485a-abc0-f5c098139f68: 8 done, 0 failed, 0 unreachable"
+   },
+   "subgoal_id": "P2",
+   "started_at": 1795501808727,
+   "child": {
+    "cwd": "__TASK_DIR__/worktrees/P2-fixtures-plus-one-real",
+    "run_id": "f5bbd0d7-75fd-485a-abc0-f5c098139f68",
+    "branch": "teams/local-failure-records-become/P2-fixtures-plus-one-real",
+    "flow": "develop",
+    "based_on": [
+     "teams/local-failure-records-become/P1-discover-read-group"
+    ],
+    "spawn_count": 7,
+    "driver": {
+     "pid": 17724,
+     "started_at": 1795502601423,
+     "log": "__TASK_DIR__/drivers/dispatch_P2_1.restart7.stream.jsonl",
+     "stderr": "__TASK_DIR__/drivers/dispatch_P2_1.restart7.stderr.txt",
+     "exit": "__TASK_DIR__/drivers/dispatch_P2_1.restart7.exit.json",
+     "command": "claude -p --output-format stream-json --verbose --dangerously-skip-permissions --setting-sources project --model sonnet --strict-mcp-config --mcp-config {\"mcpServers\":{\"teams\":{\"command\":\"node\",\"args\":[\"__PLUGIN_DIR__/mcp/server.mjs\",\"--stage\",\"driver\"]}}} --tools=Agent,Task,Bash,Edit,Read,Write,Skill,ToolSearch,Workflow,TaskStop,Glob,Grep --plugin-dir __PLUGIN_DIR__ --plugin-dir __HOME__/.claude/plugins/cache/newkayak12-claude-skills/agents/1.3.2 --plugin-dir __HOME__/.claude/plugins/cache/newk",
+     "settled": 7,
+     "restarts": []
+    }
+   },
+   "base_commit": "b932518d01776956c98b7630ecb0f81551f05d34",
+   "finished_at": 1795502664916,
+   "vendor": "claude"
+  },
+  {
+   "node_id": "accept:P2:1",
+   "stage": "accept",
+   "deps": [
+    "dispatch:P2:1"
+   ],
+   "after": [],
+   "state": "done",
+   "attempt": 1,
+   "ticket": null,
+   "result": {
+    "stage_ok": true,
+    "skills_used": [
+     "none"
+    ],
+    "accept": true,
+    "match_pct": 92,
+    "checks": [
+     "The worktree's HEAD 42371601 adds only the 5 paths in P2's touches[]: 4 fixtures under _repo/scripts/fixtures/failures-to-backlog/ and test-failures-to-backlog.mjs. No sibling fixtures were touched. git status --porcelain is empty, and only ignored harness dirs show up.",
+     "I re-ran `node --test _repo/scripts/test-failures-to-backlog.mjs` with HOME set to a mktemp dir: tests 22, pass 22, fail 0, cancelled 0, skipped 0.",
+     "The worktree's _repo/docs/backlog.md has sha1 4f8274fd… both before and after the suite.",
+     "Isolation: there is one `cli()` helper that spawns with env HOME set to a temp dir. Every cli call passes `--backlog <temp>` plus `--store` or `--from`. The test file never names homedir or docs/backlog.",
+     "Coverage: outcome skipping (line 98, asserting that subgoal_failed and goal_failed never reach stdout); scrubbing, including the critique's `account 123456789012` → `account <id>` case (lines 152 and 182); dry run leaving the file's bytes unchanged; --write adding cards; a re-run giving the same bytes or updating only the Why line (lines 228-306).",
+     "validate_plugins.py: PASSED, all 17 plugins installable. check-copies.mjs: 'ok: copies and plugin list agree'.",
+     "`grep -n 179` on failures-to-backlog.mjs finds nothing, so the script has no code touching card 179.",
+     "The report pastes the real dry-run output: 35 records, 21 cards. The child grepped it for runs of 10+ digits, /Users/, ~/ and 32+ hex chars and found none. The shown text has `account <id>`."
+    ],
+    "gaps": [],
+    "observations": [
+     "The pasted real dry run is shortened per card, not verbatim. The full text is said to be in gate:goal:1's evidence. I did not re-run it against the real store, because it reads private data outside the worktree.",
+     "F1-AC-29 says 'git status shows no change'. The child reads that as tracked files only. The tree is now committed and git status is clean, so this holds.",
+     "The real backlog sha1 is checked outside the test with shasum, not inside it. That meets the criterion's wording.",
+     "The output still carries DB schema/column names, profile names (apn2-north, local, prod) and a teams node id. The person should review these before any real --write.",
+     "Cards 182/198 and 197/199 differ only by the <tool_use_error> wrapper. Stripping it from the group key may be worth a card (it belongs to P1's scope).",
+     "Closing card 179 (F1-AC-30) is the orchestrator's step at Sprint close and was correctly not done here."
+    ],
+    "out_of_scope": [
+     {
+      "gap": "Group key does not strip the <tool_use_error> wrapper, splitting otherwise identical failures into two cards",
+      "belongs_to": "P1"
+     }
+    ],
+    "reason": "Every P2 acceptance criterion is evidenced in the worktree. The 22/22 tests use fixtures and temp copies with HOME isolated, and they cover grouping, scrubbing (including the account id), outcome skipping, dry run, --write and re-run updates. The real backlog hash is unchanged, both repo checks pass, the script has no code for card 179, and a scrubbed real dry run is in the report.",
+    "evidence": "node --test: tests 22 pass 22 fail 0; backlog sha1 4f8274fda82ec5134531334244fb1be961e112c5 before and after; validate_plugins: PASSED, all 17 plugins installable; check-copies: ok; HEAD 42371601 adds 5 files, all in touches[]; grep 179 on the script finds nothing.",
+    "reviewer_independence": "unverifiable-self"
+   },
+   "subgoal_id": "P2",
+   "vendor": "claude",
+   "model": "claude-opus-5-5",
+   "finished_at": 1795502721517
+  },
+  {
+   "node_id": "integrate:1",
+   "stage": "integrate",
+   "deps": [
+    "accept:P1:1",
+    "accept:P2:1"
+   ],
+   "after": [],
+   "state": "done",
+   "attempt": 1,
+   "ticket": null,
+   "result": {
+    "stage_ok": true,
+    "skills_used": [
+     "none"
+    ],
+    "verified": true,
+    "checks": [
+     "git diff --stat 070d79f4..HEAD (integration) -> 6 files, +585/-0, every one under _repo/scripts/ (failures-to-backlog.mjs 206, test-failures-to-backlog.mjs 317, fixtures/failures-to-backlog/{backlog.md, store/trophy_fixture-abc.json, store/trophy_fixture-abc.json.tmp.123, store/trophy_inline-abc.json}). _repo/docs/backlog.md, trophy/hooks/, plugin.json, marketplace.json, README and KOR are all untouched",
+     "shasum _repo/docs/backlog.md before node --test -> 4f8274fd…; after -> 4f8274fd… (same file in the main checkout: 4f8274fd…)",
+     "node --test _repo/scripts/test-failures-to-backlog.mjs -> tests 22, pass 22, fail 0, cancelled 0, skipped 0",
+     "grep in the test file -> each spawn uses env HOME=<mkdtemp dir> and --backlog <temp copy>; no reference to plugins/store or docs/backlog",
+     "python3 _repo/scripts/validate_plugins.py -> PASSED — all 17 plugins are installable",
+     "node _repo/scripts/check-copies.mjs -> ok: copies and plugin list agree",
+     "grep -nE 'http|net|dgram|fetch|child_process' failures-to-backlog.mjs -> no match (rc=1). Imports are only node:fs, os, path, crypto, url",
+     "node -e \"import('./_repo/scripts/failures-to-backlog.mjs')\" -> rc=0, no output, nothing written",
+     "store location: ~/.claude/plugins/store/ holds trophy_newkayak12-claude-skills-b50a8464da51.json (has \"trophy.failures\") and trophy_inline-b91df077f500.json (does not). This settles the 'unverified' store path; it matches the default the script builds, $HOME/.claude/plugins/store",
+     "node _repo/scripts/failures-to-backlog.mjs (real store, dry run) -> rc=0, 83 lines, 21 cards numbered 180–200",
+     "grep -nE '/Users|~/|uuid|32-hex' on the dry-run output -> no match (rc=1); 12-digit AWS account shown as <id>",
+     "git status --short in integration after the dry run -> empty"
+    ],
+    "unowned": [
+     "store discovery, read, group, scrub, tag, dry run, --write -> P1",
+     "fixture tests: temp HOME and temp backlog, grouping, scrubbing, outcomes skipped, dry run does not write, --write adds, re-run updates -> P2",
+     "one real dry run with its output pasted in the report -> P2 (reproduced here, rc=0, 21 cards)",
+     "finding where the store sits on disk -> P1 (default path built in main()); confirmed here at ~/.claude/plugins/store/trophy_<marketplace>-<hash>.json",
+     "closing card 179 -> NONE by design (F1-AC-30: the orchestrator deletes it at Sprint close; it is still at backlog.md:348)",
+     "gap with no package: scrubLine's path rule matches '/*+' in the motivating example. The user's own line 'optimizer hint /*+ ... */ is not allowed' prints as 'optimizer hint <path> ... */' (card 192). No AC failure, but the card that prompted 179 comes out mangled",
+     "gap with no package: run on real data, the cards carry the user's database and infra names, e.g. table 'cfms.outbox', columns 'out_info_id' and 'sub.rcv_nm2', profiles 'prod' and 'apn2-north'. These are not paths or ids, so they pass the scrub ACs, but --write would commit them into the public repo's backlog.md"
+    ],
+    "duplication": [
+     "none found: P2 imports P1's exports and spawns P1's CLI. It does not re-implement scrub, grouping or tagging, and neither package defines a helper the other also defines"
+    ],
+    "volume": [
+     "P1 -> 1 file, 206 LOC, 12 named exports plus a CLI guard -> plausible for discovery + grouping + scrub + sha1 tag + an auto-section editor that is idempotent and keeps hand edits",
+     "P2 -> 1 test file (317 LOC, 22 tests) + 4 fixture files -> plausible: the tests cover F1-AC-1..27 including idempotent re-run, a kept hand-edited Acceptance and the deleted-card limitation, not just a smoke test"
+    ],
+    "evidence": "Seams agree. The store→P1 seam reads the real layout: the named trophy file is chosen over the inline one, and the trophy.failures array matches Entry in trophy/hooks/failures.ts:12 (kind bug|outcome|report, local.text/note). Only local.text/note first lines are printed; session and local.path are never read. On the P1→P2 contract seam, the exports and the --from/--store/--backlog/--write flags are used exactly as P2 calls them, and 22/22 pass on the merged tree. On the P1→backlog seam, --write ",
+    "questions": [
+     {
+      "question": "Should --write be allowed to put database/infra identifiers (table, column, profile names) from mcp_error text into the public backlog?",
+      "to": "maintainer (newkayak12)",
+      "options": [
+       {
+        "option": "keep as is",
+        "consequence": "cards are specific, but schema and profile names from private projects land in a public repo"
+       },
+       {
+        "option": "also scrub quoted identifiers ('…', \"…\") to <name>",
+        "consequence": "private names stay out, and the per-column cards fold into one ER_BAD_FIELD_ERROR card, which cuts noise"
+       }
+      ],
+      "default": "keep as is for this Sprint; carry a backlog card for scrubbing quoted identifiers and fixing the '/*+' path false positive",
+      "why": "what may be published from local records is a privacy choice for the repo owner"
+     }
+    ],
+    "integration_branch": "teams/local-failure-records-become/integration",
+    "integration_cwd": "__TASK_DIR__/worktrees/integration",
+    "merged": [
+     "P1 teams/local-failure-records-become/P1-discover-read-group -> fe090563d82e4075dd0ef585eb0c2ebb30f6f257",
+     "P2 teams/local-failure-records-become/P2-fixtures-plus-one-real -> c5ce7d3adc307658a532090e8f97a03ad10ec267"
+    ],
+    "package_fold": {
+     "P1": {
+      "changed_files": [
+       "_repo/scripts/failures-to-backlog.mjs"
+      ],
+      "gaps": [],
+      "reason": "",
+      "match_pct": 91,
+      "files_changed": [
+       "_repo/scripts/failures-to-backlog.mjs"
+      ],
+      "accept": true,
+      "attempts": 1
+     },
+     "P2": {
+      "changed_files": [
+       "_repo/scripts/fixtures/failures-to-backlog/backlog.md",
+       "_repo/scripts/fixtures/failures-to-backlog/store/trophy_fixture-abc.json",
+       "_repo/scripts/fixtures/failures-to-backlog/store/trophy_fixture-abc.json.tmp.123",
+       "_repo/scripts/fixtures/failures-to-backlog/store/trophy_inline-abc.json",
+       "_repo/scripts/test-failures-to-backlog.mjs"
+      ],
+      "gaps": [],
+      "reason": "",
+      "match_pct": 92,
+      "files_changed": [
+       "_repo/scripts/fixtures/failures-to-backlog/backlog.md",
+       "_repo/scripts/fixtures/failures-to-backlog/store/trophy_fixture-abc.json",
+       "_repo/scripts/fixtures/failures-to-backlog/store/trophy_fixture-abc.json.tmp.123",
+       "_repo/scripts/fixtures/failures-to-backlog/store/trophy_inline-abc.json",
+       "_repo/scripts/test-failures-to-backlog.mjs"
+      ],
+      "accept": true,
+      "attempts": 1
+     }
+    }
+   },
+   "subgoal_id": null,
+   "integration": {
+    "cwd": "__TASK_DIR__/worktrees/integration",
+    "branch": "teams/local-failure-records-become/integration",
+    "merged": [
+     {
+      "package": "P1",
+      "branch": "teams/local-failure-records-become/P1-discover-read-group",
+      "commit": "fe090563d82e4075dd0ef585eb0c2ebb30f6f257"
+     },
+     {
+      "package": "P2",
+      "branch": "teams/local-failure-records-become/P2-fixtures-plus-one-real",
+      "commit": "c5ce7d3adc307658a532090e8f97a03ad10ec267"
+     }
+    ]
+   },
+   "vendor": "claude",
+   "model": "claude-opus-5-5",
+   "finished_at": 1795502844344
+  },
+  {
+   "node_id": "dispatch:QA-F1:1",
+   "stage": "dispatch",
+   "deps": [
+    "integrate:1"
+   ],
+   "after": [],
+   "state": "running",
+   "attempt": 1,
+   "ticket": null,
+   "subgoal_id": "QA-F1",
+   "started_at": 1795502845282,
+   "child": {
+    "cwd": "__TASK_DIR__/worktrees/integration",
+    "run_id": "__CHILD_RUN_ID__",
+    "branch": "teams/fixture/integration",
+    "flow": "qa",
+    "based_on": [],
+    "spawn_count": 1,
+    "driver": {
+     "pid": 4194303,
+     "started_at": 1795502845282,
+     "log": "__TASK_DIR__/drivers/dispatch_QA-F1_1.stream.jsonl",
+     "stderr": "__TASK_DIR__/drivers/dispatch_QA-F1_1.stderr.txt",
+     "exit": "__TASK_DIR__/drivers/dispatch_QA-F1_1.exit.json",
+     "command": "node __DRIVER_SCRIPT__"
+    }
+   }
+  },
+  {
+   "node_id": "accept:QA-F1:1",
+   "stage": "accept",
+   "deps": [
+    "dispatch:QA-F1:1"
+   ],
+   "after": [],
+   "state": "pending",
+   "attempt": 1,
+   "ticket": null,
+   "subgoal_id": "QA-F1"
+  },
+  {
+   "node_id": "gate:goal:1",
+   "stage": "gate",
+   "deps": [
+    "integrate:1"
+   ],
+   "after": [],
+   "state": "done",
+   "attempt": 1,
+   "ticket": null,
+   "result": {
+    "stage_ok": true,
+    "skills_used": [
+     "none"
+    ],
+    "accept": true,
+    "match_pct": 90,
+    "checks": [
+     "I re-ran the checks myself in the integration worktree at c5ce7d3a.",
+     "Diff from main to the integration branch: 6 files, +585/-0. Every file is under _repo/scripts/: failures-to-backlog.mjs, test-failures-to-backlog.mjs and 4 fixtures under fixtures/failures-to-backlog/. Nothing under trophy/hooks/ changed, and no plugin.json, marketplace.json, README or KOR file changed.",
+     "With HOME set to a mktemp dir, `node --test _repo/scripts/test-failures-to-backlog.mjs` gave tests 22, pass 22, fail 0.",
+     "The sha1 of _repo/docs/backlog.md was 4f8274fd… both before and after the test suite.",
+     "Dry run with no flags, `node _repo/scripts/failures-to-backlog.mjs`, on the real store exited 0 and printed 87 lines with 22 cards. The store has grown by a few records since P2's run, which printed 21 cards.",
+     "I grepped the dry-run output for 10+ digit runs, /Users, ~/, 32-hex runs and uuid prefixes: 0 matches.",
+     "`git status --short` was empty after the dry run.",
+     "Imports are only node:fs, node:os, node:path, node:crypto and node:url. There are no fetch, http, net or dgram matches.",
+     "validate_plugins.py: PASSED — all 17 plugins are installable. check-copies.mjs: ok, copies and plugin list agree.",
+     "Store location: ~/.claude/plugins/store/trophy_<marketplace>-<hash>.json, key trophy.failures. The brainstorm and integrate steps confirmed it, and the script's default path matches."
+    ],
+    "gaps": [
+     "QA-F1 did not run because the budget/timebox ran out. There is no independent QA verdict, though accept:P1 and accept:P2 re-ran every acceptance criterion ad hoc."
+    ],
+    "observations": [
+     "Grouping keys on the full scrubbed first line, so the real store gives 22 cards and most hold a single record. Each user SQL mistake gets its own card, such as one Unknown column card per column name. Two pairs of cards differ only by the <tool_use_error> wrapper. The signal from --write would be weak until the key is coarsened. This is worth a backlog card.",
+     "Card text still shows DB schema and column names, AWS/DB profile names and teams node ids. These are not paths or ids under the scrub rules, but the person should review them before running --write on the real backlog.",
+     "The scrubber reads the optimizer-hint `/*+` as a path and turns it into `<path>`, a false positive. A path that contains a space is scrubbed only up to the space.",
+     "The Why line says '1 records' for a single record, prints a bare '–' when there is no day, and indents with 3 spaces where the backlog uses 4.",
+     "The deleted-card limitation is wider than F1-AC-27 says: the store keeps 500 records, so a deleted card comes back on the next --write while its old records remain in the store, whether or not the failure recurred.",
+     "Card 179 is not yet deleted from backlog.md. That is the orchestrator's step at close, as planned."
+    ],
+    "spec_drift": [
+     "The request said to group by 'first text line with paths scrubbed'. The build also scrubs 10+ digit runs, uuids and 32-hex ids. That goes beyond the request and follows card 179's no-ids intent, so it is not a shortfall.",
+     "Closing card 179 was assigned to the orchestrator at Sprint close, not to a package. It is still open in backlog.md."
+    ],
+    "reason": "Every goal-level criterion holds on the merged tree, by my own re-run. The tests pass 22/22 using only fixtures and temp copies, and the real backlog hash did not change. The real dry run exits 0, prints only scrubbed text and leaves git status clean. Both repo checks pass. All changes stay under _repo/scripts/, there are no network imports and no version changes. The request's parts are delivered: the store location was found, --from/--store work, grouping and scrubbing work, dry run is the def",
+    "evidence": "Integration worktree c5ce7d3a: node --test → tests 22, pass 22, fail 0. backlog sha1 4f8274fda82ec5134531334244fb1be961e112c5 before and after the suite. Dry run rc=0, 87 lines, 22 cards, 0 leak-pattern matches, git status empty. First card: '180. **database query: mcp_error — <tool_use_error>error: ER_QUERY_TIMEOUT: … [fail:9d5d9cf2]**', 5 records. Imports: node:fs, os, path, crypto, url only. validate_plugins: PASSED (17). check-copies: ok. diff --stat: 6 files, all under _repo/scripts/."
+   },
+   "subgoal_id": null,
+   "vendor": "claude",
+   "model": "claude-opus-5-5",
+   "finished_at": 1795520194946
+  },
+  {
+   "node_id": "report",
+   "stage": "report",
+   "deps": [],
+   "after": [
+    "gate:goal:1"
+   ],
+   "state": "pending",
+   "attempt": 1,
+   "ticket": null,
+   "vendor": "claude",
+   "model": "claude-opus-5-5",
+   "finished_at": 1795520248594
+  }
+ ],
+ "decisions": [
+  {
+   "question": "What is this task for (intent)?",
+   "chose": "Write a repo-only node script that turns the local trophy failure records into one deduplicated backlog card per group, plus a fixture test. Run it once as a dry run on this machine's real records, and close card 179.",
+   "owner": "engine",
+   "decided_in": "brainstorm",
+   "source": "self-brainstorm"
+  },
+  {
+   "question": "What is in scope?",
+   "chose": "_repo/scripts/failures-to-backlog.mjs: reads the trophy store file (auto-found under ~/.claude/plugins/store/trophy_*.json, key trophy.failures) or --from <json>; Grouping by plugin · skill/tool · reason · first text line with paths scrubbed; default dry run prints the cards; --write adds or updates one card per group in _repo/docs/backlog.md, keyed by a [fail:<hash>] tag so a re-run updates the count instead of duplicating; _repo/scripts/test-failures-to-backlog.mjs: node:test with fixtures, us",
+   "owner": "engine",
+   "decided_in": "brainstorm",
+   "source": "self-brainstorm"
+  },
+  {
+   "question": "What is out of scope?",
+   "chose": "Any network call or telemetry change; Changes to trophy/hooks/*; Version bump; A mod or skill; this is a repo script only; Auto-running the script from a hook; Prompts, ids, paths or session ids in card text; Running --write on the real backlog beyond what the card asks, unless the planner decides it does",
+   "owner": "engine",
+   "decided_in": "brainstorm",
+   "source": "self-brainstorm"
+  },
+  {
+   "question": "Which approach?",
+   "chose": "Standalone .mjs (approach 1). It finds the store by globbing ~/.claude/plugins/store/trophy_*.json, takes the file whose JSON has trophy.failures, prefers the non-inline one, and honours --from. It also takes --backlog <path> and --store <dir> so the test can use a temp copy.",
+   "because": "It fits the existing scripts and needs no toolchain. It is the smallest change that meets the acceptance criteria. A copy of targetOf is about 10 lines, and the test pins it.",
+   "owner": "engine",
+   "decided_in": "brainstorm",
+   "source": "self-brainstorm"
+  },
+  {
+   "question": "Assumption 1",
+   "chose": "The store is verified: ~/.claude/plugins/store/trophy_newkayak12-claude-skills-b50a8464da51.json is a flat JSON object with key 'trophy.failures', an array of 35 Entry records. The trophy_inline-*.json file has no failures key and the store dir has other plugins' files, so the script picks files by name and by key, and an absent key means no records, not an error.",
+   "owner": "engine",
+   "decided_in": "brainstorm",
+   "source": "self-brainstorm"
+  },
+  {
+   "question": "Assumption 2",
+   "chose": "Entry shape follows trophy/hooks/failures.ts: ts, day, kind (bug|outcome|report), reason, plugin?, skill?, tool?, version?, cc?, session, local{text?,note?,slug?,subgoal?,path?}. Real records may lack fields (the sample outcome has no plugin and has local.slug '—'), so every field is read defensively.",
+   "owner": "engine",
+   "decided_in": "brainstorm",
+   "source": "self-brainstorm"
+  },
+  {
+   "question": "Assumption 3",
+   "chose": "Group key = plugin · (skill|tool) · reason · first non-empty line of local.text or note, scrubbed: absolute and ~ paths become <path>, uuids and long hex ids become <id>, digits are not touched, and the line is truncated to about 120 characters. The [fail:<hash>] tag is a short sha1 over that key, so it is stable across runs. Counts and versions are excluded from the hash.",
+   "owner": "engine",
+   "decided_in": "brainstorm",
+   "source": "self-brainstorm"
+  },
+  {
+   "question": "Assumption 4",
+   "chose": "Outcome entries (kind outcome: subgoal_failed or goal_failed) have no plugin or skill and carry the project path in local. They are skipped by default, since they record harness run results, not bugs to file. Only kind bug and report become cards. The planner may flip this.",
+   "owner": "engine",
+   "decided_in": "brainstorm",
+   "source": "self-brainstorm"
+  },
+  {
+   "question": "Assumption 5",
+   "chose": "A card follows backlog.md's shape: '**Title**' with Why (count, day range, plugin versions, Claude Code versions, reason, first scrubbed line) and Acceptance, placed in a `### Failure records (auto)` section so --write never touches hand-written cards. Updating a card rewrites only its Why line count and day range, matched by [fail:<hash>]. A card the person edited or closed (deleted) is not recreated unless the failure recurs; that is a limitation, and a deleted tag is not remembered.",
+   "owner": "engine",
+   "decided_in": "brainstorm",
+   "source": "self-brainstorm"
+  },
+  {
+   "question": "Assumption 6",
+   "chose": "Card numbering: --write assigns the next free number after the highest N. in the backlog. Re-runs reuse the number found by tag.",
+   "owner": "engine",
+   "decided_in": "brainstorm",
+   "source": "self-brainstorm"
+  },
+  {
+   "question": "Assumption 7",
+   "chose": "Dry run prints to stdout only and never writes. The real-record dry run prints scrubbed text only, so the report holds no paths, prompts or ids.",
+   "owner": "engine",
+   "decided_in": "brainstorm",
+   "source": "self-brainstorm"
+  },
+  {
+   "question": "Assumption 8",
+   "chose": "Sprint close, committing, and deleting card 179 are the orchestrator's steps; the script does not edit card 179.",
+   "owner": "engine",
+   "decided_in": "brainstorm",
+   "source": "self-brainstorm"
+  },
+  {
+   "question": "Should outcome-kind entries (goal_failed / subgoal_failed from the harness) become cards?",
+   "chose": "No, only bug and report kinds",
+   "owner": "engine",
+   "decided_in": "brainstorm",
+   "source": "self-brainstorm"
+  },
+  {
+   "question": "Tag hash length",
+   "chose": "8-hex sha1 prefix",
+   "owner": "maintainer (newkayak12)",
+   "decided_in": "PLAN",
+   "source": "default"
+  },
+  {
+   "question": "Exact truncation rule for the scrubbed line",
+   "chose": "cut at 120 chars after scrubbing, append an ellipsis",
+   "owner": "maintainer (newkayak12)",
+   "decided_in": "PLAN",
+   "source": "default"
+  },
+  {
+   "question": "Card title template",
+   "chose": "'<plugin> <skill|tool>: <reason> — <scrubbed line>' with tag appended",
+   "owner": "maintainer (newkayak12)",
+   "decided_in": "PLAN",
+   "source": "default"
+  },
+  {
+   "question": "Where `### Failure records (auto)` is created when the backlog lacks it",
+   "chose": "as the last ### group of ## Ready, just before ## Frozen",
+   "owner": "maintainer (newkayak12)",
+   "decided_in": "PLAN",
+   "source": "default"
+  }
+ ],
+ "session_brainstorm": false,
+ "unasked": [
+  {
+   "node_id": "brainstorm",
+   "stage": "brainstorm",
+   "question": "Should outcome-kind entries (goal_failed / subgoal_failed from the harness) become cards?",
+   "owner": null,
+   "options": [
+    {
+     "option": "No, only bug and report kinds (the default)",
+     "consequence": "Cards are real skill and MCP bugs, as in the example (database query ×17). The pane's outcome rows stay out."
+    },
+    {
+     "option": "Yes, include them",
+     "consequence": "One card per harness gate failure, noisy: the sample shows 'goal_failed' with an empty slug and no plugin, so the title would be generic and the text empty."
+    }
+   ],
+   "decided": "No, only bug and report kinds",
+   "why": "Whether harness gate rejections count as backlog-worthy is a call for the maintainer."
+  },
+  {
+   "subgoal_id": null,
+   "node_id": "integrate:1",
+   "stage": "integrate",
+   "question": "Should --write be allowed to put database/infra identifiers (table, column, profile names) from mcp_error text into the public backlog?",
+   "owner": "maintainer (newkayak12)",
+   "options": [
+    {
+     "option": "keep as is",
+     "consequence": "cards are specific, but schema and profile names from private projects land in a public repo"
+    },
+    {
+     "option": "also scrub quoted identifiers ('…', \"…\") to <name>",
+     "consequence": "private names stay out, and the per-column cards fold into one ER_BAD_FIELD_ERROR card, which cuts noise"
+    }
+   ],
+   "decided": "keep as is for this Sprint; carry a backlog card for scrubbing quoted identifiers and fixing the '/*+' path false positive",
+   "why": "what may be published from local records is a privacy choice for the repo owner"
+  }
+ ],
+ "plan_decisions_folded": [
+  "PLAN-F1"
+ ],
+ "qa_pkgs": [
+  {
+   "id": "QA-F1",
+   "area": "F1",
+   "area_title": "Local failure records become backlog cards without copy-paste",
+   "phase": "qa",
+   "flow": "qa",
+   "integration_of": "integrate:1",
+   "title": "QA: Local failure records become backlog cards without copy-paste",
+   "brief": "Run the QA pass for feature area F1 (Local failure records become backlog cards without copy-paste) over the integrated result: exercise it the way a user would and report defects.\nUser stories this card exercises, each with the acceptance it is judged against:\n- F1-US-1 - Find the store without being told (PLAN-F1)\n  - F1-AC-1: Given a store dir with a named trophy file holding `trophy.failures`, an inline trophy file without the key, and a `*.json.tmp.*` leftover, When the script runs with `--",
+   "acceptance": [
+    "F1-AC-1: Given a store dir with a named trophy file holding `trophy.failures`, an inline trophy file without the key, and a `*.json.tmp.*` leftover, When the script runs with `--store <dir>`, Then records come from the named file only.",
+    "F1-AC-2: Given two files both holding the key, one inline, When discovery runs, Then the non-inline file is used.",
+    "F1-AC-3: Given no file holds the key, When the script runs, Then it prints no cards (a one-line \"no records\" note) and exits 0.",
+    "F1-AC-4: Given `--from <json>`, When the script runs, Then discovery is skipped and that file is read; if both `--from` and `--store` are given, `--from` wins (default - revisit with maintainer).",
+    "F1-AC-5: Given no `--store`, When the script runs, Then it globs the `trophy_*.json` pattern under the plugin store in the user's home Claude directory.",
+    "F1-AC-6: Given a bug record with `local: {}` (no text), When read, Then it is kept, its first line is empty, and it groups under plugin · target · reason · empty line.",
+    "F1-AC-7: Given a report record with neither plugin nor skill nor tool, When read, Then the target and plugin fall back to `-` and no exception occurs.",
+    "F1-AC-8: Given a record missing `version`, `cc` or `day`, When read, Then the card shows no value for it and the script exits 0.",
+    "F1-AC-9: Given a fixture with bug, report, `subgoal_failed` and `goal_failed` entries, When the script runs, Then only bug and report entries are counted and no card mentions an outcome.",
+    "F1-AC-10: Given three records with the same plugin, target, reason and first line but different versions, When grouped, Then there is one group with count 3.",
+    "F1-AC-11: Given first lines containing an absolute path, a `~` path, a uuid and a 32-char hex id, When scrubbed, Then they read `<path>` and `<id>`, digits elsewhere are unchanged, and no original value remains in the output.",
+    "F1-AC-12: Given a first line longer than 120 characters, When scrubbed, Then it is cut at 120 characters after scrubbing and an ellipsis is appended (default - revisit with maintainer).",
+    "F1-AC-13: Given `local.text` empty and `local.note` set, When the line is chosen, Then the first non-empty line of the note is used.",
+    "F1-AC-14: Given any output, When searched, Then it holds no prompt text, session id or path.",
+    "F1-AC-15: Given the same group in two runs with different counts and versions, When tagged, Then the tag is identical.",
+    "F1-AC-16: Given two groups differing in any one key part, When tagged, Then their tags differ.",
+    "F1-AC-17: Given a tag, When printed, Then it is `[fail:` plus the first 8 hex characters of the sha1 of the key (default - revisit with maintainer).",
+    "F1-AC-18: Given no `--write`, When the script runs against a temp backlog, Then the backlog file is byte-identical afterwards and the cards are on stdout.",
+    "F1-AC-19: Given `--write` absent and `--backlog` given, When it runs, Then the file is still not written.",
+    "F1-AC-20: Given a backlog whose highest number is N and no auto section, When `--write` runs with G groups, Then the section appears as the last `###` group of `## Ready` before `## Frozen` (default - revisit with maintainer) with cards numbered N+1..N+G.",
+    "F1-AC-21: Given any `--write`, When the diff is read, Then lines outside the auto section are unchanged.",
+    "F1-AC-22: Given a card, When written, Then it has the bold title `<plugin> <skill|tool>: <reason> — <scrubbed line>` with its tag appended (default - revisit with maintainer), a Why line with count, day range, plugin versions, Claude Code versions, reason and scrubbed line, and an Acceptance line `the failure no longer recurs in a later run of failures-to-backlog.mjs` (default - revisit with maintainer).",
+    "F1-AC-23: Given `--backlog` is not given, When `--write` runs, Then it targets `_repo/docs/backlog.md` of this repo; the build and the task never run `--write` on it.",
+    "F1-AC-24: Given a backlog written by `--write`, When the same input runs again with `--write`, Then the file is byte-identical.",
+    "F1-AC-25: Given the same group with more records or a later day, When `--write` re-runs, Then only that card's Why count and day range change; number, title, tag and Acceptance stay.",
+    "F1-AC-26: Given a hand-edited Acceptance line on an auto card, When re-run, Then the edit is kept.",
+    "F1-AC-27: Given a deleted auto card and a store where the failure no longer occurs, When `--write` runs, Then it is not recreated; if the failure recurs it is recreated with the next free number (stated limitation).",
+    "F1-AC-28: Given `_repo/scripts/test-failures-to-backlog.mjs`, When `node --test` runs it, Then it uses fixture records and a temp backlog copy, never the real store or backlog, and covers grouping, scrubbing, skipping outcomes, dry run not writing, `--write` adding and re-run updating; pass/fail counts are reported.",
+    "F1-AC-29: Given this machine's real store, When the dry run is executed once, Then its output (scrubbed text only) is pasted into the report and `git status` shows no change.",
+    "F1-AC-30: Given Sprint close, When card 179 is closed, Then the orchestrator deletes it and the script contains no code touching card 179."
+   ],
+   "deps": [],
+   "touches": []
+  }
+ ],
+ "shape_diagram": {
+  "path": "__CWD__/.teams_output/team/E-10db37d0/20-shape.html",
+  "ir_path": "__CWD__/.teams_output/team/E-10db37d0/20-shape.diagram.json",
+  "source": "shape"
+ },
+ "auto_parallel": {
+  "current": 1,
+  "streak": 2,
+  "ceiling": 4,
+  "max": 1,
+  "updated_at": 1795500608684
+ },
+ "auto_parallel_ticks": [
+  {
+   "ts": 1795519862039,
+   "width": 1,
+   "running": 0,
+   "ready_waiting": 0
+  },
+  {
+   "ts": 1795519877260,
+   "width": 1,
+   "running": 0,
+   "ready_waiting": 0
+  },
+  {
+   "ts": 1795519892452,
+   "width": 1,
+   "running": 0,
+   "ready_waiting": 0
+  },
+  {
+   "ts": 1795519907653,
+   "width": 1,
+   "running": 0,
+   "ready_waiting": 0
+  },
+  {
+   "ts": 1795519917702,
+   "width": 1,
+   "running": 0,
+   "ready_waiting": 0
+  },
+  {
+   "ts": 1795519921617,
+   "width": 1,
+   "running": 0,
+   "ready_waiting": 0
+  },
+  {
+   "ts": 1795519936942,
+   "width": 1,
+   "running": 0,
+   "ready_waiting": 0
+  },
+  {
+   "ts": 1795519939457,
+   "width": 1,
+   "running": 0,
+   "ready_waiting": 0
+  },
+  {
+   "ts": 1795519941328,
+   "width": 1,
+   "running": 0,
+   "ready_waiting": 0
+  },
+  {
+   "ts": 1795519956568,
+   "width": 1,
+   "running": 0,
+   "ready_waiting": 0
+  },
+  {
+   "ts": 1795519963832,
+   "width": 1,
+   "running": 0,
+   "ready_waiting": 0
+  },
+  {
+   "ts": 1795519967716,
+   "width": 1,
+   "running": 0,
+   "ready_waiting": 0
+  },
+  {
+   "ts": 1795519982950,
+   "width": 1,
+   "running": 0,
+   "ready_waiting": 0
+  },
+  {
+   "ts": 1795519986063,
+   "width": 1,
+   "running": 0,
+   "ready_waiting": 0
+  },
+  {
+   "ts": 1795519987820,
+   "width": 1,
+   "running": 0,
+   "ready_waiting": 0
+  },
+  {
+   "ts": 1795520003032,
+   "width": 1,
+   "running": 0,
+   "ready_waiting": 0
+  },
+  {
+   "ts": 1795520018311,
+   "width": 1,
+   "running": 0,
+   "ready_waiting": 0
+  },
+  {
+   "ts": 1795520033570,
+   "width": 1,
+   "running": 0,
+   "ready_waiting": 0
+  },
+  {
+   "ts": 1795520048210,
+   "width": 1,
+   "running": 0,
+   "ready_waiting": 0
+  },
+  {
+   "ts": 1795520051345,
+   "width": 1,
+   "running": 0,
+   "ready_waiting": 0
+  },
+  {
+   "ts": 1795520066589,
+   "width": 1,
+   "running": 0,
+   "ready_waiting": 0
+  },
+  {
+   "ts": 1795520066804,
+   "width": 1,
+   "running": 0,
+   "ready_waiting": 0
+  },
+  {
+   "ts": 1795520069391,
+   "width": 1,
+   "running": 0,
+   "ready_waiting": 0
+  },
+  {
+   "ts": 1795520084768,
+   "width": 1,
+   "running": 0,
+   "ready_waiting": 0
+  },
+  {
+   "ts": 1795520099948,
+   "width": 1,
+   "running": 0,
+   "ready_waiting": 0
+  },
+  {
+   "ts": 1795520113277,
+   "width": 1,
+   "running": 0,
+   "ready_waiting": 0
+  },
+  {
+   "ts": 1795520116573,
+   "width": 1,
+   "running": 0,
+   "ready_waiting": 0
+  },
+  {
+   "ts": 1795520131409,
+   "width": 1,
+   "running": 0,
+   "ready_waiting": 0
+  },
+  {
+   "ts": 1795520133742,
+   "width": 1,
+   "running": 0,
+   "ready_waiting": 0
+  },
+  {
+   "ts": 1795520149161,
+   "width": 1,
+   "running": 0,
+   "ready_waiting": 0
+  }
+ ]
+}

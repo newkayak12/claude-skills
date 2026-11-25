@@ -1,6 +1,6 @@
 // taskmanager-claims.mjs - claims, spawns out of the transaction and open intents (tm_next, tm_submit); split out of taskmanager.mjs (card 128 step 1), moved verbatim.
 import { afterCommit, inTransaction, mutateRun, mutateTask, writeAtomic } from './store.mjs';
-import { applySuspends, beginEffectLedger, driverAlive, record, takeEffectLedger, taskDir, taskPath } from './taskstate.mjs';
+import { applySuspends, beginEffectLedger, clearHold, driverAlive, holdIfIdle, record, takeEffectLedger, taskDir, taskPath } from './taskstate.mjs';
 import { authorStage, autoPassHumanGateResult, currentAttempt, getNode, humanGateResultFromPayload, kindOf, loadRun, loadRunAt, peekHumanActions, promoteHumanGates, queueHumanAction, readyNodes, runState, saveRun } from './graph.mjs';
 import { clearWaiting, noteWaiting, peek as capPeek, reserveSlot } from './livecap.mjs';
 import { computeSubmitResult } from './broker.mjs';
@@ -646,6 +646,7 @@ export function promoteManagerHumanGates(task) {
   for (const n of autoPass) finish(task, n, autoPassHumanGateResult(n));
   if (parked.length) {
     for (const n of parked) writeManagerBriefing(task, n);
+    holdIfIdle(task, `waiting_human: ${parked.map((n) => n.node_id).join(', ')}`);
     saveRun(task);
   }
   return { parked, autoPass };
@@ -827,6 +828,7 @@ function toolSubmitHumanManager(task, key, nodeId, rawPayload) {
   n.vendor = 'human';
   delete n.model;
   const verdictOut = finish(task, n, payload);
+  clearHold(task, { by: 'engine', reasonPrefix: 'waiting_human:' });
   record(task, { event: 'tm_submit_human', task_id: task.run_id, key, node_id: nodeId, ...(n.ask_id ? { ask_id: n.ask_id } : {}), stage_ok: verdictOut.stage_ok === true, answer: answerText(rawPayload) });
   if (story && story.state === 'forwarded') storyAskAnswered(task, story, { answer: storyAnswer, by: 'person', route: 'forward' });
   const retry = continueBlockedAfterAnswer(task, nodeId, answerText(rawPayload));

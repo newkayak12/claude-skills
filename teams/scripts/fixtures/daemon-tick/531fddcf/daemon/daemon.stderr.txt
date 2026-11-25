@@ -1,0 +1,11 @@
+daemon.mjs: Error: ENOSPC: no space left on device, mkdir '__TASK_DIR__/task.json.lock'
+    at mkdirSync (node:fs:1410:26)
+    at acquireLock (file://__PLUGIN_DIR__)
+    at mutateRun (file://__PLUGIN_DIR__)
+    at mutateTask (file://__PLUGIN_DIR__)
+    at tx (file://__PLUGIN_DIR__)
+    at stepOnceInner (file://__PLUGIN_DIR__)
+    at stepOnce (file://__PLUGIN_DIR__)
+    at file://__PLUGIN_DIR__/mcp/daemon.mjs:823:56
+    at loopStep (file://__PLUGIN_DIR__)
+    at main (file://__PLUGIN_DIR__)

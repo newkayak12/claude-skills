@@ -27,9 +27,9 @@ import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync, writeFileSync, watch } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { loadRunAt } from './graph.mjs';
+import { loadRunAt, readyNodes } from './graph.mjs';
 import { mutateTask, LockTimeoutError } from './store.mjs';
-import { applySuspends } from './taskstate.mjs';
+import { applySuspends, clearHold, personHeld } from './taskstate.mjs';
 import { pidAlive } from './proc.mjs';
 import {
   taskPath, taskDir, record, noDriver, taskState,
@@ -471,7 +471,10 @@ function watchDir(dir, onChange) {
 // listener - registered when THIS process opened the driver via advanceDispatches - appends the
 // exit file there the moment a driver process dies - §4's "child driver process exit"). Falls
 // back to FALLBACK_WAIT_MS if nothing fires first.
-function waitForProgress(task) {
+// A driver's live output (<node>.stream.jsonl, <node>.stderr.txt) grows every second or so and
+// settles nothing: only its exit file (and any other file) is a reason to run a tick before the fallback.
+const QUIET_DRIVER_FILE = /\.(stream\.jsonl|stderr\.txt)$/;
+export function waitForProgress(task) {
   // An ask deadline sooner than the fallback wakes the loop for it rather than up to 15s late.
   const askAt = nextAskDeadline(task);
   const waitMs = askAt === null ? FALLBACK_WAIT_MS : Math.max(250, Math.min(FALLBACK_WAIT_MS, askAt - Date.now() + 250));
@@ -485,7 +488,10 @@ function waitForProgress(task) {
       clearTimeout(timer);
       resolve();
     };
-    const dd = watchDir(join(taskDir(TASK_ID), 'drivers'), finishWait);
+    const dd = watchDir(join(taskDir(task.run_id || TASK_ID), 'drivers'), (_event, file) => {
+      if (file && QUIET_DRIVER_FILE.test(String(file))) return;
+      finishWait();
+    });
     if (dd) watchers.push(dd);
     for (const n of task.nodes) {
       if (n.stage === 'dispatch' && n.state === 'running' && n.child && n.child.cwd) {
@@ -636,47 +642,59 @@ async function stepOnceInner(taskId, judgeFn, answerFn) {
   const tx = (fn) => mutateTask(taskId, fn);
   // Sleep/wake first: a suspend since the last tick is recorded before the ask timeout, the stall
   // watchdog and the timebox below read the clock (taskstate.mjs applySuspends).
-  tx((t) => applySuspends(t));
-  // A cancelled task has nothing left to drive. A gone worktree or task cwd stops it here, before
-  // any driver or judge is spawned (taskmanager.mjs's worktreeGoneStop): the task then reads
-  // blocked and main() records daemon_done.
-  if (tx((t) => { worktreeGoneStop(t); return !!(t.cancelled || t.worktree_gone); })) return false;
-  // ask_timeout: this daemon is the clock for every `ask` card under the task - a parked child
-  // has no driver to notice its own deadline (taskmanager.mjs's expireAsks).
-  const expired = tx((t) => expireAsks(t).length > 0);
-  // Size S: no manager-level node is left to judge once `size` has resolved (delegateIfSmall
-  // skipped the rest) - the whole task is the development-harness run its one driver works, and
-  // this daemon's only job is keeping that driver alive (and resuming it after a capacity park).
-  // A legacy task.s_run (S2) is read, never driven: nothing to do here.
-  const mode = tx((t) => {
+  // The head of the tick is two transactions, not five: the suspend, worktree stop and ask expiry
+  // commit together; the mode branch and the re-judge/budget pass commit apart, so a throw there
+  // does not roll back the expiry.
+  const pre = tx((t) => {
+    applySuspends(t);
+    // A cancelled task has nothing left to drive. A gone worktree or task cwd stops it here, before
+    // any driver or judge is spawned (taskmanager.mjs's worktreeGoneStop): the task then reads
+    // blocked and main() records daemon_done.
+    worktreeGoneStop(t);
+    if (t.cancelled || t.worktree_gone) return { stop: true };
+    // ask_timeout: this daemon is the clock for every `ask` card under the task - a parked child
+    // has no driver to notice its own deadline (taskmanager.mjs's expireAsks).
+    return { expired: expireAsks(t).length > 0 };
+  });
+  if (pre.stop) return false;
+  const expired = pre.expired;
+  const head = tx((t) => {
+    // Size S: no manager-level node is left to judge once `size` has resolved (delegateIfSmall
+    // skipped the rest) - the whole task is the development-harness run its one driver works, and
+    // this daemon's only job is keeping that driver alive (and resuming it after a capacity park).
+    // A legacy task.s_run (S2) is read, never driven: nothing to do here.
+    // A person's hold: no driver or judge starts or restarts this tick (one already mid-turn is
+    // left to finish). tm_hold resume lifts it and raises the daemon.
+    if (personHeld(t)) return { done: expired };
     if (t.harness_run) {
       // Budget first: a stop that trips this tick (budget_stopped, then the grace kill of the
       // driver) must land before serviceSRun could respawn a driver the stop is about to kill.
       let changed = enforceBudget(t);
       if (serviceSRun(t)) changed = true;
-      if (autoResumeCapacity(t)) changed = true;
-      return { harness: true, changed };
+      if (autoResumeCapacity(t)) { changed = true; clearHold(t, { by: 'engine', reasonPrefix: 'waiting_capacity:' }); }
+      return { done: expired || changed };
     }
-    return { s: !!t.s_run };
+    if (t.s_run) return { done: expired };
+    // A judge that could not judge is re-judged before anything reads its non-verdict as a
+    // refusal; a driver parked on a provider's reset time is respawned once that time has passed.
+    // Budget/timebox (§B.1): checked before advanceDispatches so a stop that trips THIS tick
+    // already refuses THIS tick's dispatch, not just the next one.
+    let progressed = expired;
+    if (autoRejudge(t)) progressed = true;
+    if (autoResumeCapacity(t)) { progressed = true; clearHold(t, { by: 'engine', reasonPrefix: 'waiting_capacity:' }); }
+    if (enforceBudget(t)) progressed = true;
+    // advanceDispatches stamps a width sample into task.json on every pass, so a tick with no
+    // dispatch to open and no orphaned open to reclaim skips it and writes nothing.
+    const ready = readyNodes(t).some((n) => n.stage === 'dispatch');
+    const orphaned = t.nodes.some((n) => n.stage === 'dispatch' && n.state === 'running' && !n.child && n.claim);
+    return { progressed, dispatch: ready || orphaned };
   });
-  if (mode.harness) return expired || mode.changed;
-  if (mode.s) return expired;
+  if ('done' in head) return head.done;
 
-  let progressed = expired;
-  // A judge that could not judge is re-judged before anything reads its non-verdict as a
-  // refusal; a driver parked on a provider's reset time is respawned once that time has passed.
-  // Budget/timebox (§B.1): checked before advanceDispatches so a stop that trips THIS tick
-  // already refuses THIS tick's dispatch, not just the next one.
-  if (tx((t) => {
-    let p = false;
-    if (autoRejudge(t)) p = true;
-    if (autoResumeCapacity(t)) p = true;
-    if (enforceBudget(t)) p = true;
-    return p;
-  })) progressed = true;
+  let progressed = head.progressed;
   // advanceDispatches / prepareReadyIntegrations / foldDispatch own their transactions (claim ->
   // effect outside the lock -> apply).
-  if (advanceDispatches(taskId)) progressed = true;
+  if (head.dispatch && advanceDispatches(taskId)) progressed = true;
   tx((t) => serviceRunningDispatches(t));
   if (prepareReadyIntegrations(taskId)) progressed = true;
   // gate:human (D2 Task 4): a judging node human_gates named must never reach judge() below -
@@ -691,10 +709,13 @@ async function stepOnceInner(taskId, judgeFn, answerFn) {
   // instead of relayed through a tool call. Read-only view; foldDispatch re-reads and claims.
   const view = loadRunAt(taskPath(taskId)) || { run_id: taskId, nodes: [] };
   const foldable = view.nodes.filter((n) => n.stage === 'dispatch' && n.state === 'running' && n.child).map((n) => n.node_id);
+  // `view` is this moment's read until a fold writes: the first fold check reuses it.
+  let snap = view;
   for (const nodeId of foldable) {
-    const t = loadRunAt(taskPath(taskId));
+    const t = snap || loadRunAt(taskPath(taskId));
     const n = t && t.nodes.find((x) => x.node_id === nodeId);
     if (!n || n.state !== 'running' || !n.child || !dispatchSettled(t, n)) continue;
+    snap = null;
     let out;
     try {
       out = foldDispatch(taskId, nodeId, 'daemon');
@@ -795,14 +816,32 @@ async function stepOnceInner(taskId, judgeFn, answerFn) {
 // One step of the loop below, surviving a lock it could not get: a LockTimeoutError (a sleep
 // mid-wait, a slow writer) used to reach main().catch and exit, leaving the task running with no
 // daemon. Now it is a retry. daemon_lock_timeout is recorded once per streak, not per tick.
-// Any other error propagates as before. Returns {ok, value}; ok false means "wait, try again".
-export async function loopStep(taskId, streak, fn) {
+// Any other error counts its own streak (E-531fddcf died on one ENOSPC at acquireLock): it is
+// survived and waited out for FALLBACK_WAIT_MS, daemon_tick_error is recorded once per streak, and
+// the failure that reaches `maxErrors` records daemon_tick_exit and propagates. Any success ends
+// both streaks. `maxErrors` defaults to 1 (the first non-lock error propagates, as before); main
+// passes NON_LOCK_FAILURE_LIMIT.
+// Returns {ok, value, wait}; ok false means "wait `wait` ms (default 1s), try again".
+export const NON_LOCK_FAILURE_LIMIT = 5;
+export async function loopStep(taskId, streak, fn, { maxErrors = 1 } = {}) {
   try {
     const value = await fn();
     streak.count = 0;
+    streak.errors = 0;
     return { ok: true, value };
   } catch (e) {
-    if (!(e instanceof LockTimeoutError) && !(e && e.code === 'ELOCKTIMEOUT')) throw e;
+    if (!(e instanceof LockTimeoutError) && !(e && e.code === 'ELOCKTIMEOUT')) {
+      streak.errors = (streak.errors || 0) + 1;
+      const info = { code: (e && e.code) || null, message: String((e && e.message) || e).slice(0, 300) };
+      // The ledger can be what failed (ENOSPC); record() swallows that, so the streak never depends on it.
+      const note = (ev) => record({ run_id: taskId }, { ...ev, task_id: taskId, ...info });
+      if (streak.errors >= maxErrors) {
+        if (maxErrors > 1) note({ event: 'daemon_tick_exit', failures: streak.errors });
+        throw e;
+      }
+      if (streak.errors === 1) note({ event: 'daemon_tick_error' });
+      return { ok: false, wait: FALLBACK_WAIT_MS };
+    }
     streak.count = (streak.count || 0) + 1;
     if (streak.count === 1) {
       record({ run_id: taskId }, { event: 'daemon_lock_timeout', task_id: taskId, path: e.path || null, owner: (e.owner && e.owner.pid) || null });
@@ -813,15 +852,16 @@ export async function loopStep(taskId, streak, fn) {
 
 async function main() {
   const streak = { count: 0 };
-  const lockRetry = () => new Promise((r) => setTimeout(r, 1000));
+  const tickOpts = { maxErrors: NON_LOCK_FAILURE_LIMIT };
+  const lockRetry = (step) => new Promise((r) => setTimeout(r, step.wait || 1000));
   for (;;) {
     const task = loadTask();
     if (!task) {
       record({ run_id: TASK_ID, store_path: taskPath(TASK_ID) }, { event: 'daemon_task_missing', task_id: TASK_ID });
       return;
     }
-    const step = await loopStep(TASK_ID, streak, () => stepOnce(TASK_ID));
-    if (!step.ok) { await lockRetry(); continue; }
+    const step = await loopStep(TASK_ID, streak, () => stepOnce(TASK_ID), tickOpts);
+    if (!step.ok) { await lockRetry(step); continue; }
     const progressed = step.value;
     let fresh = loadTask();
     if (!fresh) {
@@ -844,8 +884,8 @@ async function main() {
       // The closers run at the TOP of a step; a node that failed at the end of this one (the goal
       // gate, code-sprint-S6) left the task blocked before enforceBudget ever saw it, and the
       // stopped Sprint ended with no report. Give them one look before calling it done.
-      const closed = stopped ? { ok: true, value: false } : await loopStep(TASK_ID, streak, () => mutateTask(TASK_ID, (t) => enforceBudget(t)));
-      if (!closed.ok) { await lockRetry(); continue; }
+      const closed = stopped ? { ok: true, value: false } : await loopStep(TASK_ID, streak, () => mutateTask(TASK_ID, (t) => enforceBudget(t)), tickOpts);
+      if (!closed.ok) { await lockRetry(closed); continue; }
       if (closed.value) continue;
       // Not running is not finished while a failed judge still has a scheduled re-judge.
       const rejudgeAt = stopped ? null : pendingRejudgeAt(fresh);

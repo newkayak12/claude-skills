@@ -4,7 +4,7 @@ import { applyPinAction, authorStage, currentAttempt, getNode, kindOf, loadRun, 
 import { taskFigure } from './drivercost.mjs';
 import { dirname, join, resolve } from 'node:path';
 import { docPaths, epicBoardRows, epicKey, epicPhase, epicTicketState, initiativeKey, latestBySubgoal, packageFiling, parseTicketKey, planningPkgs, planningStories, qaPkgs, storyBlockedReason, storyKey, storyLinks, storyTaskProgress, storyTicketState, taskKey, ticketSnapshot } from './tickets.mjs';
-import { driverAlive, record, resolveHarnessRun, taskDir, taskPath, tasksRoot } from './taskstate.mjs';
+import { clearHold, driverAlive, personHeld, record, resolveHarnessRun, setHold, taskDir, taskPath, tasksRoot } from './taskstate.mjs';
 import { graphRunPath } from './harnessrun.mjs';
 import { liveProc, registryProcesses, sameProcess } from './livecap.mjs';
 import { logReply, renderLedgerLine, renderStreamLine } from './tasklog.mjs';
@@ -925,15 +925,50 @@ function withHarnessFields(reply, taskId) {
   return { ...reply, ...withTask({ task_id: taskId }, (task) => toolNextHarness(task)) };
 }
 
+// tm_hold({task_id, action, reason}): the person holds or resumes a task. A refusal throws inside
+// the transaction, so it writes neither task.json nor the ledger. Resume raises the daemon.
+function toolHold(a) {
+  if (a.action !== 'hold' && a.action !== 'resume') throw new Error('tm_hold: action must be hold or resume');
+  return withTask(a, (task) => {
+    const state = taskState(task).state;
+    if (task.cancelled || state === 'cancelled' || state === 'complete' || state === 'partial' || lastRelevantEvent(task.run_id) === 'clean') {
+      throw new Error(`tm_hold refused: the task is ${task.cancelled ? 'cancelled' : state}`);
+    }
+    if (a.action === 'hold') {
+      const reason = String(a.reason || '').trim();
+      if (!reason) throw new Error('tm_hold refused: hold needs a reason');
+      if (!setHold(task, { reason, by: 'person' })) throw new Error(`tm_hold refused: already held (${task.hold.by}: ${task.hold.reason})`);
+      return { task_id: task.run_id, held: true, hold: task.hold };
+    }
+    if (!task.hold) throw new Error('tm_hold refused: the task is not held');
+    if (!clearHold(task, { by: 'person' })) throw new Error('tm_hold refused: a gone worktree stops the task until tm_cancel or tm_clean');
+    serviceDaemon(task);
+    return { task_id: task.run_id, held: false };
+  });
+}
+
+// tm_next under a person's hold: toolNext would respawn a size-S driver or open L packages, so it
+// is not called; the reply says why. Every tm_next call site in this file goes through here.
+function toolNextUnlessHeld(a) {
+  const task = mustFindTask(a);
+  if (!personHeld(task)) return toolNext(a);
+  return { task_id: task.run_id, state: taskState(task).state, held: true, hold: task.hold, counts: {}, ready: [], children: [], next: 'held by a person: tm_hold resume starts work again' };
+}
+
 // The retry itself is one transaction on a fresh read; the tm_next that every reply carries runs
 // after it commits (toolNext owns its own transactions and must never run inside one).
 function toolRetry(a) {
-  const res = withTask(a, (task) => retryTask(task, a));
-  return { ...res, ...toolNext({ task_id: res.task_id }) };
+  const res = withTask(a, (task) => {
+    const out = retryTask(task, a);
+    if (out && out.retried) clearHold(task, { by: 'engine' }); // a retry starting ends an engine park; a person's hold stays
+    return out;
+  });
+  return { ...res, ...toolNextUnlessHeld({ task_id: res.task_id }) };
 }
 
 function retryTask(task, a) {
   if (task.cancelled) throw new Error('task cancelled');
+  if (personHeld(task)) throw new Error(`tm_retry refused: the task is held by a person (${task.hold.reason}); tm_hold resume starts work again`);
   // A driver parked waiting_capacity after a usage-limit death spent no restart; the way back
   // is not a retried package but a cleared wait, once the caller believes capacity is back.
   // Clears every waiting child (or just package_id's, or task.s_run for a size-S task) and
@@ -1144,7 +1179,7 @@ function toolStatus(a) {
     // tm_status is not a board tool: a verdict first read here renders its report and retro here.
     const before = ticketSnapshot(task);
     let changed = false;
-    task = withTask(a, (fresh) => { changed = serviceHarnessRun(fresh); return fresh; });
+    task = withTask(a, (fresh) => { changed = personHeld(fresh) ? false : serviceHarnessRun(fresh); return fresh; });
     if (changed) syncTickets(task, before, 'tm_status');
     const ts = taskState(task);
     return {
@@ -1270,4 +1305,4 @@ function cardsStatus(task) {
 }
 
 
-export { lastRelevantEvent, resolveTaskRef, toolAssign, toolBoard, toolCancel, toolClean, toolDocs, toolEvents, toolFile, toolInbox, toolLog, toolOpen, toolRetry, toolRun, toolStatus, toolTicket, toolWait, withHarnessFields };
+export { toolNextUnlessHeld, lastRelevantEvent,resolveTaskRef, toolAssign, toolBoard, toolCancel, toolClean, toolDocs, toolEvents, toolFile, toolHold, toolInbox, toolLog, toolOpen, toolRetry, toolRun, toolStatus, toolTicket, toolWait, withHarnessFields };

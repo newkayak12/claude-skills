@@ -3,8 +3,8 @@ import { ticketSnapshot } from './tickets.mjs';
 import { expireAsks, toolAsk } from './taskmanager-asks.mjs';
 import { mustFindTask, withTask } from './taskmanager-stages.mjs';
 import { serviceDaemon } from './taskmanager-drivers.mjs';
-import { syncTickets, toolAssign, toolBoard, toolCancel, toolClean, toolDocs, toolEvents, toolFile, toolInbox, toolLog, toolOpen, toolRetry, toolRun, toolStatus, toolTicket, toolWait } from './taskmanager-handlers.mjs';
-import { toolNext, toolSubmit } from './taskmanager-claims.mjs';
+import { syncTickets, toolAssign, toolBoard, toolCancel, toolClean, toolDocs, toolEvents, toolFile, toolHold, toolInbox, toolLog, toolNextUnlessHeld, toolOpen, toolRetry, toolRun, toolStatus, toolTicket, toolWait } from './taskmanager-handlers.mjs';
+import { toolSubmit } from './taskmanager-claims.mjs';
 import { post, readMarked } from './bus.mjs';
 
 // ---------- tools ----------
@@ -306,6 +306,20 @@ const TOOLS = [
     outputSchema: { type: 'object', properties: { task_id: { type: 'string' }, key: { type: 'string' }, ask_id: { type: 'string' }, state: { type: 'string' }, next: { type: 'string' } }, required: ['task_id', 'key', 'ask_id', 'state'] },
   },
   {
+    name: 'tm_hold',
+    description: 'Hold or resume a task on purpose. action `hold` (reason required) records task.hold and starts no driver until `resume`; a driver mid-turn finishes. `resume` lifts it and raises the daemon. Refused for a held, done, cleaned or cancelled task (hold) and for an unheld task (resume).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        task_id: { type: 'string' },
+        action: { type: 'string', enum: ['hold', 'resume'] },
+        reason: { type: 'string', description: 'why the task is held (required for hold)' },
+      },
+      required: ['task_id', 'action'],
+    },
+    outputSchema: { type: 'object', properties: { task_id: { type: 'string' }, held: { type: 'boolean' }, hold: { type: 'object' } }, required: ['task_id', 'held'] },
+  },
+  {
     name: 'tm_post',
     description: 'Post one message on the task\'s bus. `from` is your own STORY key (E-xxxxxxxx/Pn), never `teamleader` or `person`. `to` is a STORY key, `teamleader`, `person` or `all`. A STORY may post only to a sibling STORY or the teamleader: never the person (use tm_ask), `all`, itself or a finished STORY. Body 1-8192 chars. Refusals read `tm_post refused: <reason>`. Returns `ts` and topic.',
     inputSchema: {
@@ -351,7 +365,7 @@ function dispatch(name, a, signal) {
   switch (name) {
     case 'tm_open': return toolOpen(a);
     case 'tm_run': return toolRun(a);
-    case 'tm_next': return toolNext(a);
+    case 'tm_next': return toolNextUnlessHeld(a);
     case 'tm_wait': return toolWait(a, signal);
     case 'tm_submit': return toolSubmit(a);
     case 'tm_retry': return toolRetry(a);
@@ -367,6 +381,7 @@ function dispatch(name, a, signal) {
     case 'tm_clean': return toolClean(a, signal);
     case 'tm_cancel': return toolCancel(a);
     case 'tm_ask': return toolAsk(a);
+    case 'tm_hold': return toolHold(a);
     case 'tm_post': return withTask(a, (task) => post(task, a, process.env));
     case 'tm_read': return withTask(a, (task) => ({ task_id: task.run_id, key: a.key, ...readMarked(task, { reader: a.key, cursor: a.cursor }) }));
     default: throw new Error('unknown tool: ' + name);

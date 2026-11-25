@@ -30,7 +30,7 @@ const CLAUDE_ADAPTER = join(dirname(fileURLToPath(import.meta.url)), '..', 'adap
 
 class Client {
   constructor(env = {}) {
-    this.proc = spawn('node', [BROKER], { stdio: ['pipe', 'pipe', 'inherit'], env: { ...process.env, ...env } });
+    this.proc = spawn('node', [BROKER], { stdio: ['pipe', 'pipe', 'inherit'], env: { ...process.env, HARNESS_TASKS_DIR: mkdtempSync(join(tmpdir(), 'broker-tasks-')), ...env } });
     this.buf = '';
     this.id = 0;
     this.queue = [];
@@ -139,7 +139,7 @@ test('serves the MCP handshake and the graph tool surface', async () => {
   try {
     const r = await c.send('tools/list', {});
     const all = r.result.tools.map((t) => t.name);
-    assert.equal(all.length, 35,'the one teams server lists every tool');
+    assert.equal(all.length, 36,'the one teams server lists every tool');
     const names = all.filter((n) => n.startsWith('team_')).sort();
     assert.deepEqual(names, [
       'team_next', 'team_open', 'team_retry', 'team_run', 'team_status', 'team_submit',
@@ -2141,7 +2141,7 @@ function repoWithSlowVendor() {
 // still open". This one keys by id and collects notifications.
 class AsyncClient {
   constructor(env) {
-    this.proc = spawn('node', [BROKER], { stdio: ['pipe', 'pipe', 'inherit'], env: { ...process.env, ...env } });
+    this.proc = spawn('node', [BROKER], { stdio: ['pipe', 'pipe', 'inherit'], env: { ...process.env, HARNESS_TASKS_DIR: mkdtempSync(join(tmpdir(), 'broker-tasks-')), ...env } });
     this.buf = '';
     this.id = 0;
     this.pending = new Map();

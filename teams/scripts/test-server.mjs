@@ -179,8 +179,9 @@ test('full mode lists the 33 tools of the golden fixture plus tm_post and tm_rea
     // tm_post and tm_read (card 126) postdate the fixture; test-bus.mjs holds their schemas.
     assert.equal(golden.length, 33);
     assert.deepEqual(listed.filter((t) => t.name === 'tm_post' || t.name === 'tm_read').map((t) => t.name), ['tm_post', 'tm_read']);
-    const listedOld = listed.filter((t) => t.name !== 'tm_post' && t.name !== 'tm_read');
-    assert.equal(listed.length, 35);
+    assert.equal(listed.filter((t) => t.name === 'tm_hold').length, 1);
+    const listedOld = listed.filter((t) => t.name !== 'tm_post' && t.name !== 'tm_read' && t.name !== 'tm_hold');
+    assert.equal(listed.length, 36);
     assert.deepEqual(listedOld, golden);
   });
 });
@@ -204,12 +205,12 @@ test('driver-visible tool descriptions keep the rules the driver prompt relies o
   }
 });
 
-test('TEAMS_WIKI_OFF=1 in full mode lists 26 tools (team_ + tm_) and a wiki_* call is an error with the exact text', async () => {
+test('TEAMS_WIKI_OFF=1 in full mode lists 27 tools (team_ + tm_) and a wiki_* call is an error with the exact text', async () => {
   await withClient(['--root', mk('server-wiki-')], baseEnv({ TEAMS_WIKI_OFF: '1' }), async (c) => {
     const tools = await c.tools();
-    assert.equal(tools.length, 26);
+    assert.equal(tools.length, 27);
     assert.equal(withPrefix(tools, 'team_').length, 6);
-    assert.equal(withPrefix(tools, 'tm_').length, 20);
+    assert.equal(withPrefix(tools, 'tm_').length, 21);
     assert.equal(withPrefix(tools, 'wiki_').length, 0);
     const r = await c.call('wiki_status', {});
     assert.equal(r.isError, true);
@@ -431,10 +432,10 @@ test('--stage node lists 12 tools (tm_ask, tm_post, tm_read + 9 wiki_*), 3 with 
   });
 });
 
-test('no --stage and --stage bogus both list all 35 tools', async () => {
+test('no --stage and --stage bogus both list all 36 tools', async () => {
   for (const args of [[], ['--stage', 'bogus']]) {
     await withClient([...args, '--root', mk('server-wiki-')], baseEnv(), async (c) => {
-      assert.equal((await c.tools()).length, 35, args.join(' '));
+      assert.equal((await c.tools()).length, 36, args.join(' '));
     });
   }
 });
