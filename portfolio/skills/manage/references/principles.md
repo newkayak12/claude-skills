@@ -19,6 +19,25 @@ appear) live in that workspace's `docs/확정사실.md`, not here.
 | One picture, one-picture page | A page with one picture uses an archetype built for one, or the picture fills its panel (`panel_margin:`); never a two-picture archetype with half the page empty. Pictures on one page share one text size: draw them at the same scale |
 | Figure text | Text inside a figure reads at 8pt or more where it is placed; `check` warns below that. Enlarge the picture, cut the figure's words, or redraw it — a figure nobody can read is decoration |
 
+## Chapters
+
+Before the 선정 rows, decide the chapters: which project becomes how many chapters, each ending on
+one result (the user's deck split one OMS project into a rate-limit chapter and an incident chapter).
+
+- **The result is the chapter's, not each item's.** An item that is a step toward its chapter's
+  result is 본문 even with nothing measured after it: the 30-day baseline the migration's comparison
+  rests on, the two defects caught before the switch, the version constraint that chose the
+  rate-limit algorithm. Three runs sent all three to 부록 for "no result after", and the user's deck
+  has them in the body (2026-11-25). A chapter whose result is a stated outcome without a number
+  ("running now, sufficient on current traffic") is still a chapter; the number is a question.
+- **A scene that ends where it starts goes to 부록 as a document:** a flaw written down with no
+  fix and no result after it (not a textbook Outbox), a metric found blind with nothing measured
+  after (a dashboard), a plan changed that no page tells (Kafka → SQS). In the body the reader asks
+  "why not done properly?" and the page has no answer (user, 2026-11-24: "이런 판단이 아쉬운거임").
+  It never borrows another item's result to become its own chapter.
+- **A 확정사실 ban on wording bans the sentence, not the item** ("재발 방지가 장애를 키웠다" is
+  banned; the 4 recurrence fixes still lead the incident chapter).
+
 ## Writing
 
 - **Plain words.** A word only a developer knows is said in plain words; if it must stay, a footnote
