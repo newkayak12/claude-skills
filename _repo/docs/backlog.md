@@ -676,7 +676,7 @@ ahead of the order above.
    - Why: user, 2026-11-25, after card 179's demo: "UI 반영도 바로바로 되고 마우스 클릭도 지원하죠? 이거 react-ink인데 왜 이렇게밖에 못표현하나 싶은데". The pane is still plain text rows; Button click and Esc were only checked in mock tests (E-4b197a87 report: live host UNVERIFIED).
    - Acceptance: one live check on the current Claude Code (terminal + desktop) that a click opens a row and updates arrive without a key press, timed; the FLOOR/PHASE pages use colour per state, a progress bar per Phase and boxed sections, rendered at 190/110 and approved.
 
-178. **teams engines get faster, cheaper and steadier — one EPIC, one Task per engine** — before card 120 — in E-bb14bb4b
+178. **teams engines get faster, cheaper and steadier — one EPIC, one Task per engine** — before card 120 — in E-4d18badd
    - Why: user, 2026-11-24: "백로그 [전체 스킬 점검] 전에 Teams 각 엔진 성능, 효율성 개선 및 동작 향상(엔진 당 Epic아래 Task 하나씩으로 배정". Seen in the 2026-11-22/23 runs: a fresh driver still starts at ~33.5k tokens (card 130); size-S tasks run 40–150 min under load; the S engine ended two finished runs `blocked` (E-943c979a, E-c15ff128); a real L run lost its bus exchange to a permission gap (E-92c82150); the full teams suite takes 10–20 min and flakes under load (bus-wake, S1 harness driver, view-once perf).
    - 2026-11-24 trophy record: a driver sent `tm_submit` to `ask:story-P3:1` while it was waiting_human ("is waiting_human, not pending") — the driver should wait on the answer, not submit.
    - Shape: one size-L EPIC; one Task (STORY) per engine, each with its own measured before/after:
