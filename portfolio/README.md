@@ -148,7 +148,16 @@ Every session in the workspace starts with `manage.mjs scaffold`, unasked: it re
 to these, creates only what is missing, CLAUDE.md included, and never overwrites a file. A CLAUDE.md
 that is already there (a renamed README too) keeps its text and gets the guide appended once.
 
-Nine steps (3.2.17: full sandbox builds against the user's own deck and read — selection asks four
+Nine steps (3.3.0: selection repeatable and matched to the user's own deck — material grades A by
+the scene a person's judgment shows (`scene` writes it, a separate reviewer records `scene-review`
+against references/scene.md P1–P9/weak/F1–F4, a changed scene is `unreviewed` again); manage picks
+chapters first, each ending on one result, steps toward it are body, scenes that end where they
+start are appendix, wording bans keep the item; `selection` flags B/C rows, weak scenes excluded,
+projects with no measured result in the body; a chapter is drafted alone and reviewed by a separate
+agent in at most three rounds; a resume is a subset of the deck's body plus shared tools; claims
+holds `안 씀` figures; check warns on figure labels drawn over each other. Three runs: 10/27 → 24/27
+agreed, 12/12 of the user's body items picked;
+3.2.17: full sandbox builds against the user's own deck and read — selection asks four
 questions per item (helps this person, strength, measured, qualitative credit), a body chapter needs
 a measured result and undone projects and design documents go to the appendix, which keeps the last
 deck's size; claims offers only outcome figures (never banned, plan or draft ones), reads figure SVG
