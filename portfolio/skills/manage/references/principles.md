@@ -35,6 +35,12 @@ one result (the user's deck split one OMS project into a rate-limit chapter and 
   after (a dashboard), a plan changed that no page tells (Kafka → SQS). In the body the reader asks
   "why not done properly?" and the page has no answer (user, 2026-11-24: "이런 판단이 아쉬운거임").
   It never borrows another item's result to become its own chapter.
+- **Writing a chapter (step 3):** one cover, one problem-and-solution page per 본문 item that leads
+  a turn of the story (at most three), one results page — the user's migration chapter is five pages;
+  three runs of one skill wrote 5, 5 and 8. Supporting B items are cited on those pages, never given
+  their own. Every 본문 item `선정.md` gives the chapter is cited on one of its pages (a run dropped the
+  two pre-switch defects). Where `확정사실.md` and a 선정.md line differ, 확정사실 wins. Third-round
+  review findings are not edited: two runs edited after the third round and nothing reviewed it.
 - **A 확정사실 ban on wording bans the sentence, not the item** ("재발 방지가 장애를 키웠다" is
   banned; the 4 recurrence fixes still lead the incident chapter).
 
