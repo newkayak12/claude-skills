@@ -531,7 +531,12 @@ export function selection(root) {
     })
     if (!measured) for (const r of rs) bad.push(`${r.id}: project ${p} states no measured result in its 본문 items — the body holds chapters with one; put the project in 부록`)
   }
-  return { rows, problems: bad }
+  // a figure 확정사실 states that no item holds (not banned there): the drafter cannot cite or explain
+  // it (three chapter runs asked what 98.1% was; its base was in the analysis increment, 2026-11-25)
+  const all = [...items.values()].map(i => i.text).join('\n')
+  const factOnly = confirmedFacts(root).flatMap(c => c.figs.filter(f => !(c.banned || []).includes(f) && !all.includes(f))
+    .map(f => `${f} — ${c.text.slice(0, 80)}`))
+  return { rows, problems: bad, fact_only: [...new Set(factOnly)] }
 }
 
 // After a render: build/pages/*.png kept under snapshot/render/deck-<v>/pages/ (build/ is regenerated

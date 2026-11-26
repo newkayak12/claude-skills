@@ -463,6 +463,16 @@ test('selection: a bare arrow conclusion or a lock setting is not a measured res
   assert.deepEqual(selection(root).problems, [])
 })
 
+test('selection: a figure only 확정사실 holds (not banned there) is listed as fact_only', () => {
+  const root = mkdtempSync(join(tmpdir(), 'manage-factonly-'))
+  mkdirSync(join(root, 'sources', '01_이관'), { recursive: true })
+  mkdirSync(join(root, 'docs'))
+  writeFileSync(join(root, 'sources/01_이관/A4_대조.md'), '# 대조\n## 사실\n- 스테이지 대조 9건 모두 일치\n')
+  writeFileSync(join(root, 'docs/확정사실.md'), '- 2026-11-11: 운영 대조 수치(98.1%)는 각주에 쓴다\n- 스테이지 대조 9건\n')
+  writeFileSync(join(root, 'sources/선정.md'), '| 글감 | 쓰임 | 쪽 | 이유 | 대표 |\n|---|---|---|---|---|\n| 01_이관/A4 | 본문 | 5 | x | y |\n')
+  assert.deepEqual(selection(root).fact_only.map(s => s.split(' ')[0]), ['98.1%'])
+})
+
 test('selection: an item whose scene is a weak pass goes to 부록, never 제외', () => {
   const root = mkdtempSync(join(tmpdir(), 'manage-weak-'))
   mkdirSync(join(root, 'sources', '02_출고'), { recursive: true })
