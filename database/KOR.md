@@ -37,4 +37,6 @@ dev로 로그인하고 최근 주문 10건 보여줘.
 0.9.0 전에 저장한 MySQL 로그인은 `readonly-mysql`이 그대로 씁니다. 0.6.0 이하에서 남은 사용자 범위 `database-readonly`는
 지웁니다(`claude mcp remove database-readonly -s user`). 자세한 내용: [`mcp/readonly/README.md`](mcp/readonly/README.md).
 
+0.9.3: 옵티마이저 힌트(`/*+ ... */`)가 거부되면 힌트를 빼고 다시 보내라고 알려 줍니다. 스킬과 query 도구 설명에도 힌트는 거부된다고 적었습니다.
+
 0.9.2: Codex에서도 같은 서버 네 개와 스킬을 씁니다(`.codex-plugin/plugin.json`).
