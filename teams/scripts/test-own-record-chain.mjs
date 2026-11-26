@@ -111,11 +111,12 @@ const lines = (cwd, id) => readFileSync(join(cwd, '.harness-run', 'writes', `${i
 // Opens a size-S task whose stub driver runs `mode` over `files`; waits for the stub to finish.
 async function runDriver(tag, mode, files = PLAN_FILES, hook = HOOK) {
   process.env.HARNESS_CHILD_DRIVER = `node ${join(STUB_DIR, 'driver.mjs')} ${OUT_DIR} ${tag} ${mode} ${hook} ${files.join(',')}`;
-  const cwd = repo();
-  const id = seedTask(cwd, [graph.node('size', 'size', []), graph.node('shape', 'shape', ['size']), graph.node('critique', 'critique', ['shape'])],
+  const id = seedTask(repo(), [graph.node('size', 'size', []), graph.node('shape', 'shape', ['size']), graph.node('critique', 'critique', ['shape'])],
     { size: null, spec: null });
   const r = await sizeS(id);
   assert.equal(r.task_state, 'harness', JSON.stringify(r));
+  // The run works in its own worktree (card 178): the driver's cwd and its records are there.
+  const cwd = JSON.parse(readFileSync(tm.taskPath(id), 'utf8')).harness_run.cwd;
   const got = await seen(tag);
   for (const f of files) writeFileSync(join(cwd, f), `${id}\n`);
   return { cwd, id, got };

@@ -8,10 +8,12 @@ import { fileURLToPath } from 'node:url';
 import { graphRunPath, harnessVerdict, taskTag } from './harnessrun.mjs';
 import { baseline as scopeBaseline, inScope, ownVerdict } from './scope.mjs';
 import { loadRun, runState, saveRun } from './graph.mjs';
-import { mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { constants as osConstants } from 'node:os';
 import { touchMarker } from './engage.mjs';
 import { driverExitInfo, driverStderrTail, driverUsageLimitText, nextSpawnAttempt, spawnChildDriver, taskState } from './taskmanager-drivers.mjs';
-import { excludeMarkers, git, noDriver } from './taskmanager-worktree.mjs';
+import { ensureWorktree, excludeMarkers, git, mergeHarnessRun, noDriver, recordHarnessGate } from './taskmanager-worktree.mjs';
 import { parkCapacity } from './capacity-reset.mjs';
 import { recordFailureKind } from './failure-kind.mjs';
 import { reserveSpawn, respawnDriver, spawning } from './taskmanager-claims.mjs';
@@ -58,34 +60,144 @@ function harnessPrompt(task, opts = {}) {
   ].filter((x) => x !== '').join('\n');
 }
 
+// ---- the free code-0 exit (card 178 Task 4) ----
+
+// How many code-0 exits of one task may be respawned without spending restart_budget.
+const FREE_EXIT_CAP = 3;
+
+// The run's progress mark: a count of finished work only, so rewritten files and attempt
+// counters do not move it. Graph: nodes in state done. Fallback: stage artefacts present.
+function doneCount(run) {
+  if (!run) return 0;
+  try {
+    if (run.route === 'graph') {
+      return JSON.parse(readFileSync(graphRunPath(run.cwd, run.run_id), 'utf8')).nodes.filter((n) => n && n.state === 'done').length;
+    }
+    let count = ['01-plan.md', '02-goal-spec.json', '04-goal-gate.json', '05-report.md'].filter((f) => existsSync(join(run.run_dir, f))).length;
+    const sub = join(run.run_dir, 'subgoals');
+    if (existsSync(sub)) count += readdirSync(sub).filter((s) => existsSync(join(sub, s, 'result.json'))).length;
+    return count;
+  } catch { return 0; }
+}
+
+// Whether the driver's last stream turn (what precedes its last result event, or follows it when
+// the stream ends mid-turn) holds a run_in_background tool call with no tool_result.
+function openBackgroundCall(driver) {
+  let text;
+  try { text = readFileSync(driver.log, 'utf8'); } catch { return false; }
+  let last = new Set();
+  let open = new Set();
+  let midTurn = false;
+  for (const line of text.split('\n')) {
+    let e;
+    try { e = JSON.parse(line); } catch { continue; }
+    if (e?.type === 'result') { last = open; open = new Set(); midTurn = false; continue; }
+    if (e?.type !== 'assistant' && e?.type !== 'user') continue;
+    midTurn = true;
+    const content = e.message?.content;
+    for (const c of Array.isArray(content) ? content : []) {
+      if (c?.type === 'tool_use' && c.input?.run_in_background === true) open.add(c.id);
+      else if (c?.type === 'tool_result') open.delete(c.tool_use_id);
+    }
+  }
+  return (midTurn ? open : last).size > 0;
+}
+
+// The wait status the kernel still holds for a dead process nobody has reaped yet, in the exit
+// file's {code, signal} shape: /proc/<pid>/stat field 52, or ps's hex xstat where there is no
+// /proc (macOS). null when the pid is not a zombie.
+function zombieExitInfo(pid) {
+  if (!pid) return null;
+  let status = null;
+  try {
+    const stat = readFileSync(`/proc/${pid}/stat`, 'utf8');
+    const fields = stat.slice(stat.lastIndexOf(')') + 2).trim().split(' '); // fields[0] is field 3
+    if (fields[0] === 'Z') status = Number(fields[49]);
+  } catch (e) {
+    if (e?.code !== 'ENOENT') return null;
+    const r = spawnSync('ps', ['-o', 'stat=,xstat=', '-p', String(pid)], { encoding: 'utf8', timeout: 1000 });
+    const m = /^\s*Z\S*\s+([0-9a-f]+)\s*$/.exec(r.stdout || '');
+    if (m) status = parseInt(m[1], 16);
+  }
+  if (!Number.isInteger(status)) return null;
+  const sig = status & 0x7f;
+  if (!sig) return { code: status >> 8, signal: null };
+  return { code: null, signal: Object.keys(osConstants.signals).find((k) => osConstants.signals[k] === sig) || String(sig) };
+}
+
+// A driver reads dead as soon as it is a zombie, which can be before its spawner's exit listener
+// has written the exit file - and when the spawner is this process, that listener cannot run
+// inside this call. So an unreaped driver's status comes from the kernel.
+const exitNow = (driver) => driverExitInfo(driver) || zombieExitInfo(driver.pid) || driverExitInfo(driver);
+
+// Reaped by another process that has not finished writing the file: a bounded wait for it. Still
+// null after it (the spawner is gone) counts like any exit.
+const EXIT_INFO_WAIT_MS = 1000;
+const EXIT_INFO_STEP_MS = 50;
+function settledExitInfo(driver) {
+  let info = exitNow(driver);
+  for (let waited = 0; !info && driver.exit && waited < EXIT_INFO_WAIT_MS; waited += EXIT_INFO_STEP_MS) {
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, EXIT_INFO_STEP_MS);
+    info = driverExitInfo(driver);
+  }
+  return info;
+}
+
+// Why this dead driver's exit costs no restart, or null when it counts: a code-0 exit with a
+// background call open (once per done-count) or with more of the run done than at its spawn.
+function freeExit(task, h, d, run) {
+  const used = h.free_exits || [];
+  if (task.cancelled || task.worktree_gone || h.exhausted || used.length >= FREE_EXIT_CAP) return null;
+  const exit = settledExitInfo(d);
+  if (!exit || exit.code !== 0) return null;
+  const count = doneCount(run);
+  // A driver spawned elsewhere (tm_retry, a capacity resume) carries its own mark.
+  const atSpawn = d.progress_at_spawn ?? h.progress_at_spawn;
+  if (!used.some((f) => f.done_count === count) && openBackgroundCall(d)) return { pid: d.pid, exit, why: 'background_open', done_count: count };
+  if (Number.isInteger(atSpawn) && count > atSpawn) return { pid: d.pid, exit, why: 'progressed', done_count: count };
+  return null;
+}
+
 function spawnHarnessDriver(task, opts = {}) {
-  return spawnChildDriver(task, 'S', task.harness_run, {
+  const progress = doneCount(opts.run || task.harness_run.run);
+  const driver = spawnChildDriver(task, 'S', task.harness_run, {
     prompt: harnessPrompt(task, opts), harness: true,
     // The hook (hooks/own-writes.mjs) records this driver's writes only when it sees these two.
-    env: { TEAMS_OWN_WRITES: ownWritesPath(task.cwd, task.run_id), TEAMS_OWN_RUN: task.run_id },
+    env: { TEAMS_OWN_WRITES: ownWritesPath(task.harness_run.cwd, task.run_id), TEAMS_OWN_RUN: task.run_id },
     ...(Number.isInteger(opts.attempt) ? { attempt: opts.attempt } : {}),
   });
+  return { ...driver, progress_at_spawn: progress };
 }
 
 export function openHarnessRun(task) {
   const dir = taskDir(task.run_id);
+  // The run works in its own worktree (card 178), made from HEAD of task.cwd; the branch checked
+  // out there at open is where a passing run merges back (merge_target, null on a detached HEAD).
+  // Without a git checkout, or when the tree cannot be made, it runs in task.cwd as before.
+  const tree = ensureWorktree(task, 'S');
+  const own = tree.ok;
+  const target = git(task.cwd, ['symbolic-ref', '--short', 'HEAD']);
+  const cwd = own ? tree.path : task.cwd;
   task.harness_run = {
-    cwd: task.cwd, opened_at: Date.now(), route: null, run: null,
+    cwd, opened_at: Date.now(), route: null, run: null,
     pointer: join(dir, 'harness-run.json'), report_path: join(dir, 'harness-report.md'),
-    writes_path: ownWritesPath(task.cwd, task.run_id),
+    writes_path: ownWritesPath(cwd, task.run_id),
+    ...(own ? { main_cwd: task.cwd, branch: tree.branch, merge_target: target.ok && target.out ? target.out : null } : {}),
   };
+  if (!own) record(task, { event: 'harness_worktree_skipped', task_id: task.run_id, reason: tree.reason || 'no worktree' });
   // Baseline of what is already dirty, so the run's scope check counts only what it touches.
   try {
-    const base = scopeBaseline(task.cwd);
+    const base = scopeBaseline(cwd);
     mkdirSync(dir, { recursive: true });
     const bp = join(dir, 'scope-baseline.json');
     writeFileSync(bp, JSON.stringify(base, null, 1) + '\n');
     task.harness_run.baseline_path = bp;
     task.harness_run.baseline_count = Object.keys(base).length;
   } catch { /* not a git checkout: no baseline */ }
-  excludeMarkers(task.cwd);
-  touchMarker(task.cwd, task.run_id);
-  record(task, { event: 'harness_open', task_id: task.run_id, cwd: task.cwd });
+  excludeMarkers(cwd);
+  touchMarker(cwd, task.run_id);
+  const h = task.harness_run;
+  record(task, { event: 'harness_open', task_id: task.run_id, cwd, ...(own ? { main_cwd: h.main_cwd, branch: h.branch, merge_target: h.merge_target } : {}) });
   if (noDriver()) return;
   task.harness_run.spawn_count = 0;
   // Spawned after the caller's transaction commits (reserveSpawn); the reply reads it after that
@@ -95,8 +207,9 @@ export function openHarnessRun(task) {
     spawn: (t) => spawnHarnessDriver(t),
     apply: (t, h, driver) => {
       h.driver = driver;
+      h.progress_at_spawn = driver.progress_at_spawn;
       record(t, {
-        event: 'child_driver_spawned', task_id: t.run_id, node_id: 'S', pid: driver.pid, cwd: t.cwd,
+        event: 'child_driver_spawned', task_id: t.run_id, node_id: 'S', pid: driver.pid, cwd: h.cwd,
         log: driver.log, command: driver.command, ...(driver.error ? { error: driver.error } : {}),
       });
     },
@@ -221,6 +334,12 @@ function reportCopyFresh(h) {
   try { return statSync(h.report_path).mtimeMs >= h.opened_at; } catch { return false; }
 }
 
+// A no-verdict end. A cancelled or gone-directory task has its own end (tm_clean,
+// worktreeGoneStop), so a later service of it records none.
+function endWithoutVerdict(task, reason) {
+  if (!task.cancelled && !task.worktree_gone) recordHarnessGate(task, { verdict: null, reason });
+}
+
 // Keeps the harness driver alive: a usage-limit death parks on waiting_capacity (no restart
 // spent), any other death is respawned with a resume prompt naming the recorded run, up to the
 // restart budget - unless the run is terminal-blocked on a failed report and unchanged, which
@@ -229,24 +348,29 @@ export function serviceHarnessRun(task) {
   const h = task.harness_run;
   if (!h) return false;
   applySuspends(task);
-  const snap = () => JSON.stringify([h.run || null, h.refused_pointer || null, !!h.finished_at, !!h.exhausted, h.accepted, !!h.scope, h.stuck ? h.stuck.fingerprint : null]);
+  const snap = () => JSON.stringify([h.run || null, h.refused_pointer || null, !!h.finished_at, !!h.exhausted, h.accepted, !!h.scope, h.stuck ? h.stuck.fingerprint : null, h.gate ? [h.gate.key, h.gate.pid] : null, h.merge ? h.merge.ok : null]);
   const before = snap();
+  // Liveness is read before the run: a driver dead by now has written everything it ever will. Read
+  // after it, a driver that finished and exited in between would be restarted on a finished run.
+  const dead = !!h.driver && !driverAlive(h.driver);
   const run = resolveHarnessRun(task);
   const v = run ? harnessVerdict(run, task.goal_threshold) : null;
   if (v && v.finished && !h.finished_at) { h.finished_at = Date.now(); h.accepted = !!v.accept; }
   if (h.finished_at && h.accepted === undefined && v && v.finished) h.accepted = !!v.accept;
+  if (v && v.finished) recordHarnessGate(task, { accept: !!v.accept, match_pct: v.match_pct, gaps: v.gaps, route: run.route, source: run.route });
   // The report-copy finish (card 129, E-943c979a): a fallback-route driver that finished its run
   // wrote no 05-report.md, but its harness-report.md copy is fresh. Only a dead driver finishes it
   // (a live one may still commit), and never a budget-killed run (it keeps its budget reason).
   // It is read before the usage-limit check and the restart budget, so no park, restart or
   // harness_driver_exhausted follows; an exhaustion flagged earlier is cleared.
-  if (run && run.route === 'fallback' && !(v && v.finished) && !h.finished_at && h.driver && !driverAlive(h.driver) && !spawning(h)
+  if (run && run.route === 'fallback' && !(v && v.finished) && !h.finished_at && dead && !spawning(h)
     && !(task.budget_stopped && task.budget_stopped.harness_killed) && reportCopyFresh(h)) {
     h.finished_at = Date.now();
     h.accepted = !!(v && v.accept);
     h.finished_via = 'report_copy';
     delete h.exhausted;
     record(task, { event: 'harness_report_found', task_id: task.run_id, report_path: h.report_path, run_dir: run.run_dir, accept: h.accepted });
+    recordHarnessGate(task, { accept: h.accepted, match_pct: null, gaps: [], route: run.route, source: 'report_copy' });
   }
   // The finish read: the engine computes the scope verdict once, from the run's plan/setgoal
   // scope, its baseline and its own-write record.
@@ -257,8 +381,18 @@ export function serviceHarnessRun(task) {
       record(task, { event: 'scope_verdict', task_id: task.run_id, ok: s.ok, reason: s.reason, out_of_scope: s.outOfScope, scope: s.scope, own_record: s.own_record, route: run.route, gates: s.own_record === true && s.ok === false });
     }
   }
+  // The first service that reads a passing finish merges it back (card 178); the daemon leaves as
+  // soon as the task reads complete, so it is this call or a later tm_status / tm_clean. It writes
+  // one harness_merge, or parks the task (engine hold "merge_parked: ...") with the tree kept.
+  mergeHarnessRun(task);
   const changed = () => snap() !== before;
   const d = h.driver;
+  // budget_usd/timebox killed the run before it finished (read only: enforceBudget writes it). The
+  // kill is the end: waiting for the process to die would leave the daemon, which reads the task
+  // over as soon as it has, free to leave with no gate written.
+  if (task.budget_stopped?.harness_killed && !(v && v.finished) && !h.finished_at && !spawning(h)) {
+    endWithoutVerdict(task, 'budget_stopped');
+  }
   if (h.stuck && d && driverAlive(d)) delete h.stuck; // a driver was started again (tm_retry): the block is over
   // The first driver deferred at max_live_drivers (openHarnessRun): no driver exists to restart,
   // so the wait ends here, by spawning that first driver once a slot is free.
@@ -266,10 +400,13 @@ export function serviceHarnessRun(task) {
     return respawnDriver(task, 'S', h, {
       attempt: 0, reason: 'spawn', restarts: [],
       spawn: (t) => spawnHarnessDriver(t),
-      event: (t, fresh) => ({ event: 'child_driver_spawned', task_id: t.run_id, node_id: 'S', pid: fresh.pid, cwd: t.cwd, log: fresh.log, command: fresh.command, ...(fresh.error ? { error: fresh.error } : {}) }),
+      event: (t, fresh) => {
+        t.harness_run.progress_at_spawn = fresh.progress_at_spawn;
+        return { event: 'child_driver_spawned', task_id: t.run_id, node_id: 'S', pid: fresh.pid, cwd: t.harness_run.cwd, log: fresh.log, command: fresh.command, ...(fresh.error ? { error: fresh.error } : {}) };
+      },
     }) || changed();
   }
-  if ((v && v.finished) || h.finished_at || !d || driverAlive(d) || h.waiting_capacity || task.budget_stopped || spawning(h)) return changed();
+  if ((v && v.finished) || h.finished_at || !d || !dead || h.waiting_capacity || task.budget_stopped || spawning(h)) return changed();
   const usage = driverUsageLimitText(d);
   if (usage) {
     h.waiting_capacity = parkCapacity(h.last_capacity || null, usage.slice(0, 500), Date.now());
@@ -284,22 +421,34 @@ export function serviceHarnessRun(task) {
   } else if (tb) {
     h.stuck = { node: tb.node, reason: tb.reason, fingerprint: tb.fingerprint, at: Date.now() };
     record(task, { event: 'harness_run_stuck', task_id: task.run_id, node_id: tb.node, reason: tb.reason, fingerprint: tb.fingerprint, pid: d.pid });
+    endWithoutVerdict(task, 'run_stuck');
     return true;
   }
-  if (countedDriverRestarts(task, d).length >= restartBudget(task)) {
+  const free = freeExit(task, h, d, run);
+  if (!free && countedDriverRestarts(task, d).length >= restartBudget(task)) {
     if (!h.exhausted) {
       h.exhausted = true;
       record(task, { event: 'harness_driver_exhausted', task_id: task.run_id, pid: d.pid, stderr_tail: driverStderrTail(d) });
+      endWithoutVerdict(task, 'driver_exhausted');
     }
     return changed();
   }
-  const restarts = [...(d.restarts || []), stampAfterWake(task, d.restarts || [], { pid: d.pid, exit: driverExitInfo(d), at: Date.now(), stderr_tail: driverStderrTail(d, 300) })];
+  const restarts = free ? (d.restarts || []) : [...(d.restarts || []), stampAfterWake(task, d.restarts || [], { pid: d.pid, exit: exitNow(d), at: Date.now(), stderr_tail: driverStderrTail(d, 300) })];
   const attempt = nextSpawnAttempt(h);
   const budget = restartBudget(task);
   return respawnDriver(task, 'S', h, {
     attempt, reason: 'restart', restarts,
     spawn: (t) => spawnHarnessDriver(t, { resume: true, run, attempt }),
-    event: (t, fresh) => ({ event: 'child_driver_restarted', task_id: t.run_id, node_id: 'S', pid: fresh.pid, restart: restarts.length, budget }),
+    // Written by the spawn's apply: a spawn that waits at max_live_drivers uses up no free exit.
+    event: (t, fresh) => {
+      const th = t.harness_run;
+      th.progress_at_spawn = fresh.progress_at_spawn;
+      if (free) {
+        th.free_exits = [...(th.free_exits || []), { ...free, at: Date.now() }];
+        record(t, { event: 'harness_driver_exit_free', task_id: t.run_id, ...free, free_exits: th.free_exits.length });
+      }
+      return { event: 'child_driver_restarted', task_id: t.run_id, node_id: 'S', pid: fresh.pid, restart: restarts.length, budget };
+    },
   });
 }
 

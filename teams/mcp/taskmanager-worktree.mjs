@@ -2,7 +2,7 @@
 import { spawnSync } from 'node:child_process';
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
-import { record, setHold, taskDir, tasksRoot } from './taskstate.mjs';
+import { driverAlive, harnessState, record, setHold, taskDir, tasksRoot } from './taskstate.mjs';
 import { taskFigure, costByStage } from './drivercost.mjs';
 import { writeDocs } from './docs.mjs';
 import { packageName } from './names.mjs';
@@ -194,7 +194,8 @@ export function commitWorktree(cwd, message, opts = {}) {
   // every worktree writes its own marker with its own timestamp (engage.mjs), so committing it
   // would make every package branch differ in that one file and every integrate merge conflict
   // on it. install.mjs gitignores it in a real project; a project without it must not break.
-  const drop = gitIndexed(cwd, ['rm', '-r', '-q', '--cached', '--ignore-unmatch', '--', ...harnessPathsUnder(cwd)]);
+  // A size-S tree also holds the run's own state (.harness-run/): not the project's work either.
+  const drop = gitIndexed(cwd, ['rm', '-r', '-q', '--cached', '--ignore-unmatch', '--', ...harnessPathsUnder(cwd), ...(opts.s ? ['.harness-run'] : [])]);
   if (!drop.ok) return { ok: false, reason: drop.err || 'could not leave the harness state out of the commit' };
   const staged = git(cwd, ['diff', '--cached', '--quiet']);
   if (staged.ok) return { ok: true, commit: null }; // nothing to commit is not an error
@@ -228,6 +229,71 @@ function mergeInto(cwd, branch, message) {
   const conflicts = git(cwd, ['diff', '--name-only', '--diff-filter=U']).out.split('\n').filter(Boolean);
   git(cwd, ['merge', '--abort']);
   return { ok: false, conflicts, reason: r.err || r.out || 'merge failed' };
+}
+
+// ---------- the size-S goal-gate record ----------
+
+// One harness_gate per end of a size-S run: its verdict {accept, ...}, or {verdict:null, reason}.
+// h.gate holds what was last written. A verdict is written again only when it changes; a
+// no-verdict end only for a driver that has no end on record yet (a tm_retry's new driver ends
+// anew). Returns true when it wrote.
+export function recordHarnessGate(task, fields) {
+  const h = task.harness_run;
+  const none = fields.verdict === null;
+  const key = none ? `null:${fields.reason}` : `accept:${fields.accept}`;
+  const pid = (h.driver && h.driver.pid) || null;
+  if (h.gate && (none ? h.gate.pid === pid : h.gate.key === key)) return false;
+  h.gate = { key, at: Date.now(), pid };
+  record(task, { event: 'harness_gate', task_id: task.run_id, ...fields });
+  return true;
+}
+
+function ledgerHasEvent(taskId, event) {
+  try { return readFileSync(join(taskDir(taskId), 'ledger.jsonl'), 'utf8').includes(`"event":"${event}"`); } catch { return false; }
+}
+const ledgerHasGate = (taskId) => ledgerHasEvent(taskId, 'harness_gate');
+
+// ---------- the size-S merge back ----------
+
+// A merge that cannot go ahead is parked, never forced: harness_merge{ok:false} and an engine
+// hold, the tree and branch kept. h.merge is set either way, so the merge is tried once.
+function parkMerge(task, reason, conflicts = []) {
+  const h = task.harness_run;
+  const fields = { ok: false, into: h.merge_target, branch: h.branch, conflicts, reason: String(reason).slice(0, 300), driver_alive: !!(h.driver && driverAlive(h.driver)) };
+  h.merge = { ...fields, at: Date.now() };
+  record(task, { event: 'harness_merge', task_id: task.run_id, ...fields });
+  setHold(task, { by: 'engine', reason: `merge_parked: ${fields.reason}` });
+  return true;
+}
+
+// A size-S run that finished and passed (goal gate and scope) merges its branch into the branch
+// task.cwd had checked out at open, once. The tree is committed first (.harness-run/ left out).
+// Nothing is written to task.cwd unless git itself takes the merge: another branch, a detached
+// HEAD, staged changes, a refused overwrite, a conflict or a failing hook all park. A hook is the
+// project's own; it is run, never skipped. Returns true when it wrote to the task or its ledger.
+export function mergeHarnessRun(task) {
+  const h = task.harness_run;
+  if (!h || !h.branch || !h.main_cwd || h.merge || !h.finished_at || task.cancelled || task.worktree_gone) return false;
+  if (harnessState(task).state !== 'complete' || ledgerHasEvent(task.run_id, 'harness_merge')) return false;
+  const main = h.main_cwd;
+  if (!git(main, ['rev-parse', '--verify', '--quiet', `refs/heads/${h.branch}`]).ok) return false; // already merged and cleaned
+  if (!existsSync(join(h.cwd, '.git'))) return parkMerge(task, `the run's worktree ${h.cwd} is gone`);
+  const msg = `harness S ${shortId(task.run_id)}: ${String(task.request || '').split('\n')[0].slice(0, 60)}`;
+  const c = commitWorktree(h.cwd, msg, { s: true });
+  if (!c.ok) return parkMerge(task, `could not commit the run's tree: ${c.reason}`);
+  const now = git(main, ['symbolic-ref', '--short', 'HEAD']);
+  if (!h.merge_target || !now.ok || now.out !== h.merge_target) {
+    return parkMerge(task, `${main} is on ${now.ok ? `branch ${now.out}` : 'a detached HEAD'}, not ${h.merge_target || 'the branch it had at open'}`);
+  }
+  // mergeInto aborts a failed merge: that must never be the person's own merge in progress.
+  if (git(main, ['rev-parse', '--verify', '--quiet', 'MERGE_HEAD']).ok) return parkMerge(task, `${main} is in the middle of a merge`);
+  if (!git(main, ['diff', '--cached', '--quiet']).ok) return parkMerge(task, `${main} has staged changes`);
+  const m = mergeInto(main, h.branch, msg);
+  if (!m.ok) return parkMerge(task, m.reason, m.conflicts);
+  const fields = { ok: true, into: h.merge_target, branch: h.branch, commit: m.commit, driver_alive: !!(h.driver && driverAlive(h.driver)) };
+  h.merge = { ...fields, at: Date.now() };
+  record(task, { event: 'harness_merge', task_id: task.run_id, ...fields });
+  return true;
 }
 
 // ---------- tm_clean: EPIC teardown (§14 C-11) ----------
@@ -292,7 +358,10 @@ function cleanTask(task, dryRun) {
   const keep = integrationTrees(task);
   const keepCwds = new Set([task.cwd, ...keep.map((k) => k.cwd)]);
   const refs = [...keep.map((k) => k.branch), 'HEAD'];
-  const candidates = dispatchWorktreeCandidates(task).filter((c) => !keepCwds.has(c.cwd));
+  const hr = task.harness_run;
+  // A size-S task's one tree and branch (card 178): a run with no tree of its own has no branch.
+  const runTree = hr && hr.branch && hr.main_cwd && hr.cwd !== task.cwd ? [{ package_id: 'S', cwd: hr.cwd, branch: hr.branch, run: true }] : [];
+  const candidates = [...dispatchWorktreeCandidates(task), ...runTree].filter((c) => !keepCwds.has(c.cwd));
   const planIntegrated = task.nodes.some((n) => n.stage === 'plan-integrate' && n.state === 'done');
   const removed_worktrees = [];
   const removed_branches = [];
@@ -300,6 +369,13 @@ function cleanTask(task, dryRun) {
   const already_clean = [];
   // The node-adapter sessions live in the worktrees about to go: write the spend while they exist.
   if (!dryRun) {
+    // tm_cancel stops the daemon before it can service the run, so a cancelled size-S task gets
+    // its no-verdict end here. The ledger is the dedupe: tm_clean saves no task state.
+    if (task.harness_run && task.cancelled && !ledgerHasGate(task.run_id)) {
+      recordHarnessGate(task, { verdict: null, reason: 'cancelled' });
+    }
+    // A passing finish no service call has merged yet (the daemon leaves once it reads complete).
+    if (runTree.length) mergeHarnessRun(task);
     try {
       const fig = taskFigure(taskDir(task.run_id), task);
       record(task, { event: 'cost_recorded', task_id: task.run_id, spend: fig.spend, estimated: fig.estimated, by_stage: costByStage(fig.live) });
@@ -311,6 +387,12 @@ function cleanTask(task, dryRun) {
     const branchRef = `refs/heads/${c.branch}`;
     const branchExists = git(task.cwd, ['rev-parse', '--verify', '--quiet', branchRef]).ok;
     const worktreeExists = existsSync(join(c.cwd, '.git'));
+    // The run's tree holds uncommitted work: it goes on the branch before the tree goes. A tree that
+    // cannot be committed is kept, not removed.
+    if (c.run && !dryRun && worktreeExists) {
+      const saved = commitWorktree(c.cwd, `harness S ${shortId(task.run_id)}: tree at tm_clean`, { s: true });
+      if (!saved.ok) { kept_branches.push({ package_id: c.package_id, branch: c.branch, cwd: c.cwd, reason: `could not commit the tree, kept: ${saved.reason}` }); continue; }
+    }
     if (!branchExists && !worktreeExists) { already_clean.push({ package_id: c.package_id, cwd: c.cwd, branch: c.branch }); continue; }
     // A planning card's branch carries a PRD commit no integration branch holds. Once plan-integrate
     // is done its section is snapshotted into 10-prd.md, so the branch this task made is spent.
@@ -419,7 +501,13 @@ function repairWorktree(task, pkg) {
 
 // A package tree some node of this task already ran a child in.
 function wasOpened(task, path) {
-  return (task.nodes || []).some((x) => x.child && x.child.cwd === path);
+  return (task.nodes || []).some((x) => x.child && x.child.cwd === path) || ownRunTree(task) === path;
+}
+
+// The size-S run's own worktree (card 178), or null when it runs in task.cwd.
+function ownRunTree(task) {
+  const h = task.harness_run;
+  return h && h.main_cwd && h.cwd && h.cwd !== task.cwd ? h.cwd : null;
 }
 
 // A directory a driver (or judge) is about to be spawned into that is gone, or null. Checked
@@ -428,6 +516,8 @@ function wasOpened(task, path) {
 // cwd. A tree not yet created is not gone - ensureWorktree makes it on the first open.
 export function findGoneWorktree(task) {
   if (task.cwd && !existsSync(task.cwd)) return { kind: 'task_cwd', node_id: null, subgoal_id: null, path: task.cwd };
+  const tree = ownRunTree(task);
+  if (tree && !existsSync(join(tree, '.git'))) return { kind: 'run', node_id: null, subgoal_id: null, path: tree };
   for (const n of task.nodes || []) {
     if (n.stage === 'dispatch' && n.state === 'running' && n.child && n.child.cwd && !existsSync(n.child.cwd)) {
       return { kind: 'package', node_id: n.node_id, subgoal_id: n.subgoal_id, path: n.child.cwd };
@@ -463,12 +553,14 @@ export function worktreeGoneStop(task, found = null) {
   const key = f.key || (f.node_id ? taskKey(task.run_id, f.subgoal_id, f.node_id) : epicKey(task.run_id));
   const reason = f.kind === 'task_cwd'
     ? `the task's own directory ${f.path} is gone`
-    : `the ${f.kind === 'integration' ? 'integration' : 'package'} worktree ${f.path} is gone`;
+    : `the ${f.kind === 'integration' ? 'integration' : f.kind === 'run' ? 'run' : 'package'} worktree ${f.path} is gone`;
   task.worktree_gone = { kind: f.kind, node_id: f.node_id, key, path: f.path, reason, at: Date.now() };
   record(task, { event: 'worktree_gone', task_id: task.run_id, node_id: f.node_id, key, path: f.path, kind: f.kind, reason });
   // Nothing is spawned into a gone directory, so the stop always leaves no runnable work. No lift:
   // this stop ends only by tm_cancel / tm_clean, so the hold stays on record until then.
   setHold(task, { reason: `worktree_gone: ${reason}`, by: 'engine' });
+  // A run already finished had its end recorded; the directory going later is not another one.
+  if (task.harness_run && !task.harness_run.finished_at) recordHarnessGate(task, { verdict: null, reason: 'worktree_gone' });
   return task.worktree_gone;
 }
 

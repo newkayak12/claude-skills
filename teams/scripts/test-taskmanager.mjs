@@ -20,7 +20,7 @@ import assert from 'node:assert/strict';
 import { spawn, spawnSync, execFileSync } from 'node:child_process';
 import { mkdtempSync, mkdirSync, writeFileSync, appendFileSync, readFileSync, rmSync, existsSync, readdirSync, realpathSync, symlinkSync, statSync, utimesSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, dirname } from 'node:path';
+import { join, dirname, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { docPaths, epicTicketState } from '../mcp/tickets.mjs';
 import { epicName, givenName, taskName } from '../mcp/names.mjs';
@@ -846,7 +846,7 @@ test('tm_open({size}) pins the size: L opens the plan stage without measuring, S
     const sTask = JSON.parse(readFileSync(join(root, S.task_id, 'task.json'), 'utf8'));
     assert.equal(sTask.nodes.find((n) => n.node_id === 'size').result.size_source, 'pinned');
     assert.equal(sTask.s_run, null);
-    assert.ok(sTask.harness_run && sTask.harness_run.cwd === cwd, JSON.stringify(sTask.harness_run));
+    assert.ok(sTask.harness_run && sTask.harness_run.cwd === join(root, S.task_id, 'worktrees', 'S') && sTask.harness_run.main_cwd === cwd, JSON.stringify(sTask.harness_run));
     assert.equal(sTask.nodes.find((n) => n.node_id === 'areas').state, 'skipped', 'S has no feature split');
     assert.deepEqual(sTask.planning_pkgs || [], []);
   } finally { tm.close(); rmSync(cwd, { recursive: true, force: true }); rmSync(root, { recursive: true, force: true }); }
@@ -896,7 +896,7 @@ async function withSizeS(fn, extra = {}) {
   } finally { tm.close(); rmSync(cwd, { recursive: true, force: true }); rmSync(root, { recursive: true, force: true }); }
 }
 
-test('S1: a measured size S hands the request to the development harness - no planning card, worktree or teams child run; task_state "harness"', async () => {
+test('S1: a measured size S hands the request to the development harness - no planning card or teams child run, its own worktree; task_state "harness"', async () => {
   const cwd = repo();
   const root = mkdtempSync(join(tmpdir(), 'tm-root-'));
   const tm = await new Client(TM, { HARNESS_TASKS_DIR: root, HARNESS_TEST_NO_DRIVER: '1' }).init();
@@ -912,6 +912,8 @@ test('S1: a measured size S hands the request to the development harness - no pl
     assert.deepEqual(task.planning_pkgs || [], [], 'no planning card');
     assert.ok(!task.nodes.some((n) => n.stage === 'dispatch'), 'no teams child run');
     assert.ok(!task.nodes.some((n) => n.state === 'pending'), 'every other manager node is skipped');
+    assert.ok(task.harness_run.cwd.startsWith(join(root, task_id, 'worktrees') + sep), 'own worktree: h.cwd is under <root>/<id>/worktrees/');
+    assert.ok(existsSync(join(task.harness_run.cwd, '.git')), 'and it is a checkout');
     assert.equal(task.s_run, null);
     assert.ok(!existsSync(join(cwd, '.teams_output', 'worktrees')), 'no worktree');
     assert.equal((await tm.call('tm_status', { task_id })).state, 'running');
@@ -978,7 +980,9 @@ test('S1a: the fallback route reads the run\'s own 05-report.md and 04-goal-gate
 });
 
 test('S1: a pointer to an untagged or older run is refused; the tagged run is found without a pointer', async () => {
-  await withSizeS(async ({ tm, cwd, root, task_id }) => {
+  await withSizeS(async ({ tm, cwd: main, root, task_id }) => {
+    const cwd = readTask(root, task_id).harness_run.cwd; // the run's own worktree (card 178)
+    assert.notEqual(cwd, main);
     // Someone else's accepted run, named by the pointer: refused, the task keeps running.
     writePointer(root, task_id, graphRunFixture(cwd, task_id, { tagged: false, accept: true, report: true }));
     let st = await tm.call('tm_status', { task_id });
@@ -4756,7 +4760,7 @@ if (counterFile) {
   writeFileSync(counterFile, String(n));
 }
 const out = process.env.FAKE_DRIVER_OUT;
-if (out) writeFileSync(\`\${out}.\${n}\`, JSON.stringify({ n, pid: process.pid, argv: process.argv.slice(2), wiki_root: process.env.TEAMS_WIKI_ROOT || null }));
+if (out) writeFileSync(\`\${out}.\${n}\`, JSON.stringify({ n, pid: process.pid, cwd: process.cwd(), argv: process.argv.slice(2), wiki_root: process.env.TEAMS_WIKI_ROOT || null }));
 console.log(JSON.stringify({ type: 'fake-driver', attempt: n }));
 console.error(\`fake driver attempt \${n} drove nothing\`);
 if (n < 2) { process.exit(0); } else { setTimeout(() => process.exit(0), 5000); }
@@ -5452,7 +5456,10 @@ test('S2: a legacy s_run task reads its run\'s state, ignores roles.qa, is never
 // ---------- size-S process handoff: s_driver ----------
 
 test('S1: one harness driver in the project cwd; a dead one is respawned with a prompt naming the recorded run; past its budget the task reads blocked and tm_retry gives it a fresh driver', async () => {
-  const f = driverFixture({}, FAKE_DRIVER_RESPAWN);
+  // The first death exits 1: a code-0 exit before any progress is counted too, but 1 is the plain counted death.
+  const dying = FAKE_DRIVER_RESPAWN.replace('if (n < 2) { process.exit(0); }', 'if (n < 2) { process.exit(1); }');
+  assert.notEqual(dying, FAKE_DRIVER_RESPAWN);
+  const f = driverFixture({}, dying);
   const tm = await f.client.init();
   try {
     const open = await tm.call('tm_open', { roles: { qa: false }, brainstorm: false, request: 'small request', cwd: f.cwd, vendor: 'self', size: 'S', driver_restarts: 1 });
@@ -5473,7 +5480,7 @@ test('S1: one harness driver in the project cwd; a dead one is respawned with a 
     assert.match(resume, new RegExp(`CONTINUE that run`));
     assert.ok(resume.includes(run.run_id), resume.slice(0, 400));
     assert.match(resume, /never open a second run/);
-    assert.equal(realpathSync(JSON.parse(readFileSync(`${f.ran}.2`, 'utf8')).argv.length ? f.cwd : f.cwd), realpathSync(f.cwd));
+    assert.equal(realpathSync(JSON.parse(readFileSync(`${f.ran}.2`, 'utf8')).cwd), realpathSync(readTask(f.root, task_id).harness_run.cwd), 'the respawned driver runs in the run\'s own worktree');
     // The respawned one dies too (after 5s): the budget of 1 is spent - blocked, with a report.
     await waitFor(async () => { const t = readTask(f.root, task_id); return !driverAliveLocal(t.harness_run.driver.pid); }, 'the second driver to exit', 20000);
     const dead = await tm.call('tm_next', { task_id });
@@ -5495,7 +5502,7 @@ test('S1: one harness driver in the project cwd; a dead one is respawned with a 
 });
 
 // Every spawn writes "<FAKE_DRIVER_OUT>.<n>" and exits at once - the spawn stub the stuck tests count.
-const FAKE_DRIVER_DIES = FAKE_DRIVER_RESPAWN.replace('if (n < 2) { process.exit(0); } else { setTimeout(() => process.exit(0), 5000); }', 'process.exit(0);');
+const FAKE_DRIVER_DIES = FAKE_DRIVER_RESPAWN.replace('if (n < 2) { process.exit(0); } else { setTimeout(() => process.exit(0), 5000); }', 'process.exit(1); // a counted death');
 
 test('S1: a dead harness driver on an unchanged run that stopped on a failed report is not respawned - the task blocks once, naming the report node and how to retry', async () => {
   const f = driverFixture({}, FAKE_DRIVER_DIES);
@@ -11764,15 +11771,18 @@ test('S1 scope: a size-S open records the baseline of pre-dirty paths, and the h
     const bp = task.harness_run.baseline_path;
     assert.ok(bp && existsSync(bp), JSON.stringify(task.harness_run));
     const base = JSON.parse(readFileSync(bp, 'utf8'));
-    assert.ok(Object.hasOwn(base, 'pre-dirty.txt'), JSON.stringify(base));
+    // The run's own worktree (card 178) is made from HEAD: main's uncommitted work is not in it, so
+    // the baseline taken there holds no pre-dirty path and the tree does not carry the file.
+    assert.ok(!Object.hasOwn(base, 'pre-dirty.txt'), JSON.stringify(base));
+    assert.equal(existsSync(join(task.harness_run.cwd, 'pre-dirty.txt')), false);
     assert.equal(task.harness_run.baseline_count, Object.keys(base).length);
     const ran = await waitFor(() => (existsSync(`${f.ran}.1`) ? JSON.parse(readFileSync(`${f.ran}.1`, 'utf8')) : null), 'the harness driver to run');
     const prompt = ran.argv[ran.argv.length - 1];
     assert.match(prompt, /counts only the paths you touched/);
     assert.ok(prompt.includes(bp), 'the prompt names the baseline file');
     // the scope result: the pre-dirty path is excluded, a new one is counted
-    writeFileSync(join(f.cwd, 'new-edit.txt'), 'mine\n');
-    const out = spawnSync('node', [join(dirname(fileURLToPath(import.meta.url)), 'scope.mjs'), 'touched', '--cwd', f.cwd, '--baseline', bp], { encoding: 'utf8' });
+    writeFileSync(join(task.harness_run.cwd, 'new-edit.txt'), 'mine\n');
+    const out = spawnSync('node', [join(dirname(fileURLToPath(import.meta.url)), 'scope.mjs'), 'touched', '--cwd', task.harness_run.cwd, '--baseline', bp], { encoding: 'utf8' });
     const paths = out.stdout.split('\n').filter(Boolean);
     assert.ok(paths.includes('new-edit.txt'), out.stdout + out.stderr);
     assert.ok(!paths.includes('pre-dirty.txt'), out.stdout);
@@ -12172,7 +12182,7 @@ test('S1 fallback route + task-id record + committed + git-only + same call + wr
     process.env.HARNESS_TEST_NO_DRIVER = '1';
     const T = { run_id: 'tW', cwd, nodes: [] };
     openHarnessRun(T);
-    assert.equal(T.harness_run.writes_path, join(cwd, '.harness-run', 'writes', 'tW.jsonl'));
+    assert.equal(T.harness_run.writes_path, join(root, 'tW', 'worktrees', 'S', '.harness-run', 'writes', 'tW.jsonl'), 'the own-writes path is in the run\'s own worktree');
   } finally {
     if (prevRoot === undefined) delete process.env.HARNESS_TASKS_DIR; else process.env.HARNESS_TASKS_DIR = prevRoot;
     if (prevNo === undefined) delete process.env.HARNESS_TEST_NO_DRIVER; else process.env.HARNESS_TEST_NO_DRIVER = prevNo;

@@ -121,11 +121,12 @@ test('TEAMS_OWN_* reach the size-S driver only: a package driver gets neither ev
     assert.deepEqual((await seen('package-own')).own, [null, null]);
 
     process.env.HARNESS_CHILD_DRIVER = `node ${join(STUB_DIR, 'driver.mjs')} ${OUT_DIR} harness-own`;
-    const cwd = repo();
-    const id = seedTask(cwd, [graph.node('size', 'size', []), graph.node('shape', 'shape', ['size']), graph.node('critique', 'critique', ['shape'])],
+    const id = seedTask(repo(), [graph.node('size', 'size', []), graph.node('shape', 'shape', ['size']), graph.node('critique', 'critique', ['shape'])],
       { size: null, spec: null });
     const r = await tm.callTool('tm_submit', { task_id: id, node_id: 'size', payload: { stage_ok: true, size: 'S', flow: 'develop', sizing: ['wc -l -> small'], handoff: 'h', evidence: 'e' } });
     assert.equal(r.task_state, 'harness', JSON.stringify(r));
+    // The run works in its own worktree (card 178): the own-writes path is in it.
+    const cwd = JSON.parse(readFileSync(tm.taskPath(id), 'utf8')).harness_run.cwd;
     const got = await seen('harness-own');
     assert.deepEqual(got.own, [join(cwd, '.harness-run', 'writes', `${id}.jsonl`), id]);
     assert.equal(JSON.parse(readFileSync(tm.taskPath(id), 'utf8')).harness_run.writes_path, got.own[0]);
