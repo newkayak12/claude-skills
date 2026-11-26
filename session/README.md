@@ -39,6 +39,14 @@ The plugin keeps one status line: `⧗ N agent(s) · /reap` while this session h
 ![orphan-count](docs/images/orphan-count.png)
 *A `claude -p` child started in the background: `⧗ 1 claude -p child(ren) running`.*
 
+## Status line command
+Where Claude Code honours the `settings.read` event for a user-tier plugin, the plugin adds a `statusLine` command that prints one line, in this order: model (cyan), time (yellow), branch (magenta), context % (blue), and 5h / 7d rate limits (green). It is the same text as the reference shell script it was ported from.
+
+- It is added only when no settings layer sets `statusLine`. A `statusLine` of your own always wins.
+- Turn it off in `/config` (`status_line` off), or set your own `statusLine`.
+- Where the hook does not run (see Limits), point your own `statusLine` at `node "<plugin root>/scripts/statusline.mjs"`.
+- Not verified: whether the `/config` toggle takes effect live or needs a restart.
+
 ## Guard
 Before a Bash command or a Write/Edit runs, the guard checks it against a few rules and asks you first (or blocks, see Modes). It works in every repo, including bypass-permissions sessions.
 
@@ -194,4 +202,5 @@ When a `git push` to `main` goes through in one session (`origin main`, `HEAD:ma
 - Windows: the orphan section is hidden and stopping is off; the Retro view and band work.
 - The board's harness cell counts subgoals that passed against the spec's and the run folder's subgoals; the full stage view stays in `/harness-status`.
 - Interactive sessions only for UI; headless runs record the ledger and save the summary, nothing is drawn.
+- Status line command: on a build without the `settings.read` event no line is drawn. Where an organization plugin raises `settings.read` (seen on a team account), the hook is skipped and no line is drawn. Claude Code ignores `statusLine` in a plugin's `settings.json`, so the plugin cannot set it that way. Drawing the line has not been seen in a real run.
 - Checked in a live terminal session (2.1.294): panes, `[stop]`, the retro band, guard asks in auto and bypass mode, and `/memo` after `/clear`. The desktop Code tab is not checked yet.

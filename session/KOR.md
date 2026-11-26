@@ -39,6 +39,14 @@ Claude Code 세션이 남긴 것(변경한 파일, 커밋, 거부된 호출, 도
 ![orphan-count](docs/images/orphan-count.png)
 *백그라운드로 띄운 `claude -p` 자식: `⧗ 1 claude -p child(ren) running`.*
 
+## 상태줄 명령
+Claude Code가 사용자 단계 플러그인의 `settings.read` 이벤트를 받아들이는 환경에서는, 플러그인이 한 줄을 출력하는 `statusLine` 명령을 추가합니다. 순서는 모델(청록), 시간(노랑), 브랜치(자홍), 컨텍스트 %(파랑), 5h / 7d 사용 한도(초록)입니다. 이식해 온 기준 셸 스크립트와 같은 출력입니다.
+
+- 어떤 설정 계층에서도 `statusLine`을 지정하지 않았을 때만 추가됩니다. 직접 지정한 `statusLine`이 항상 우선합니다.
+- 끄려면 `/config`에서 `status_line`을 끄거나, 직접 `statusLine`을 지정합니다.
+- 훅이 동작하지 않는 환경(한계 참고)에서는 직접 `statusLine`을 `node "<플러그인 루트>/scripts/statusline.mjs"`로 지정합니다.
+- 미확인: `/config` 토글이 즉시 반영되는지, 재시작이 필요한지.
+
 ## 가드
 Bash 명령이나 Write/Edit가 실행되기 전에 몇 가지 규칙으로 검사해 먼저 묻습니다(모드에 따라 막기만 하기도 합니다). 모든 저장소에서 동작하며 bypass-permissions 세션도 포함합니다.
 
@@ -194,4 +202,5 @@ headless 실행(`claude -p`)에서는 이 명령들이 텍스트를 출력합니
 - Windows: 고아 프로세스 영역은 숨겨지고 중지는 꺼집니다. Retro 보기와 밴드는 동작합니다.
 - 보드의 harness 칸은 통과한 subgoal 수를 spec과 실행 폴더의 subgoal 수와 비교해 셉니다. 전체 단계 보기는 `/harness-status`에 있습니다.
 - UI는 인터랙티브 세션 전용입니다. 헤드리스 실행은 기록과 요약 저장만 하고 아무것도 그리지 않습니다.
+- 상태줄 명령: `settings.read` 이벤트가 없는 빌드에서는 줄이 그려지지 않습니다. 조직 플러그인이 `settings.read`를 올리는 환경(팀 계정에서 확인)에서는 훅이 건너뛰어져 줄이 그려지지 않습니다. Claude Code는 플러그인 `settings.json`의 `statusLine`을 무시하므로 그 방식으로는 설정할 수 없습니다. 실제 실행에서 줄이 그려지는 것은 아직 보지 못했습니다.
 - 실제 터미널 세션(2.1.294)에서 확인했습니다. 패널, `[stop]`, 회고 밴드, auto·bypass 모드의 가드 확인, `/clear` 뒤 `/memo`. 데스크톱 Code 탭은 아직 확인하지 않았습니다.

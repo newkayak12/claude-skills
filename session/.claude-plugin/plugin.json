@@ -88,6 +88,12 @@
       "title": "Prompt hint",
       "description": "A toast when a short task prompt names no scope or check (never changes the prompt).",
       "default": false
+    },
+    "status_line": {
+      "type": "boolean",
+      "title": "Status line",
+      "description": "Show the session status line (model, time, git branch, context %, 5h/7d limits) unless you set your own statusLine in settings.",
+      "default": true
     }
   }
 }

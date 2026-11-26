@@ -24,6 +24,7 @@ import { register as registerMemo } from './memo.tsx'
 import { register as registerHint } from './hint.ts'
 import { midTurnCheck, register as registerCompact, turnEnd } from './compact.tsx'
 import { aliveCount, register as registerAgents } from './agents.tsx'
+import { register as registerStatusLine } from './statusline.ts'
 
 const tab = atom({ plugin: 'session', key: 'tab' } as const, 'retro' as 'retro' | 'orphans')
 const band = atom({ plugin: 'session', key: 'band' } as const, false)
@@ -517,6 +518,7 @@ export const register: Register = (on, options) => {
   registerCompact(on, options)
   registerHint(on, options)
   registerAgents(on, options)
+  registerStatusLine(on, options)
 
   on('turn.complete', async ($, e, next) => {
     turnEnd(e)
