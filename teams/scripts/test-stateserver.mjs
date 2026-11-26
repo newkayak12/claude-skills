@@ -680,6 +680,52 @@ function threeTasks(prefix) {
 const ANSWER_WINDOW_MS = 2000;
 const snap = (s) => JSON.parse(JSON.stringify(s));
 
+// A running task that is held: its daemon is dead and no driver is recorded.
+function heldTask(id) {
+  const dir = join(mkdtempSync(join(tmpdir(), 'state-held-')), 'tasks');
+  extraRoots.add(dirname(dir));
+  stalledTask(dir, id);
+  const tp = join(dir, id, 'task.json');
+  writeFileSync(tp, JSON.stringify({ ...JSON.parse(readFileSync(tp, 'utf8')), hold: { reason: 'wait', since: Date.now(), by: 'person' } }));
+  return { dir, tp };
+}
+
+test('F5-AC-14: a held task is not on the volatile path: no rebuild over 40 windows, only a ledger.jsonl or task.json change collects it', () => {
+  const id = 'E-held0014';
+  const { dir } = heldTask(id);
+  let t = Date.now();
+  const cache = createTaskCache({ now: () => t });
+  assert.equal(cache.get(dir, id).state, 'running');
+  // a stream appears: a volatile key would move, and the 30-window safety net would fire
+  stream(join(dir, id, 'drivers', 'dispatch_P1_1.stream.jsonl'));
+  for (let i = 0; i < 40; i++) { t += ANSWER_WINDOW_MS; assert.equal(cache.get(dir, id).state, 'running'); }
+  assert.equal(cache.stats.rebuilds, 0);
+  assert.equal(cache.stats.refreshes, 0);
+  assert.equal(cache.stats.collects, 1);
+  appendFileSync(join(dir, id, 'ledger.jsonl'), jl([{ ts: Date.now(), event: 'task_held' }]));
+  t += ANSWER_WINDOW_MS;
+  cache.get(dir, id);
+  assert.equal(cache.stats.collects, 2);
+});
+
+test('F5-AC-15: a resumed task is collected on the signature change and returns to the volatile path', () => {
+  const id = 'E-held0015';
+  const { dir, tp } = heldTask(id);
+  let t = Date.now();
+  const cache = createTaskCache({ now: () => t });
+  cache.get(dir, id);
+  const { hold, ...resumed } = JSON.parse(readFileSync(tp, 'utf8'));
+  writeFileSync(tp, JSON.stringify(resumed));
+  appendFileSync(join(dir, id, 'ledger.jsonl'), jl([{ ts: Date.now(), event: 'task_resumed' }]));
+  t += ANSWER_WINDOW_MS;
+  assert.equal(cache.get(dir, id).state, 'stalled', 'no hold, dead daemon');
+  assert.equal(cache.stats.collects, 2);
+  assert.equal(cache.stats.rebuilds, 0);
+  for (let i = 0; i < 31; i++) { t += ANSWER_WINDOW_MS; cache.get(dir, id); }
+  assert.ok(cache.stats.rebuilds >= 1, 'the volatile path (here its safety net) builds it again');
+  assert.equal(cache.stats.collects, 2);
+});
+
 test('createTaskCache: two polls past the window with no file change collect, rebuild and read nothing again; one ledger append collects that task only', async () => {
   const { dir, sl, ids } = threeTasks('state-two-');
   try {

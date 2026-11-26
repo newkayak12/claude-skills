@@ -138,7 +138,7 @@ const en = {
   f2AnswerTitle: 'Answer the question', f2AnswerPrompt: 'Answer', f2AnswerContext: 'Context', f2AnswerSend: '⏎ send', f2AnswerCancel: 'empty ⏎ cancel',
   f2AnswerDesktopOnly: 'answer on a desktop', f2AnswerAccepted: 'Answer sent', f2AnswerRefused: 'Not accepted: {reason}', f2AnswerFailed: 'Could not run the answer tool: {reason}',
   f2BtnUp: '▲', f2BtnDown: '▼', f2BtnOpen: 'open', f2BtnBack: 'back', f2BtnFlag: '⚑', f2BtnClose: 'close',
-  f2FlagTitle: 'Needs you {n}', f2FlagAge: '{m} waiting', f2FlagDriverSilent: 'no output for {m} (driver stopped?)',
+  f2FlagTitle: 'Needs you {n}', f2FlagAge: '{m} waiting', f2FlagDriverSilent: 'no output for {m} (driver stopped?)', wordHeld: 'held',
   f2FootHome: 'w s move/click · d ⏎ open (EPIC → Floor · STORY → detail) · n next ⚑ · q close', f2FootFloor: 'w s move/click · d ⏎ Phase detail · a back (Esc) · n next ⚑ · q close',
   f2FootStory: 'w s move/click · d ⏎ open · a back (Esc) · n next ⚑ · q close', f2FootScroll: 'w s scroll · a back (Esc) · n next ⚑ · q close',
   f2FootPhase: 'w s move/click · d ⏎ open · a back (Esc) · n next ⚑ · q close', f2FootEntry: 'a back (Esc) · n next ⚑ · q close',
@@ -227,7 +227,7 @@ export const STRINGS: Record<'en' | 'ko', Record<keyof typeof en, string>> = {
     f2AnswerTitle: '질문에 답하기', f2AnswerPrompt: '답', f2AnswerContext: '맥락', f2AnswerSend: '⏎ 보내기', f2AnswerCancel: '빈 ⏎ 취소',
     f2AnswerDesktopOnly: '데스크톱에서 답해 주세요', f2AnswerAccepted: '답을 보냈습니다', f2AnswerRefused: '받지 못했습니다: {reason}', f2AnswerFailed: '답변 도구를 실행하지 못했습니다: {reason}',
     f2BtnUp: '▲', f2BtnDown: '▼', f2BtnOpen: '열기', f2BtnBack: '뒤로', f2BtnFlag: '⚑', f2BtnClose: '닫기',
-    f2FlagTitle: '내 차례 {n}', f2FlagAge: '{m} 대기', f2FlagDriverSilent: '응답 없음 {m} (드라이버 멈춤?)',
+    f2FlagTitle: '내 차례 {n}', f2FlagAge: '{m} 대기', f2FlagDriverSilent: '응답 없음 {m} (드라이버 멈춤?)', wordHeld: '보류',
     f2FootHome: 'w s 이동·클릭 · d ⏎ 열기 (EPIC → FLOOR · STORY → 상세) · n 다음 ⚑ · q 닫기', f2FootFloor: 'w s 이동·클릭 · d ⏎ Phase 상세 · a 뒤로 (Esc) · n 다음 ⚑ · q 닫기',
     f2FootStory: 'w s 이동·클릭 · d ⏎ 열기 · a 뒤로 (Esc) · n 다음 ⚑ · q 닫기', f2FootScroll: 'w s 스크롤 · a 뒤로 (Esc) · n 다음 ⚑ · q 닫기',
     f2FootPhase: 'w s 이동·클릭 · d ⏎ 열기 · a 뒤로 (Esc) · n 다음 ⚑ · q 닫기', f2FootEntry: 'a 뒤로 (Esc) · n 다음 ⚑ · q 닫기',
@@ -1178,7 +1178,7 @@ export const register: Register = on => {
       } else if (pg.name === 'STORY') {
         const top = storyTop(sd, say)
         const grid = storyGrid(sd, item?.max ?? null, say, inner)
-        const working = storyNow(sd, opts, inner)
+        const working = storyNow(sd, opts, inner, entry as PhaseEntry | undefined)
         const threads = storyThreads(sd, say, inner)
         page$ = (
           <Box flexDirection="column">

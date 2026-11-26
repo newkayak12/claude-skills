@@ -438,7 +438,13 @@ function recordedDrivers(tasksDir, taskId, task) {
 // state, ticket_state, workers[] and the state server's cache key all read it with the one threshold (stallMsOf).
 // Stalled when no recorded driver is live and no fresh stream exists that no recorded driver owns (a package
 // driver not yet recorded); with no recorded driver (driven by hand) the newest sign of life decides.
+// A run of this task (harness, size S or a STORY's dispatch) is parked waiting_capacity.
+const capacityParked = (task) => [task.harness_run, task.s_run, ...(Array.isArray(task.nodes) ? task.nodes : []).map((n) => n && n.child)]
+  .some((r) => !!(r && r.waiting_capacity));
+
 export function stallVerdict(tasksDir, taskId, task, now = Date.now()) {
+  // A held task (taskstate.mjs writes task.hold) was stopped on purpose: never stalled.
+  if (task.hold) return { stalled: false };
   const limit = stallMsOf(task);
   const h = task.harness_run;
   const nodes = Array.isArray(task.nodes) ? task.nodes : [];
@@ -462,6 +468,12 @@ export function stallVerdict(tasksDir, taskId, task, now = Date.now()) {
     stalled = now - last > limit;
   }
   return stalled ? { stalled: true, minutes: minutesSince(now, last) } : { stalled: false };
+}
+
+// The hold a view shows, read from task.json only (the task_held / task_resumed events are history).
+export function holdOf(task) {
+  const h = task && task.hold;
+  return h ? { reason: h.reason, since: h.since, by: h.by } : null;
 }
 
 function taskStalled(tasksDir, taskId, task, now = Date.now()) {
@@ -950,13 +962,13 @@ function collectTaskFromValue(tasksDir, taskId, task, opts) {
     if (state === 'running') state = 'stalled';
     for (const p of packages) if (STALLABLE.has(p.ticket_state)) p.ticket_state = 'stalled';
   }
-  if (visiting.depth > 0 && state === 'running') {
+  if (visiting.depth > 0 && state === 'running' && !task.hold) {
     const anyDriverAlive = (daemon && daemon.alive)
       || harnessAlive
       || (sRun && sRun.driver && sRun.driver.alive)
       || [...packages, ...qaRounds, ...auditRounds].some((p) => p.child && p.child.driver && p.child.driver.alive);
     if (!anyDriverAlive) { state = 'stale'; stall.stalled = true; stall.minutes = minutesSince(Date.now(), lastSignOfLife(tasksDir, taskId, task, recordedDrivers(tasksDir, taskId, task))); }
-  } else if (state === 'running' && daemon && !daemon.alive) {
+  } else if (state === 'running' && daemon && !daemon.alive && !task.hold) {
     // A task that WAS under a daemon, whose daemon is dead and whose drivers are all dead, is not
     // running - nothing is. idol-plan-2's S run read 'running' 86h after daemon_done blocked,
     // because a child run file a dead driver never finished still says running. (A task driven by
@@ -999,6 +1011,8 @@ function collectTaskFromValue(tasksDir, taskId, task, opts) {
     elapsed_ms: elapsedMs(task.created_at),
     state,
     stall,
+    hold: holdOf(task),
+    ...(task.hold && capacityParked(task) ? { capacity_parked: true } : {}),
     counts,
     daemon,
     cost: { usd: driverTotal.cost_usd, turns: driverTotal.turns, sessions: driverTotal.sessions, ...(driverTotal.estimated_usd ? { estimated_usd: driverTotal.estimated_usd } : {}), ...(driverTotal.estimated ? { estimated: true } : {}), ...(task.budget_stopped ? { post_stop_usd: +Math.max(0, driverTotal.cost_usd - (task.budget_stopped.spend || 0)).toFixed(4) } : {}) },
@@ -1093,6 +1107,7 @@ export function listTasks(tasksDir) {
       title: taskName(task),
       state,
       phase,
+      ...(task.hold ? { hold: holdOf(task) } : {}),
       // Grouping/display only - a person-set label above the EPIC (teamconfig.mjs's own
       // `initiative` key). null (the default, and every task opened before this existed) means
       // "not part of any group" - the index renders it as a plain tag, never a

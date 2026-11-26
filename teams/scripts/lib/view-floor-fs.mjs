@@ -245,7 +245,8 @@ function parkedMemo(raw, now) {
 
 // The tasks of `cwd`'s repo (its main checkout and linked worktrees, see view-repo.mjs) the pane lists: open ones (READY/IN_PROGRESS/IN_REVIEW) with a sign of life in the
 // last 24 h, prefiltered from task.json alone before `collect` (collectTask) runs. A task waiting on a
-// person is live, never stalled, and stays listed past 24 h (a manager card is read from task.json).
+// person is live, never stalled, and stays listed past 24 h (a manager card is read from task.json); so
+// does a held one (its collected state is never 'stalled').
 // Live first, then stalled, each newest created first. [{ m, live, age_ms }]
 // `opener` (a session id) keeps only tasks whose raw task.json names it as opener, checked before `collect`,
 // and ignores `cwd`: the asks of one session span every project.
@@ -260,7 +261,7 @@ export function floorTasks({ tasksDir, cwd, opener, now = Date.now(), collect = 
     const marks = [Number(raw.created_at) || 0, mtimeOf(join(tasksDir, name, 'ledger.jsonl')) || 0];
     for (const f of ls(join(tasksDir, name, 'drivers'))) if (f.name.endsWith('.stream.jsonl')) marks.push(mtimeOf(join(tasksDir, name, 'drivers', f.name)) || 0);
     const at = Math.max(...marks);
-    if (now - at > DAY_MS && !parkedMemo(raw, now)) continue;
+    if (now - at > DAY_MS && !raw.hold && !parkedMemo(raw, now)) continue; // a held task is listed at any age
     // the repo compare comes last: it may spawn git
     const worktree = repo ? repo(raw.cwd) : { match: true, worktree: null };
     if (!worktree.match) continue;
@@ -287,6 +288,7 @@ export function floorEntry({ m, id, live, age_ms, waiting, worktree = null }, ta
   const stage = (summary.stages.find((s) => s.state === 'running') || summary.stages.find((s) => s.state === 'failed'))?.key;
   return {
     ...summary,
+    hold: m.hold || null,
     worktree,
     ...(waiting ? { state: 'waiting_human' } : {}),
     task_id: m.task_id, created_at: m.created_at || null, live, age_ms,

@@ -6,7 +6,7 @@
 export const now = 1795521600000;
 export const teams = {
   "status": {
-    "line": "teams: E-c0ffee00 4/9 ",
+    "line": "teams: E-c0ffee00 4/9  · E-4e1d0000 3/5 ",
     "waiting": 0,
     "latest": "c0ffee00-0179-4a00-8000-000000000179",
     "asks": []
@@ -183,6 +183,7 @@ export const teams = {
         },
         "scoped_out": []
       },
+      "hold": null,
       "worktree": null,
       "task_id": "c0ffee00-0179-4a00-8000-000000000179",
       "created_at": 1795519140000,
@@ -434,6 +435,270 @@ export const teams = {
             "to_key": "partyYou"
           }
         ],
+        "integrate": [],
+        "qa": [],
+        "gate": [],
+        "report": []
+      }
+    },
+    {
+      "key": "E-4e1d0000",
+      "slug": null,
+      "title": "Tidy the settings screen",
+      "state": "running",
+      "hold": {
+        "reason": "back after review",
+        "since": "2026-11-24T11:10:00.000Z",
+        "by": "person"
+      },
+      "day": 1,
+      "done": 0,
+      "total": 1,
+      "now": {
+        "kind": "build",
+        "subject": "Settings screen",
+        "detail": null
+      },
+      "you": {
+        "count": 0,
+        "items": [],
+        "cards": []
+      },
+      "stages": [
+        {
+          "key": "plan",
+          "state": "done"
+        },
+        {
+          "key": "build",
+          "state": "running"
+        },
+        {
+          "key": "integrate",
+          "state": "pending"
+        },
+        {
+          "key": "qa",
+          "state": "pending"
+        },
+        {
+          "key": "gate",
+          "state": "pending"
+        },
+        {
+          "key": "report",
+          "state": "pending"
+        }
+      ],
+      "work": [
+        {
+          "title": "Settings screen",
+          "kind": "package",
+          "id": null,
+          "state": "running",
+          "filed_by": null,
+          "reason": null
+        }
+      ],
+      "progress": {
+        "key": "build",
+        "done": 0,
+        "total": 1
+      },
+      "cost": {
+        "usd": 1.25,
+        "turns": 7
+      },
+      "log": [],
+      "metrics": {
+        "max_attempts": null,
+        "threshold": null,
+        "budget": null,
+        "drivers": {
+          "live": 0,
+          "cap": null,
+          "stalled": []
+        },
+        "stall_minutes": null,
+        "stories": [
+          {
+            "id": "P1",
+            "key": "E-4e1d0000/P1",
+            "title": "Settings screen",
+            "kind": "package",
+            "state": "running",
+            "attempt": 1,
+            "max_attempts": null,
+            "judge": null,
+            "cost_usd": 1.25,
+            "retry_cost_usd": 0,
+            "wall_ms": 0,
+            "stages": [
+              {
+                "stage": "build",
+                "cost_usd": 1.25,
+                "retry_cost_usd": 0,
+                "wall_ms": 0
+              }
+            ],
+            "out_of_retries": false,
+            "scoped_out": [],
+            "progress": null,
+            "agents": null
+          }
+        ],
+        "stages": [
+          {
+            "stage": "build",
+            "cost_usd": 1.25,
+            "retry_cost_usd": 0,
+            "wall_ms": 0
+          }
+        ],
+        "denials": 0,
+        "out_of_retries": [],
+        "defects": {
+          "filed": 0,
+          "dropped": 0,
+          "dropped_items": []
+        },
+        "scoped_out": []
+      },
+      "worktree": null,
+      "task_id": "4e1d0000-0179-4a00-8000-000000000180",
+      "created_at": 1795514400000,
+      "live": true,
+      "age_ms": null,
+      "harness": null,
+      "items": [
+        {
+          "key": "P1",
+          "title": "Settings screen",
+          "last_verdict": null,
+          "try": null,
+          "max": null,
+          "elapsed_ms": 6000000,
+          "owner_key": "E-4e1d0000/P1",
+          "state": "idle",
+          "doing": "",
+          "icon": "◌",
+          "word": "idle",
+          "word_key": "idle",
+          "cost_usd": 1.25,
+          "cost_estimated": false,
+          "live": false,
+          "run_file": "<root>/wt-held/.teams_output/broker/runs/c-held.json",
+          "metrics": {
+            "attempt": 1,
+            "max_attempts": null,
+            "judge": null,
+            "cost_usd": 1.25,
+            "retry_cost_usd": 0,
+            "wall_ms": 0,
+            "out_of_retries": false
+          }
+        }
+      ],
+      "workers": [
+        {
+          "id": "P1",
+          "phase": "build",
+          "state": "idle",
+          "doing": "",
+          "icon": "◌",
+          "word": "idle",
+          "word_key": "idle",
+          "subagents": 0
+        },
+        {
+          "id": "judge",
+          "phase": "gate",
+          "state": "idle",
+          "doing": "",
+          "icon": "◌",
+          "word": "idle",
+          "word_key": "idle"
+        }
+      ],
+      "handoffs": [],
+      "phases": [
+        {
+          "key": "plan",
+          "workers": 0,
+          "acting": 0,
+          "you": 0,
+          "stalled": 0,
+          "idle": 0,
+          "done": 0,
+          "stories": 0,
+          "roles": {},
+          "decisions": 0
+        },
+        {
+          "key": "build",
+          "workers": 1,
+          "acting": 0,
+          "you": 0,
+          "stalled": 0,
+          "idle": 1,
+          "done": 0,
+          "stories": 1,
+          "roles": {},
+          "subagents": 0,
+          "decisions": 0
+        },
+        {
+          "key": "integrate",
+          "workers": 0,
+          "acting": 0,
+          "you": 0,
+          "stalled": 0,
+          "idle": 0,
+          "done": 0,
+          "stories": 0,
+          "roles": {},
+          "decisions": 0
+        },
+        {
+          "key": "qa",
+          "workers": 0,
+          "acting": 0,
+          "you": 0,
+          "stalled": 0,
+          "idle": 0,
+          "done": 0,
+          "stories": 0,
+          "roles": {},
+          "decisions": 0
+        },
+        {
+          "key": "gate",
+          "workers": 1,
+          "acting": 0,
+          "you": 0,
+          "stalled": 0,
+          "idle": 1,
+          "done": 0,
+          "stories": 0,
+          "roles": {},
+          "decisions": 0
+        },
+        {
+          "key": "report",
+          "workers": 0,
+          "acting": 0,
+          "you": 0,
+          "stalled": 0,
+          "idle": 0,
+          "done": 0,
+          "stories": 0,
+          "roles": {},
+          "decisions": 0
+        }
+      ],
+      "phase_handoffs": {
+        "plan": [],
+        "build": [],
         "integrate": [],
         "qa": [],
         "gate": [],

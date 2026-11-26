@@ -67,7 +67,7 @@ export function dashboardModel(task, { now = Date.now(), drivers = null } = {}) 
   const activity = (task.log || []).slice(-ACTIVITY_MAX).reverse().map((l) => ({ time: l.time, kind: l.kind, subject: l.subject }));
   const nowLine = !stopped && task.now && task.now.kind && task.now.kind !== 'idle' ? [STAGE_LABEL[task.now.kind] || task.now.kind, task.now.subject].filter(Boolean).join(' · ') : '';
   return {
-    key: task.key, title: task.title, state: task.state, pct, now: nowLine,
+    key: task.key, title: task.title, state: task.state, ...(task.hold ? { hold: task.hold } : {}), pct, now: nowLine,
     stages, packages, lanes: lanesOf(task), laneBoxes: laneBoxes(), tiles, activity,
     run: runOf(task.metrics), stories: storiesOf(task.metrics),
     waiting: waiting.map((c) => ({ who: c.who, title: c.title, question: c.question })),
@@ -186,7 +186,7 @@ export function dashboardSvg(model) {
 
   // header: key, title, state chip, progress bar
   const chipColor = STATE_COLOR[model.state] || (model.state === 'complete' ? C.done : model.state === 'waiting_human' ? C.you : C.running);
-  parts.push(text(P, y + 14, model.key, { size: 12, fill: C.dim, weight: 600, mono: true }));
+  parts.push(text(P, y + 14, model.hold ? `${model.key} · held` : model.key, { size: 12, fill: C.dim, weight: 600, mono: true }));
   parts.push(text(P, y + 36, fit(model.title, W - 2 * P - 120, 17), { size: 17, weight: 700 }));
   parts.push(rect(W - P - 104, y + 2, 104, 24, { fill: 'none', stroke: chipColor, r: 12 }));
   parts.push(text(W - P - 52, y + 18, String(model.state).replace('_', ' ').toUpperCase(), { size: 11, fill: chipColor, weight: 700, anchor: 'middle' }));
@@ -337,7 +337,7 @@ export function dashboardText(model) {
   const titles = (l) => l.cards.map((c) => `${c.failed ? '✘ ' : ''}${c.title}`).join(' · ') + (l.more ? ` · +${l.more}` : '');
   const out = [
     `${model.key} · ${model.title}`,
-    `${String(model.state).replace('_', ' ').toUpperCase()}  ${bar(model.pct)} ${model.pct}%`,
+    `${String(model.state).replace('_', ' ').toUpperCase()}  ${bar(model.pct)} ${model.pct}%${model.hold ? ' · held' : ''}`,
   ];
   if (model.now) out.push(`▸ ${model.now}`);
   out.push(model.tiles.map((t) => `${t.label} ${t.value}`).join('  ·  '));

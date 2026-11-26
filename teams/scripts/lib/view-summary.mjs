@@ -305,7 +305,7 @@ export function metrics(model, { now = Date.now() } = {}) {
   const limit = Number.isFinite(t.budget_usd) ? t.budget_usd : null;
   const spent = r4(t.spent_usd != null ? t.spent_usd : (m.cost && m.cost.usd));
   const stall = Number.isInteger(t.stall_minutes) ? t.stall_minutes : null;
-  const stalled = !stall ? [] : (t.drivers || [])
+  const stalled = !stall || m.hold ? [] : (t.drivers || [])
     .filter((d) => typeof d.progress_at === 'number' && now - d.progress_at >= stall * MIN_MS)
     .map((d) => ({ id: d.story || null, minutes: Math.floor((now - d.progress_at) / MIN_MS) }));
   const den = t.denials || {};
@@ -397,6 +397,9 @@ export function summarize(model, { now = Date.now() } = {}) {
     slug: (m.ticket && m.ticket.slug) || null,
     title: (m.ticket && m.ticket.title) || String(m.request || '').slice(0, 72),
     state: m.state,
+    // only when held, like progress; floorEntry puts hold: null on an unheld tasks[] entry
+    ...(m.hold ? { hold: m.hold } : {}),
+    ...(m.capacity_parked ? { capacity_parked: true } : {}),
     day: Math.max(1, Math.ceil(elapsed / DAY_MS)),
     done, total: work.length,
     now: nowStep,

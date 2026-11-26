@@ -125,9 +125,13 @@ function renderHarness(h, indent, out) {
   out.push(line(indent + 1, `stages: ${(h.stages || []).map((s) => `[${mark(s.state)}] ${s.key}`).join(' ')}`));
 }
 
+// A task stopped on purpose (task.hold). No minutes: a hold is not a stall.
+const heldLine = (hold) => `held by ${hold.by}: ${hold.reason}`;
+
 function renderModelBody(m, indent, out) {
   if (m.error) { out.push(line(indent, `ERROR: ${m.error}`)); return; }
   out.push(line(indent, `state=${m.state} size=${m.size || '?'} flow=${m.flow || '?'} cost=${fmtUsd(m.cost && m.cost.usd)}${m.cost && m.cost.estimated_usd ? ` (~${fmtUsd(m.cost.estimated_usd)} running, estimated)` : ''} turns=${m.cost && m.cost.turns} elapsed=${fmtMs(m.elapsed_ms)}`));
+  if (m.hold) out.push(line(indent, heldLine(m.hold)));
   if (m.budget) {
     const b = m.budget;
     const bits = [];
@@ -291,6 +295,7 @@ export function renderTicketsText(model) {
   const t = model.ticket || {};
   out.push(`${t.key || model.task_id} · ${t.title || ''}  ${t.slug ? t.slug + '  ' : ''}${t.state || '?'}${t.phase ? ' · ' + t.phase : ''}`);
   if (model.request) out.push(`request: ${model.request.length > 300 ? model.request.slice(0, 300) + '...' : model.request}`);
+  if (model.hold) out.push(heldLine(model.hold));
   if (model.flow_metrics) out.push(formatFlowMetricsLine(model.flow_metrics));
   const columns = {};
   for (const c of boardCards(model)) {
@@ -355,6 +360,7 @@ function renderTeam(label, teamLike, indent, out, opening = false) {
 function renderResourcesBody(m, indent, out) {
   if (m.error) { out.push(line(indent, `ERROR: ${m.error}`)); return; }
   const d = m.daemon;
+  if (m.hold) out.push(line(indent, heldLine(m.hold)));
   out.push(line(indent, 'TaskLeader'));
   out.push(line(indent + 1, d
     ? `pid=${d.pid} alive=${d.alive} started=${fmtTime(d.started_at)} restarts=${d.restarts}${d.exhausted ? ' EXHAUSTED' : ''}`
@@ -377,7 +383,7 @@ export function renderResourcesText(model) {
 // for where epic_key/title/state/phase/stories/open_defects come from and why). The full task_id
 // stays on the second line, in the one spot a person needing `--task <uuid>` will look, never as
 // the headline.
-function statusLabel(r) { return r.phase ? `${r.state} · ${r.phase}` : r.state; }
+function statusLabel(r) { return `${r.phase ? `${r.state} · ${r.phase}` : r.state}${r.hold ? ' · held' : ''}`; }
 
 function storiesLabel(r) {
   return r.stories_total == null ? null : `stories ${r.stories_done}/${r.stories_total} done`;

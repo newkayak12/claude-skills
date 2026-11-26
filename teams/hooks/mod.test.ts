@@ -11,7 +11,7 @@ import { STAGE_KEYS, stageOfNode } from '../scripts/lib/view-stages.mjs'
 import { askBandShown, backOf, carriesInput, escRoute, f2Key, HOME, levelOf, nextFlag, PAGE_KEYS, pageEsc, pageKey, pageStep, paneSlash, reconcileEpic, selectedOf, startNav, statusAnswer } from './pane'
 import type { Page, PageName, PageNav, RowRef, StepCtx } from './pane'
 import { NOW_KINDS } from '../scripts/lib/view-summary.mjs'
-import { KEYS_CHROME, SPINNER, clipText, clipWords, columnWidths, crumbFit, epicLines, footerPlan, handoffCells, homeRows, padText, plain, rowLine, runningRows, since, storyReportLines, width, workerCells } from './teams-draw'
+import { KEYS_CHROME, SPINNER, clipText, clipWords, columnWidths, crumbFit, epicLines, footerPlan, handoffCells, homeRows, padText, phaseModel, phaseRowIds, plain, rowLine, runningRows,since, storyNow, storyReportLines, width, workerCells } from './teams-draw'
 import type { PageOpts } from './teams-draw'
 
 const SURFACES = ['terminal', 'desktop', 'mobile', 'vscode'] as const
@@ -4981,15 +4981,16 @@ const TRUTH = { models: { P1: 'claude-opus-4-1', P2: 'claude-sonnet-4-5', judge:
 // the engine's own words in the fixture's doing_vars, and what a person or model wrote: shown as written in the Korean render
 const ACC_WORDS = [
   'Add a ledger export and a report page', 'Ledger export', 'Report page', 'footer cleared on one surface only', 'footer not cleared', 'Which export format?',
-  'teams suite', 'the gate', 'running the next step', 'claude·opus', 'claude·sonnet', 'accept:P1:1', 'E-c0ffee00', 'helper', 'reviewer',
+  'Tidy the settings screen', 'Settings screen', 'E-4e1d0000',
+  'teams suite', 'the gate', 'running the next step','claude·opus', 'claude·sonnet', 'accept:P1:1', 'E-c0ffee00', 'helper', 'reviewer',
 ].sort((a, b) => b.length - a.length)
 // a title or reason cut to its cell ends in … : its kept head is still the data's own text
 const ACC_CUTS = [...new Set(ACC_WORDS.flatMap(d => Array.from({ length: Math.max(1, d.length - 3) }, (_, i) => d.slice(0, i + 4))))].sort((a, b) => b.length - a.length)
 
-async function accSeed($: Engine, on: On, surface: Surface, init: Record<string, unknown> = {}, language?: string) {
+async function accSeed($: Engine, on: On, surface: Surface, init: Record<string, unknown> = {}, language?: string, data: Data = ACC_DATA()) {
   const clock = mock.clock(on, { now: ACC.now - 3000 })
   startWorld(on, language)
-  const seen = uiWorld(on, { watch: ['abc'], epic: ATID, ...init }, [surface], ACC_DATA())
+  const seen = uiWorld(on, { watch: ['abc'], epic: ATID, ...init }, [surface], data)
   on('ui.panes', () => ({ value: [{ id: 'teams-status', title: 'Teams', isPlaced: true }] }) as never)
   on('ui.render', (_$, e) => (e.component === 'AbovePrompt' ? { type: 'Box', children: [] } : undefined) as never)
   await start($)
@@ -5233,4 +5234,144 @@ test('teams-179 demo frames: HOME, FLOOR, PHASE, STORY and ENTRY in en and ko at
   const last = new Map(DEMO_FRAMES.map(f => [f.name, f.lines]))
   expect(last.size).toBe(20)
   for (const [name, lines] of last) console.log(`@@frame ${name}\n${lines.join('\n')}\n@@end`)
+})
+
+// ---- F5: a task the --once answer carries a hold for is drawn as held, never as a silent driver ----
+// H is the engine's own answer for the fixture's held task; `silentOf` adds the stalled-with-minutes workers an engine would send
+// without the hold, so the pane's held lines are what keeps them out.
+const H = (ACC.teams as any).tasks[1] as any
+const silentOf = (over: Record<string, unknown> = {}) => ({
+  ...H, workers: H.workers.map((w: any) => (w.id === 'P1' ? { ...w, state: 'stalled', minutes: 51 } : w)),
+  items: H.items.map((i: any) => ({ ...i, state: 'stalled', word_key: 'stalled' })), ...over,
+})
+const heldPage = (t: any, lang: 'en' | 'ko') => {
+  const o = optsFor(lang)
+  const home = homeRows([t], { now: ACC.now, compact: false, unfolded: {}, say: o.say, fixed: o.fixed, verdict: v => v ?? '', reportReady: () => false })
+  const text = (r: { cells: unknown[] }) => r.cells.map(c => (typeof c === 'string' ? c : (c as { t: string }[]).map(x => x.t).join(''))).join(' | ')
+  const phase = phaseModel(t, 'build', null, o, 150, null)
+  return {
+    flags: home.flags.map(text), ids: home.body.map(r => r.id), epic: home.body[0]!.cells as string[], story: home.body[1]!.cells as string[],
+    workers: phase.flatMap(i => (i.row?.block === 'run' ? [i.row.cells as string[]] : [])), phaseIds: phaseRowIds(t, 'build', null),
+  }
+}
+const silentText = (lang: 'en' | 'ko') => (STRINGS[lang] as Record<string, string>).f2FlagDriverSilent!.replace('{m}', '51m')
+
+test('F5-AC-8: a held task draws no f2FlagDriverSilent row; EPIC, STORY and worker rows say held with no minutes (en, ko)', () => {
+  expect(H.hold.by).toBe('person')
+  for (const lang of ['en', 'ko'] as const) {
+    const word = lang === 'en' ? 'held' : '보류'
+    const control = heldPage(silentOf({ hold: null }), lang)
+    expect(control.flags.some(f => f.includes(silentText(lang)))).toBe(true)
+    // the silent workers, and the engine's own answer (idle workers, which would otherwise leave no worker row)
+    for (const t of [silentOf(), H]) {
+      const page = heldPage(t, lang)
+      expect(page.flags).toEqual([])
+      expect([page.epic[2], page.epic[6]]).toEqual(['⏸', word])
+      expect([page.story[2], page.story[5]]).toEqual(['⏸', word])
+      expect(page.workers.map(c => [c[0], c[2], c[5], c[7]])).toEqual([['⏸', 'P1', word, '']])
+      expect(page.phaseIds[0]).toBe('w:P1')
+      expect([page.epic[6], page.story[5], ...page.workers.flat()].join(' ')).not.toContain('51')
+    }
+  }
+})
+
+test('F5-AC-9: a held task waiting on a person keeps its ask and decision rows under Needs you and its list position (en, ko)', () => {
+  const you = { count: 2, items: [], cards: [
+    { key: 'E-4e1d0000/P1', title: 'Settings screen', question: 'Which theme?', who: 'driver', since: ACC.now - 60000, stage: 'ask' },
+    { key: 'E-4e1d0000', title: 'Scope decision', question: '', who: 'person', since: null },
+  ] }
+  for (const lang of ['en', 'ko'] as const) {
+    const t = silentOf({ state: 'waiting_human', you })
+    const page = heldPage(t, lang)
+    expect(page.flags.length).toBe(2)
+    expect(page.flags[0]).toContain('Which theme?')
+    expect(page.flags[1]).toContain('Scope decision')
+    expect(page.flags.join(' ')).not.toContain(silentText(lang))
+    expect(page.epic[2]).toBe('⏸')
+    expect(page.ids).toEqual(heldPage({ ...t, hold: null }, lang).ids)
+    // a STORY and a worker that themselves wait on the person keep saying so
+    const asking = heldPage({ ...t, items: H.items.map((i: any) => ({ ...i, state: 'you', word_key: 'you' })), workers: H.workers.map((w: any) => (w.id === 'P1' ? { ...w, state: 'you' } : w)) }, lang)
+    expect([asking.story[2], asking.workers[0]![0]]).toEqual(['⚑', '⚑'])
+  }
+})
+
+test('F5-AC-12: a held waiting_capacity task says held plus paused: provider limit, with no minutes (en, ko)', () => {
+  const hold = { reason: 'waiting_capacity: usage limit', since: H.hold.since, by: 'engine' }
+  for (const [lang, said] of [['en', 'held · paused: provider limit'], ['ko', '보류 · 일시 중지: 제공자 한도']] as const) {
+    for (const t of [silentOf({ hold }), { ...H, hold }]) {
+      const page = heldPage(t, lang)
+      expect([page.epic[6], page.story[5], page.workers[0]![5]]).toEqual([said, said, said])
+      expect(page.flags).toEqual([])
+      expect([page.epic[6], page.story[5], ...page.workers.flat()].join(' ')).not.toContain('51')
+    }
+  }
+})
+
+// the held task alone, with the silent worker an engine would send without the hold
+const heldData = (t: unknown, over: Partial<Data> = {}): Data => ({ ...ACC_DATA(), tasks: [t], ...over })
+for (const surface of SURFACES) {
+  for (const [language, lang] of [[undefined, 'en'], ['korean', 'ko']] as const) {
+    test(`F5-AC-11 ${surface} ${lang}: the mounted HOME draws the held STORY as held and no silent-driver text`, async ($, on) => {
+      await accSeed($, on, surface, { page: HOME_PAGE }, language, heldData(silentOf()))
+      const text = visible(await (await atCols($, surface, 190)).drawn())
+      expect(text).toContain(lang === 'en' ? 'held' : '보류')
+      expect(text).toContain('⏸')
+      expect(text).not.toContain(silentText(lang))
+    })
+  }
+}
+for (const [language, lang] of [[undefined, 'en'], ['korean', 'ko']] as const) {
+  test(`F5-AC-11 control ${lang}: the same mounted HOME without the hold draws the silent-driver text`, async ($, on) => {
+    await accSeed($, on, 'terminal', { page: HOME_PAGE }, language, heldData(silentOf({ hold: null })))
+    expect(visible(await (await atCols($, 'terminal', 190)).drawn())).toContain(silentText(lang))
+  })
+}
+
+test('F5-AC-8: a held planning desk (worker PLAN, card PLAN-F1) keeps its Phase worker row, with no minutes (en, ko)', () => {
+  const t = {
+    ...H, workers: [{ ...H.workers[0], id: 'PLAN', item: 'PLAN-F1', phase: 'plan', state: 'idle' }],
+    items: [{ ...H.items[0], key: 'PLAN-F1' }],
+  }
+  for (const lang of ['en', 'ko'] as const) {
+    const rows = phaseModel(t, 'plan', null, optsFor(lang), 150, null).flatMap(i => (i.row?.block === 'run' ? [i.row] : []))
+    expect(rows.map(r => [r.cells[0], r.cells[2], r.cells[5], r.cells[7]])).toEqual([['⏸', 'PLAN', lang === 'en' ? 'held' : '보류', '']])
+    expect((rows[0]!.ref as { story: string | null }).story).toBe('PLAN-F1')
+    expect(phaseRowIds(t, 'plan', null)[0]).toBe('w:PLAN')
+  }
+})
+
+// the STORY payload's workers are its desk and the judge; under a hold the engine sends them idle
+const nowPayload = (state: string) => ({ ...(ACC.story as any).P1, task_id: H.task_id, workers: [{ ...H.workers[0], id: 'P1', state }, { id: 'judge', phase: 'gate', state: 'idle', doing: '' }] })
+test('F5-AC-8: the STORY page Now rows of a held task say held with no minutes, idle or acting desk (en, ko)', () => {
+  for (const lang of ['en', 'ko'] as const) {
+    const word = lang === 'en' ? 'held' : '보류'
+    for (const state of ['idle', 'acting']) {
+      const lines = storyNow(nowPayload(state) as never, optsFor(lang), 150, H).map(l => plain(l))
+      expect(lines.length).toBe(2)
+      expect(lines[1]).toContain('⏸')
+      expect(lines[1]).toContain('P1')
+      expect(lines[1]).toContain(word)
+      expect(lines.join(' ')).not.toContain('judge')
+    }
+    expect(storyNow(nowPayload('idle') as never, optsFor(lang), 150, { ...H, hold: null })).toEqual([])
+  }
+})
+for (const [language, lang] of [[undefined, 'en'], ['korean', 'ko']] as const) {
+  test(`F5-AC-8 ${lang}: the mounted STORY page of a held task draws its Now row as held`, async ($, on) => {
+    const page = { name: 'STORY', epic: H.task_id, story: H.items[0].key, phase: null }
+    await accSeed($, on, 'terminal', { page, epic: H.task_id }, language, heldData(H, { stories: { P1: nowPayload('idle') } }))
+    const text = visible(await (await atCols($, 'terminal', 190)).drawn())
+    expect(text).toContain((STRINGS[lang] as Record<string, string>).f2StoryNow!)
+    expect(text).toContain(lang === 'en' ? 'held' : '보류')
+  })
+}
+
+test('F5-AC-12: a capacity-parked task held by a person says held plus paused: provider limit, from the engine\'s capacity_parked (en, ko)', () => {
+  const hold = { reason: 'later', since: H.hold.since, by: 'person' }
+  for (const [lang, said] of [['en', 'held · paused: provider limit'], ['ko', '보류 · 일시 중지: 제공자 한도']] as const) {
+    const page = heldPage(silentOf({ hold, capacity_parked: true }), lang)
+    expect([page.epic[6], page.story[5], page.workers[0]![5]]).toEqual([said, said, said])
+    expect(page.flags).toEqual([])
+    expect([page.epic[6], page.story[5], ...page.workers.flat()].join(' ')).not.toContain('51')
+  }
 })

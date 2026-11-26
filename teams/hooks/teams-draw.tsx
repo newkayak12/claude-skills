@@ -72,11 +72,15 @@ export function clipWords(s: string, w: number): string {
 
 /* --- icons and tints: one glyph and one colour per state, no faces --- */
 
-export const ICON: Record<WorkState | 'failed', string> = { acting: '●', idle: '◌', you: '⚑', done: '✔', stalled: '⏸', failed: '✘' }
-export const TINT: Record<WorkState | 'failed', Tint> = { acting: 'claude', idle: 'inactive', you: 'warning', done: 'success', stalled: 'inactive', failed: 'error' }
+export const ICON: Record<WorkState | 'failed' | 'held', string> = { acting: '●', idle: '◌', you: '⚑', done: '✔', stalled: '⏸', failed: '✘', held: '⏸' }
+export const TINT: Record<WorkState | 'failed' | 'held', Tint> = { acting: 'claude', idle: 'inactive', you: 'warning', done: 'success', stalled: 'inactive', failed: 'error', held: 'inactive' }
 
-// the EPIC list: ● running, ⚑ waits on a person, ⏸ stalled
-export const epicState = (t: Pick<SummaryTaskEntry, 'live' | 'state'>): WorkState => (t.state === 'waiting_human' ? 'you' : t.live ? 'acting' : 'stalled')
+// the EPIC list: ● running, ⚑ waits on a person, ⏸ stalled, ⏸ held (the engine's hold, whatever the state word)
+export const epicState = (t: Pick<SummaryTaskEntry, 'live' | 'state' | 'hold'>): WorkState | 'held' => (t.hold ? 'held' : t.state === 'waiting_human' ? 'you' : t.live ? 'acting' : 'stalled')
+
+// a held task's word, undefined when not held; a capacity park is the engine's capacity_parked, or its own hold reason `waiting_capacity: …`
+const heldWord = (t: Pick<SummaryTaskEntry, 'hold' | 'capacity_parked'>, say: Say): string | undefined =>
+  !t.hold ? undefined : t.capacity_parked || t.hold.reason?.startsWith('waiting_capacity') ? `${say('wordHeld')} · ${say('bandParked')}` : say('wordHeld')
 
 /* --- numbers and words in a cell --- */
 
@@ -272,7 +276,8 @@ function flagRows(listed: readonly SummaryTaskEntry[], o: HomeOpts): PageRow[] {
         tints: [undefined, 'warning', undefined, undefined, 'dim', 'dim'],
       })
     }
-    for (const w of stalledOf(t)) {
+    // a held task was stopped on purpose: no silent-driver row
+    for (const w of t.hold ? [] : stalledOf(t)) {
       out.push({
         id: `f:${t.task_id}:stall:${w.id}`, block: 'flag', ref: { type: 'flag', epic: t.task_id, story: w.id, ask: false },
         cells: [' ', ICON.stalled, where(t, w.id), say('f2FlagDriverSilent', { m: `${w.minutes}m` }), '', 'n'],
@@ -308,9 +313,11 @@ function storyRow(t: SummaryTaskEntry, item: SummaryItem, o: HomeOpts): PageRow 
     : rejected ? oneLine(say('f2RowRejected', { score: j.score, threshold: j.threshold ?? '-', reason: '' })).replace(/[\s·]+$/, '')
       : j.threshold === null ? String(j.score) : `${j.score}/${j.threshold}`
   const reason = rejected && j.reason ? clipText(oneLine(j.reason), 40) : ''
-  const status = stalled !== undefined ? say('f2RowStalledMinutes', { m: stalled.minutes! }) : (retrying ? '' : o.verdict(item.last_verdict)) || o.fixed(item.word_key)
+  // in a held task a STORY reads held, unless it waits on the person or has failed
+  const held = item.state === 'you' || item.state === 'failed' ? undefined : heldWord(t, say)
+  const status = held ?? (stalled !== undefined ? say('f2RowStalledMinutes', { m: stalled.minutes! }) : (retrying ? '' : o.verdict(item.last_verdict)) || o.fixed(item.word_key))
   const elapsed = since(m !== null && (m.wall_ms ?? 0) > 0 ? m.wall_ms : item.elapsed_ms)
-  const state: WorkState | 'failed' = stalled !== undefined ? 'stalled' : item.state
+  const state: WorkState | 'failed' | 'held' = held !== undefined ? 'held' : stalled !== undefined ? 'stalled' : item.state
   return {
     id: `s:${t.task_id}:${item.key}`, block: 'story', ref: { type: 'story', epic: t.task_id, story: item.key },
     cells: [
@@ -318,7 +325,7 @@ function storyRow(t: SummaryTaskEntry, item: SummaryItem, o: HomeOpts): PageRow 
       compact || num?.progress == null ? '' : miniBar(num.progress.done, num.progress.total), score, reason,
       compact || num?.agents == null ? '' : say('f2RowAgents', { n: num.agents }), elapsed,
     ],
-    tints: [undefined, undefined, TINT[state], 'dim', undefined, stalled !== undefined ? 'error' : accepted ? 'success' : 'dim', 'dim', 'claude', accepted ? 'success' : rejected ? 'warning' : undefined, 'dim', 'dim', 'dim'],
+    tints: [undefined, undefined, TINT[state], 'dim', undefined, held !== undefined ? 'dim' : stalled !== undefined ? 'error' : accepted ? 'success' : 'dim','dim', 'claude', accepted ? 'success' : rejected ? 'warning' : undefined, 'dim', 'dim', 'dim'],
   }
 }
 
@@ -349,7 +356,7 @@ export function homeRows(listed: readonly SummaryTaskEntry[], o: HomeOpts): Home
       id: `e:${t.task_id}`, block: 'epic', ref,
       cells: [
         ' ', '▾', ICON[state], keyName, wt, compact ? (stage === undefined ? '' : phaseName(say, stage.key)) : railSegs(t.stages, say),
-        compact ? '' : (state === 'you' ? say('wordYou') : ''), compact ? '' : progressText(t.progress, say), compact ? '' : `STORY ${t.done}/${t.total}`, since(epicElapsed(t, now)), [cost, after].filter(Boolean).join(' '),
+        compact ? '' : (state === 'you' ? say('wordYou') : heldWord(t, say) ?? ''),compact ? '' : progressText(t.progress, say), compact ? '' : `STORY ${t.done}/${t.total}`, since(epicElapsed(t, now)), [cost, after].filter(Boolean).join(' '),
       ],
       tints: [undefined, 'claude', TINT[state], undefined, 'dim', compact ? 'claude' : undefined, 'dim', 'dim', 'dim', 'dim', 'dim'],
     }
@@ -549,18 +556,21 @@ const activityWord = (w: PhaseWorker, o: PageOpts): string => {
   return said !== '' ? said : o.fixed(w.state)
 }
 const nodeWord = (node: string | undefined, o: PageOpts): string => (node === undefined || node === '' ? '' : o.wo(`sgStage${cap(node)}`, o.wo(`stage${cap(node)}`, node)))
-export function runningRows(workers: readonly PhaseWorker[], o: PageOpts, detail = false): StoryCells[] {
-  const live = workers.filter(w => w.state === 'acting' || w.state === 'you' || w.state === 'stalled')
+// `held` (the task's held word): every row but one waiting on the person reads held, with no minutes; its idle desks are listed too
+export function runningRows(workers: readonly PhaseWorker[], o: PageOpts, detail = false, held?: string): StoryCells[] {
+  const live = workers.filter(w => w.state === 'acting' || w.state === 'you' || w.state === 'stalled' || (held !== undefined && w.state === 'idle'))
   return workerCells(live, o.frame, o.fixed).map((c, i) => {
     const w = live[i]!
+    const isHeld = held !== undefined && w.state !== 'you'
     const what = w.state === 'stalled' ? c.cells[3]! : activityWord(w, o)
-    const row: StoryCells = w.state !== 'stalled' ? { cells: [c.cells[0]!, c.cells[1]!, c.cells[2]!, what], tints: c.tints }
+    const row: StoryCells = isHeld ? { cells: [ICON.held, '', w.id, held], tints: [TINT.held, TINT.held, undefined, 'dim'] }
+      : w.state !== 'stalled' ?{ cells: [c.cells[0]!, c.cells[1]!, c.cells[2]!, what], tints: c.tints }
       : !Number.isInteger(w.minutes) ? { cells: [ICON.idle, '', w.id, c.cells[3]!], tints: [TINT.idle, TINT.idle, undefined, 'dim'] }
         : { cells: [ICON.stalled, '', w.id, o.say('f2RowStalledMinutes', { m: w.minutes! })], tints: [TINT.stalled, TINT.stalled, undefined, 'error'] }
     if (!detail) return row
     const [icon, spin, id, text] = row.cells as [string, string, string, string]
     const [t0, t1, t2, t3] = row.tints
-    const here = w.state !== 'stalled'
+    const here = w.state !== 'stalled' && !isHeld
     return {
       cells: [icon, spin, id, here ? nodeWord(w.node, o) : '', here ? w.role ?? '' : '', text, shortModel(w.model), here ? since(w.elapsed_ms ?? null) : ''],
       tints: [t0, t1, t2, 'dim', 'dim', t3, 'dim', 'dim'],
@@ -607,7 +617,10 @@ function decisionParts(d: DecisionX, o: PageOpts): DecisionParts {
 // The Phase's own rows, by one rule shared with rowIdsOf: its live workers (`w:<id>`), its hand-offs, five at most (`h:<i>`) and the
 // decisions the engine tagged with the Phase (`d:<i>`)
 const LIVE_STATES = new Set(['acting', 'you', 'stalled'])
-const phaseWorkers = (t: PhaseEntry, phase: string): PhaseWorker[] => (t.workers as PhaseWorker[]).filter(w => (w.phase ?? 'build') === phase && LIVE_STATES.has(w.state))
+// a held task's desks with unfinished work read idle (never stalled): they stay listed. The S desk's item carries the EPIC key
+const heldDesk = (t: PhaseEntry, w: PhaseWorker): boolean =>
+  !!t.hold && w.state === 'idle' && t.items.some(x => x.state !== 'failed' && (storyLabel(x.key) === (w.item ?? w.id) || (w.id === 'S' && x.key === t.key)))
+const phaseWorkers = (t: PhaseEntry, phase: string): PhaseWorker[] => (t.workers as PhaseWorker[]).filter(w => (w.phase ?? 'build') === phase && (LIVE_STATES.has(w.state) || heldDesk(t, w)))
 export const phaseThread = (decisions: readonly DecisionX[] | null, phase: string): DecisionX[] => (decisions === null ? [] : decisions.filter(d => d.phase === phase))
 export const phaseFeedOf = (t: PhaseEntry, phase: string): Handoff[] => (t.phase_handoffs?.[phase] ?? []).slice(0, 5)
 export function phaseRowIds(t: PhaseEntry, phase: string, decisions: readonly DecisionX[] | null): string[] {
@@ -631,9 +644,9 @@ export function phaseModel(t: PhaseEntry, phase: (typeof PHASE_KEYS)[number], de
   const { say } = o
   const no = PHASE_KEYS.indexOf(phase) + 1
   const live = phaseWorkers(t, phase)
-  const cells = runningRows(live, o, true)
+  const cells = runningRows(live, o, true, heldWord(t, say))
   const running = live.map((w, i): PageRow => {
-    const item = t.items.find(x => storyLabel(x.key) === w.id)
+    const item = t.items.find(x => storyLabel(x.key) === (w.item ?? w.id))
     return {
       id: `w:${w.id}`, block: 'run', cells: cells[i]!.cells, tints: cells[i]!.tints,
       ref: { type: 'worker', epic: t.task_id, phase: no, story: item?.key ?? null, judge: w.id === 'judge' || w.role === 'judge' },
@@ -770,9 +783,12 @@ export function storyGrid(p: StoryPayload | null, max: number | null, say: Say, 
 }
 
 // who works the STORY now (the payload's workers: its drivers and the judge), under the Now heading
-export function storyNow(p: StoryPayload | null, o: PageOpts, inner: number): Line[] {
+export function storyNow(p: StoryPayload | null, o: PageOpts, inner: number, t?: PhaseEntry): Line[] {
   if (p === null || p.missing === true) return []
-  const running = runningRows(p.workers, o)
+  // under a hold, the Phase page's rule: the held desk stays listed though idle
+  const held = t === undefined ? undefined : heldWord(t, o.say)
+  const workers = held === undefined ? p.workers : (p.workers as PhaseWorker[]).filter(w => LIVE_STATES.has(w.state) || heldDesk(t!, w))
+  const running = runningRows(workers, o, false, held)
   return running.length === 0 ? [] : [head(o.say('f2StoryNow')), ...table(running.map(r => r.cells), running.map(r => r.tints), inner, [3])]
 }
 

@@ -22,7 +22,8 @@
 // when its task.json or ledger.jsonl changed. Between changes a `running` task, and a `stalled` one with files
 // under 24 h old, is built again (from the parsed task.json) only when its volatileKey changed: a pid it checks
 // (`kill(pid, 0)`), a stream mtime or its side of STALL_MS/MOVING_MS, a run file; checked once per answer window
-// (2 s), plus a safety net build every 60 s. Every other task is not built at all. The clock fields (elapsed_ms,
+// (2 s), plus a safety net build every 60 s. Every other task, and any held one (task.json `hold`), is not built
+// at all. The clock fields (elapsed_ms,
 // waiting_elapsed_ms, elapsed_minutes, timebox_pct, flow_metrics) of every cached task are moved to now at each
 // get() from facts in the model, so they lag by at most one answer window (2 s) plus the poll gap. A quiet stream
 // crossing a threshold flips the task at the first get() past the window (lag <= ANSWER_MS + the poll gap).
@@ -161,7 +162,8 @@ function volatileKey(tasksDir, id, raw, files, t, listing) {
 // get(tasksDir, id) is collectTask's answer, rebuilt in full only when the task's task.json|ledger.jsonl
 // signature changed (stats.collects, byId). A `running` task, or a `stalled` one with files under 24 h old, is
 // otherwise built again (stats.rebuilds, also counted in stats.refreshes) only when its volatileKey changed,
-// checked at most once per `refreshMs`, or every OPEN_RECHECK windows as a safety net. Builds go through readers
+// checked at most once per `refreshMs`, or every OPEN_RECHECK windows as a safety net; a held task (raw.hold)
+// has no key and no safety net. Builds go through readers
 // that keep each file by its own stat (stats.reads: what was actually read from disk). Between builds the clock
 // fields of every task are moved to now from facts in the model (captureClock), with no file read.
 export function createTaskCache({ build = collectFromRaw, now = Date.now, refreshMs = ANSWER_MS } = {}) {
@@ -205,7 +207,7 @@ export function createTaskCache({ build = collectFromRaw, now = Date.now, refres
       stats.collects += 1;
       stats.byId[id] = (stats.byId[id] || 0) + 1;
       rebuild = true;
-    } else if (t - e.at >= refreshMs && (e.m.state === 'running' || (e.m.state === 'stalled' && t - mtimeOfSig(sig) < STALLED_LISTED_MS))) {
+    } else if (t - e.at >= refreshMs && !e.raw.hold && (e.m.state === 'running' || (e.m.state === 'stalled' && t - mtimeOfSig(sig) < STALLED_LISTED_MS))) {
       // the key, or a safety net for what it cannot see (a harness run found by scanning the cwd, a nested task)
       if (volatileKey(tasksDir, id, e.raw, e.files, t, e.listing) !== e.vkey || t - e.built >= refreshMs * OPEN_RECHECK) { stats.refreshes += 1; stats.rebuilds += 1; rebuild = true; } else e.at = t;
     }
@@ -213,7 +215,7 @@ export function createTaskCache({ build = collectFromRaw, now = Date.now, refres
     if (rebuild) {
       const built = captureClock(() => build(tasksDir, id, e.raw, ioOf(e)));
       e.m = built.value; e.clock = built.clock; e.at = t; e.built = t;
-      e.vkey = e.m && (e.m.state === 'running' || e.m.state === 'stalled') ? volatileKey(tasksDir, id, e.raw, e.files, t, e.listing) : null;
+      e.vkey = e.m && !e.raw.hold && (e.m.state === 'running' || e.m.state === 'stalled') ? volatileKey(tasksDir, id, e.raw, e.files, t, e.listing) : null;
     } else for (const move of e.clock) move(t);
     return e.m;
   }

@@ -112,7 +112,29 @@ function writeTask(root) {
     reject(17, 'footer cleared on one surface only'),
     ev(8, { event: 'asked', key: `E-c0ffee00/P2`, question: 'Which export format?' }),
   ].join('\n') + '\n', 10000);
+  writeHeldTask(root, cwd);
   return { tasks, cwd, dir };
+}
+
+// An older task a person holds: its one driver is gone and its stream has been silent for 51 minutes.
+const HELD_ID = '4e1d0000-0179-4a00-8000-000000000180';
+const HOLD = { reason: 'back after review', since: new Date(NOW - 50 * MIN).toISOString(), by: 'person' };
+function writeHeldTask(root, cwd) {
+  const dir = join(root, 'tasks', HELD_ID);
+  const log = write(root, `tasks/${HELD_ID}/drivers/dispatch_P1_1.stream.jsonl`, [init(SONNET), asst('h1', SONNET, [{ type: 'text', text: 'start' }]), line({ type: 'result', subtype: 'success', total_cost_usd: 1.25, num_turns: 7 })].join('\n') + '\n', 51 * MIN);
+  write(root, 'wt-held/.teams_output/broker/runs/c-held.json', JSON.stringify({ run_id: 'c-held', flow: 'develop', spec: { subgoals: [] }, nodes: [] }), 51 * MIN);
+  const nodes = [
+    node('size', 'size', [], { state: 'done', started_at: NOW - 119 * MIN, finished_at: NOW - 118 * MIN }),
+    node('shape', 'shape', ['size'], { state: 'done', started_at: NOW - 118 * MIN, finished_at: NOW - 115 * MIN }),
+    node('critique', 'critique', ['shape'], { state: 'done', started_at: NOW - 115 * MIN, finished_at: NOW - 110 * MIN }),
+    node('dispatch:P1:1', 'dispatch', ['critique'], { state: 'running', subgoal_id: 'P1', started_at: NOW - 100 * MIN, child: { run_id: 'c-held', cwd: join(root, 'wt-held'), driver: { log, restarts: [] } } }),
+    node('accept:P1:1', 'accept', ['dispatch:P1:1'], { state: 'pending', subgoal_id: 'P1' }),
+  ];
+  write(root, `tasks/${HELD_ID}/task.json`, JSON.stringify({
+    run_id: HELD_ID, kind: 'task', cwd, request: 'Tidy the settings screen', size: 'L', created_at: NOW - 120 * MIN, hold: HOLD,
+    store_path: join(dir, 'task.json'), spec: { packages: [{ id: 'P1', title: 'Settings screen', deps: [] }] }, nodes,
+  }), 50 * MIN);
+  write(root, `tasks/${HELD_ID}/ledger.jsonl`, line({ ts: NOW - 50 * MIN, task_id: HELD_ID, event: 'task_held', ...HOLD }) + '\n', 50 * MIN);
 }
 
 // Fixed words for the temp locations, so the fixture reads the same on every machine.
@@ -128,6 +150,7 @@ function build() {
     // the --format teams path reads the clock itself (view-once, view-collect): pin it for both reads
     Date.now = () => NOW;
     const { wiki, ...status } = toolStatus({ task_id: TASK_ID });
+    const { wiki: _heldWiki, ...heldStatus } = toolStatus({ task_id: HELD_ID });
     const once = (args) => JSON.parse(onceOutput({ task: TASK_ID, ...args }, tasks, null, undefined));
     const teams = once({ format: 'teams', cwd });
     // the pages the pane opens from it: the decisions timeline and each STORY's page
@@ -137,7 +160,7 @@ function build() {
     return {
       teams: tokenize(teams, root), status: tokenize(status, root), decisions: tokenize(decisions, root), story: tokenize(story, root),
       // what the fixture itself wrote: the model of each stream's init line, each dispatch's start, the Agent calls
-      truth: { models: { P1: OPUS, P2: SONNET, judge: SONNET }, started_at: { P1: NOW - 6 * MIN, P2: NOW - 8 * MIN }, participants },
+      truth: { models: { P1: OPUS, P2: SONNET, judge: SONNET }, started_at: { P1: NOW - 6 * MIN, P2: NOW - 8 * MIN }, participants, heldStatus: tokenize(heldStatus, root) },
     };
   } finally {
     Date.now = was.now;
@@ -196,6 +219,18 @@ test('EPIC cost (to cents) and turns equal tm_status, on the summary row and the
   assert.equal(entry.cost.turns, status.cost.turns);
   assert.equal(teams.task.cost.turns, status.cost.turns);
   for (const i of entry.items) assert.equal(cents(i.cost_usd), cents(status.package_costs.find((p) => p.id === i.key).cost_usd), `${i.key} cost`);
+});
+
+test('the held task is listed with its hold, never stalled, and its cost, turns, state and attempts equal tm_status', () => {
+  const held = teams.tasks.find((t) => t.task_id === HELD_ID);
+  const st = truth.heldStatus;
+  assert.deepEqual(held.hold, HOLD);
+  assert.equal(held.state, st.state);
+  assert.equal(held.cost.usd.toFixed(2), st.cost.usd.toFixed(2));
+  assert.equal(held.cost.turns, st.cost.turns);
+  assert.deepEqual([held.done, held.total], [0, st.packages.length]);
+  assert.equal(held.items.find((i) => i.key === 'P1').metrics.attempt,st.nodes.filter((n) => n.node_id.startsWith('dispatch:P1:')).length);
+  assert.ok(held.workers.every((w) => w.state !== 'stalled' && w.minutes === undefined));
 });
 
 test('the status line counts equal tm_status counts by state (done of all nodes)', () => {

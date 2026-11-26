@@ -82,6 +82,7 @@ export function floorOf(model, facts = {}, { now = Date.now(), metrics: given = 
   const m = model;
   const numbers = new Map(((given || metrics(m, { now })).stories || []).map((s) => [s.id, s]));
   const stalled = m.state === 'stalled' || (m.ticket && m.ticket.state === 'stalled');
+  const held = !!m.hold; // none of a held task's desks reads stalled, however silent its stream
   const taskMinutes = m.stall && m.stall.minutes;
   const epic = (m.ticket && m.ticket.key) || String(m.task_id || '');
   const story = (id) => (facts.stories && facts.stories[id]) || {};
@@ -91,12 +92,14 @@ export function floorOf(model, facts = {}, { now = Date.now(), metrics: given = 
   // a STORY desk works in the Phase of its card (a package is Build, a planning card Plan, a QA round QA)
   const add = (id, base, f, mark, waiting, phase = 'build', at = {}) => {
     // stalled with the whole task, or on its own: a silent worker beside a live one still reads stalled
-    const state = workState({ mark, waiting, live: !!f.live, stalled: stalled || !!f.silent });
+    const state = workState({ mark, waiting, live: !!f.live, stalled: !held && (stalled || !!f.silent) });
     const doing = state === 'acting' || state === 'you' ? (f.doing || '') : '';
     // minutes (integer) only on a stalled worker: its own stream's, else the task-level newest sign of life
     const minutes = state === 'stalled' ? (Number.isInteger(f.minutes) ? f.minutes : taskMinutes) : null;
     const live = state === 'acting' || state === 'you';
-    workers.push({ id, phase, state, doing, ...markOf(state, doing), ...(Number.isInteger(minutes) ? { minutes } : {}), ...(Number.isInteger(f.subagents) ? { subagents: f.subagents } : {}), ...(live ? { ...at, ...activityFields(f) } : {}) });
+    // under a hold, a desk named otherwise than its card (PLAN) says which item it works
+    const item = held && id !== 'S' && base.key !== id ? { item: base.key } : {};
+    workers.push({ id, ...item, phase, state, doing,...markOf(state, doing), ...(Number.isInteger(minutes) ? { minutes } : {}), ...(Number.isInteger(f.subagents) ? { subagents: f.subagents } : {}), ...(live ? { ...at, ...activityFields(f) } : {}) });
     if (mark === 'done' || mark === 'pending') return;
     const itemState = mark === 'failed' && state !== 'you' ? 'failed' : state;
     items.push({
