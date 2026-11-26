@@ -1074,7 +1074,9 @@ export function claims(text, items, settledLines = [], sel = null, confirmed = [
     const c = l.match(CITE)
     // an HTML comment is a note to the writer, and a bare slot name (`해결`, `문제`) is no sentence:
     // both were read as unsupported reasons on 10 pages of a sandbox build (2026-11-21)
-    const text = l.replace(/<!--.*?-->/g, '').trim()
+    // a skeleton slot line `text6: 해결` is its value: a bare label once the key is off (two runs
+    // dropped label slots to stop `해결` raising to_confirm, 2026-11-26)
+    const text = l.replace(/<!--.*?-->/g, '').trim().replace(/^[a-z][a-z0-9_]*:\s*/, '')
     if (c) cur.ids.push(...c[1].split(/[,;]/).map(s => s.trim()).filter(Boolean))
     else if (text && !/^<!--/.test(text) && !/^[^\s\d:：]{1,6}[:：]?$/.test(text)) cur.body.push(text)
   }
@@ -1503,7 +1505,8 @@ export function slotsOf(text) {
 // the words a slot says, without the deck's markup: `**`, `[text]{fmt}`, `<br>`, list dashes, spacing
 // (a skeleton writes a line break as ` / ` and numbers a footnote `1) `; the deck splits lines and
 // numbers footnotes itself; a deck line may end in `\`)
-const plain = s => s.trim().replace(/\s*\[확인 필요[^\]]*\]/g, '').replace(/\\$/, '').replace(/\s+\/\s+/g, ' ').replace(/^\d+\)\s+/, '').replace(/\\(.)/g, '$1').replace(/\[([^\]]*)\]\{[^}]*\}/g, '$1').replace(/\*\*/g, '').replace(/<br\s*\/?>/g, ' ').replace(/^[-|·•]\s*/, '').replace(/\s+/g, ' ').trim()
+// a footnote's later lines (` / 2) …`, `<br>2) …`) lose their number too: the pptx numbers them itself
+const plain = s => s.trim().replace(/(?:\s+\/\s+|<br\s*\/?>)\s*\d+\)\s+/g, ' ').replace(/\s*\[확인 필요[^\]]*\]/g, '').replace(/\\$/, '').replace(/\s+\/\s+/g, ' ').replace(/^\d+\)\s+/, '').replace(/\\(.)/g, '$1').replace(/\[([^\]]*)\]\{[^}]*\}/g, '$1').replace(/\*\*/g, '').replace(/<br\s*\/?>/g, ' ').replace(/^[-|·•]\s*/, '').replace(/\s+/g, ' ').trim()
 
 // skeleton -> deck source: each skeleton slot absent from, or different in, the deck's same slide.
 // Writes only with `write`: a different slot is replaced, an absent one appended to its slide; a slide
@@ -1518,7 +1521,11 @@ export function starterDeck(root, skel) {
   }
   const fm = cat.match(/^---\n([\s\S]*?)\n---$/m)
   if (!fm) throw new Error('deck.catalog.md names no front matter block to start the deck from')
-  const out = [`---\n${fm[1]}\noutput: build/deck.pptx\n---`, '']
+  // the catalog names the template as deck.py saw it; a manage workspace keeps it under template/
+  // (two runs fixed `template: template.pptx` by hand, 2026-11-26)
+  const front = fm[1].replace(/^(template:[ \t]*["']?)([^"'\n/]+?)(["']?[ \t]*)$/m, (all, a, f, z) =>
+    !existsSync(join(root, f)) && existsSync(join(root, 'template', f)) ? `${a}template/${f}${z}` : all)
+  const out = [`---\n${front}\noutput: build/deck.pptx\n---`, '']
   let cite = null
   const lines = skel.split('\n')
   for (let i = 0; i < lines.length; i++) {
@@ -1632,7 +1639,8 @@ export function verifyBuild(root) {
   const deckText = readFileSync(deckPath, 'utf8')
   const pptx = join(root, 'build', 'deck.pptx')
   if (!existsSync(pptx)) throw new Error('build/deck.pptx does not exist: build first')
-  const flat = s => s.replace(/\s+/g, '')
+  // render's orphan control puts word joiners (U+2060) in the text: not a difference (bench30c)
+  const flat = s => s.replace(/[\s​-‍⁠﻿]+/g, '')
   const built = flat(pptxText(pptx))
   const absent = []
   let checked = 0

@@ -1,6 +1,6 @@
 import { after, test } from 'node:test'
 import assert from 'node:assert/strict'
-import { cpSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, symlinkSync, utimesSync, writeFileSync, existsSync } from 'node:fs'
+import { cpSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, symlinkSync, unlinkSync, utimesSync, writeFileSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -92,6 +92,13 @@ test('sync with no deck source: a dry run says so, --write starts it from the ca
   assert.match(deck, /## @s3 2쪽 · 검색 · 글감: retro--검색-지연\ntext2: 820ms → 210ms/)
   const again = sync(root)
   assert.deepEqual([again.missing.length, again.different.length, again.slide_missing.length], [0, 0, 0])
+  // the catalog names a bare template.pptx that lives under template/: the deck gets the real path
+  unlinkSync(join(root, 'portfolio-deck.mdx'))
+  mkdirSync(join(root, 'template'))
+  writeFileSync(join(root, 'template', 'template.pptx'), '')
+  writeFileSync(join(root, 'deck.catalog.md'), '# Deck catalog\n\n```\n---\ntemplate: template.pptx\n---\n```\n')
+  sync(root, { write: true })
+  assert.match(readFileSync(join(root, 'portfolio-deck.mdx'), 'utf8'), /^---\ntemplate: template\/template\.pptx\n/)
 })
 
 test('snapshot with a bad --level writes nothing, so the corrected call still works', () => {
@@ -474,6 +481,14 @@ test('selection: a figure only 확정사실 holds (not banned there) is listed a
   // a figure held on any row is handled: not listed again
   writeFileSync(join(root, 'sources/선정.md'), '| 글감 | 쓰임 | 쪽 | 이유 | 대표 |\n|---|---|---|---|---|\n| 01_이관/A4 | 본문 | 5 | 안 씀: 3건; 98.1% | y |\n')
   assert.deepEqual(selection(root).fact_only, [])
+})
+
+test('claims: a skeleton label slot (`text6: 해결`) is no reason to confirm', () => {
+  const root = mkdtempSync(join(tmpdir(), 'manage-label-'))
+  mkdirSync(join(root, 'sources', '01_이관'), { recursive: true })
+  writeFileSync(join(root, 'sources/01_이관/A1_전환.md'), '# 전환\n## 사실\n- 응답이 0.7초에서 0.3초로 줄었다\n')
+  const r = claims('## 5쪽 · @s12 · 전환\n글감: 01_이관/A1\ntext6: 해결\n- 응답이 0.7초에서 0.3초로 줄었다\n', readMaterial(root))
+  assert.deepEqual(r.problems.filter(p => p.kind === 'to_confirm'), [])
 })
 
 test('heldFigs: `,` and `;` both separate, a sentence stop ends the list, a decimal point does not', () => {
