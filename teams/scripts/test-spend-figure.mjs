@@ -8,11 +8,11 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { appendFileSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { collectDriverCosts, collectTaskCosts, taskFigure } from '../mcp/drivercost.mjs';
+import { collectDriverCosts, collectTaskCosts, latestCostEvent, spendFigure, taskFigure } from '../mcp/drivercost.mjs';
 import { budgetStatus } from '../mcp/taskmanager-budget.mjs';
 import { toolBoard, toolStatus } from '../mcp/taskmanager-handlers.mjs';
 import { composeTaskPrompt } from '../mcp/taskmanager-prompts.mjs';
@@ -132,6 +132,89 @@ test('recorded S stream: the full stream reads the exact total, not estimated', 
   const r = priceStream(FIXTURE);
   assert.equal(r.usd, 6.7512);
   assert.equal(r.estimated, false);
+});
+
+// taskFigure reads its ledger incrementally. The reference is a whole-file read of the same path.
+const costLine = (spend, estimated = false) => `${JSON.stringify({ ts: spend, event: 'cost_recorded', spend, estimated })}\n`;
+const wholeRead = (path) => latestCostEvent(readFileSync(path, 'utf8').split('\n').flatMap((l) => { try { return [JSON.parse(l)]; } catch { return []; } }));
+const EMPTY = { run_id: 'T', nodes: [] };
+const sameAsWholeRead = (dir) => assert.deepEqual(
+  (({ spend, estimated, from }) => ({ spend, estimated, from }))(taskFigure(dir, EMPTY)),
+  spendFigure({ cost_usd: 0 }, wholeRead(join(dir, 'ledger.jsonl'))),
+);
+
+function withLedger(text, fn) {
+  const dir = mkdtempSync(join(tmpdir(), 'spend-ledger-'));
+  try {
+    const path = join(dir, 'ledger.jsonl');
+    writeFileSync(path, text);
+    return fn({ dir, path, spend: () => taskFigure(dir, EMPTY).spend });
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+}
+
+test('the incremental ledger read equals the whole-file read on every fixture ledger as it grows', () => {
+  const root = fileURLToPath(new URL('./fixtures/', import.meta.url));
+  const ledgers = readdirSync(root, { recursive: true }).filter((f) => String(f).endsWith('ledger.jsonl'));
+  assert.ok(ledgers.length >= 2);
+  for (const f of ledgers) {
+    const lines = readFileSync(join(root, String(f)), 'utf8').split('\n').filter(Boolean);
+    withLedger('', ({ dir, path }) => {
+      lines.forEach((line, i) => {
+        appendFileSync(path, `${line}\n`);
+        if (i % 7 === 0) appendFileSync(path, costLine(i + 1, i % 14 === 0));
+        sameAsWholeRead(dir);
+      });
+    });
+  }
+});
+
+test('a newer cost_recorded appended between two calls is the one returned', () => {
+  withLedger(costLine(3), ({ path, spend }) => {
+    assert.equal(spend(), 3);
+    appendFileSync(path, '{"event":"other"}\n');
+    assert.equal(spend(), 3);
+    appendFileSync(path, costLine(5));
+    assert.equal(spend(), 5);
+  });
+});
+
+test('a torn trailing line is not consumed until it is complete', () => {
+  withLedger(costLine(3), ({ path, spend }) => {
+    const next = costLine(8);
+    appendFileSync(path, next.slice(0, 20));
+    assert.equal(spend(), 3);
+    appendFileSync(path, next.slice(20));
+    assert.equal(spend(), 8);
+  });
+});
+
+test('a truncated, renamed-over, same-size rewritten or removed ledger is read again from the start', () => {
+  withLedger(costLine(3) + costLine(9), ({ dir, path, spend }) => {
+    assert.equal(spend(), 9);
+    writeFileSync(path, costLine(4));
+    assert.equal(spend(), 4, 'shrunk');
+    // The only cost line comes first: a read resumed at the old offset sees padding and keeps 4.
+    const pad = '{"event":"other","pad":"xxxxxxxx"}\n'.repeat(2);
+    writeFileSync(join(dir, 'next'), costLine(6) + pad);
+    renameSync(join(dir, 'next'), path);
+    assert.equal(spend(), 6, 'another inode, larger file');
+    writeFileSync(path, costLine(1) + pad);
+    utimesSync(path, new Date(), new Date(Date.now() + 5000));
+    assert.equal(spend(), 1, 'same size, new mtime');
+    rmSync(path);
+    assert.equal(spend(), 0, 'gone');
+    writeFileSync(path, costLine(2));
+    assert.equal(spend(), 2);
+  });
+});
+
+// Every checkpoint of the two-model stream (the three tests above cover the first and the last
+// total only). The other s-stream fixtures are one line each, that line the result: cut it and
+// nothing is left to estimate, so they are left out.
+test('recorded S stream: the lines before each of its 14 results land within 5% of that result', () => {
+  const at = FIXTURE.flatMap((l, i) => (isResult(l) ? [i] : []));
+  assert.equal(at.length, 14);
+  for (const i of at) within(priceStream(FIXTURE.slice(0, i)).usd, JSON.parse(FIXTURE[i]).total_cost_usd, 0.05);
 });
 
 test('no pane or status source reads collectTaskCosts directly', () => {

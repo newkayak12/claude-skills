@@ -6,7 +6,7 @@
 // events; only the LAST `result` event carries the session's true totals (`total_cost_usd`,
 // `num_turns`, `duration_ms`) - everything before it is a partial view. Reading any other event
 // for cost undercounts.
-import { readdirSync, readFileSync } from 'node:fs';
+import { closeSync, fstatSync, openSync, readdirSync, readFileSync, readSync, statSync } from 'node:fs';
 import { join, basename } from 'node:path';
 
 const read = (p) => { try { return readFileSync(p, 'utf8'); } catch { return null; } };
@@ -315,16 +315,49 @@ export function spendFigure(live, durable) {
   return { spend: liveUsd, estimated: !!(live.estimated_sessions > 0), from: 'live' };
 }
 
+// The ledger's latest cost_recorded, read incrementally: a budgeted task asks every daemon tick.
+// Per path, `offset` is the end of the last complete line read, so only bytes appended since are
+// read and a torn trailing line waits for its newline. A shrunk or replaced (dev/ino) file, or one
+// rewritten at the same size (mtime), is read again from the start. The ledger is append-only: a
+// rewrite in place to a LARGER size is not detected.
+const ledgerCache = new Map();
+
+function readFrom(path, offset) {
+  const fd = openSync(path, 'r');
+  try {
+    const buf = Buffer.alloc(Math.max(0, fstatSync(fd).size - offset));
+    let got = 0;
+    for (let n = 1; n > 0 && got < buf.length; got += n) n = readSync(fd, buf, got, buf.length - got, offset + got);
+    return buf.subarray(0, got);
+  } finally { closeSync(fd); }
+}
+
+function latestLedgerCost(path) {
+  try {
+    const st = statSync(path);
+    let c = ledgerCache.get(path);
+    if (!c || c.dev !== st.dev || c.ino !== st.ino || st.size < c.size || (st.size === c.size && st.mtimeMs !== c.mtimeMs)) c = { offset: 0, size: 0, latest: null };
+    else if (st.size === c.size) return c.latest;
+    const buf = readFrom(path, c.offset);
+    const end = buf.lastIndexOf(10) + 1;
+    const events = [c.latest];
+    for (const line of buf.toString('utf8', 0, end).split('\n')) {
+      if (!line.includes('cost_recorded')) continue;
+      try { events.push(JSON.parse(line)); } catch { /* skip a torn line */ }
+    }
+    const latest = latestCostEvent(events);
+    ledgerCache.set(path, { dev: st.dev, ino: st.ino, size: st.size, mtimeMs: st.mtimeMs, offset: c.offset + end, latest });
+    return latest;
+  } catch {
+    ledgerCache.delete(path);
+    return null;
+  }
+}
+
 // The same, read from a task directory: live costs plus the ledger's latest cost_recorded.
 export function taskFigure(taskDirPath, task) {
   const live = collectTaskCosts(taskDirPath, task);
-  const txt = read(join(taskDirPath, 'ledger.jsonl')) || '';
-  const events = [];
-  for (const line of txt.split('\n')) {
-    if (!line.includes('cost_recorded')) continue;
-    try { events.push(JSON.parse(line)); } catch { /* skip a torn line */ }
-  }
-  return { ...spendFigure(live, latestCostEvent(events)), live };
+  return { ...spendFigure(live, latestLedgerCost(join(taskDirPath, 'ledger.jsonl'))), live };
 }
 
 // Every <...>/.teams_output/broker/<run_id> directory under a workspace, worktrees included -

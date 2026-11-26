@@ -250,3 +250,229 @@ test('case 8: a parked critique at the attempts cap is held by judgeStuck and ke
   assert.notEqual(at, null, 'the daemon stays alive');
   assert.equal(at, dueOf(nodeOf(id, 'critique').result.waiting_capacity));
 });
+
+// ---------- the park as a hold, and its lift (F7-AC-13..18) ----------
+//
+// frozen_clock form used below: "Date.now pinned" - frozen(T, fn) replaces Date.now with a value
+// the test sets (restored in finally); autoRejudge / autoResumeCapacity inside stepOnce read it.
+
+const T0 = Date.UTC(2026, 10, 19, 1, 45, 22); // 10:45:22 KST
+const DUE = Date.UTC(2026, 10, 19, 4, 40, 0) + GRACE; // LIMIT's "resets 1:40pm (Asia/Seoul)"
+
+async function frozen(start, fn) {
+  const realNow = Date.now;
+  const was = process.env.HARNESS_CHILD_DRIVER;
+  process.env.HARNESS_CHILD_DRIVER = 'node -e 0 --'; // the stub for every resumed driver
+  let now = start;
+  Date.now = () => now;
+  try { return await fn((t) => { now = t; }); } finally {
+    Date.now = realNow;
+    if (was === undefined) delete process.env.HARNESS_CHILD_DRIVER; else process.env.HARNESS_CHILD_DRIVER = was;
+  }
+}
+const events = (id, name) => ledger(id).filter((e) => e.event === name);
+const starts = (id) => events(id, 'child_driver_spawned').length + events(id, 'child_driver_restarted').length;
+const order = (id, names) => ledger(id).map((e) => e.event).filter((e) => names.includes(e));
+const LIFT = ['judge_capacity_cleared', 'daemon_capacity_resumed', 'task_resumed'];
+const engineHold = () => ({ reason: "waiting_capacity: You've hit your session limit", since: new Date(T0).toISOString(), by: 'engine' });
+const personHold = () => ({ reason: 'look first', since: new Date(T0).toISOString(), by: 'person' });
+const DEAD_PID = 2 ** 22 + 901;
+
+// An unstated park taken `ago` ms before T0: due 33 minutes after it.
+const driverPark = (ago) => ({ reason: "You've hit your session limit", since: T0 - ago, first_since: T0 - ago, parks: 1 });
+const PAST_DUE = 2 * 60 * MIN;
+
+// A running dispatch whose child run is open, its driver dead, parked on the provider's limit.
+function parkedDispatch(p, ago) {
+  const wt = mkdtempSync(join(tmpdir(), 'judge-cap-child-'));
+  scratch.push(wt);
+  mkdirSync(join(wt, '.teams_output', 'broker', 'runs'), { recursive: true });
+  const run_id = `child-${p}`;
+  writeFileSync(join(wt, '.teams_output', 'broker', 'runs', `${run_id}.json`), JSON.stringify({ run_id, flow: 'develop', max_retries: 2, cwd: wt, spec: { subgoals: [{ id: 'U1', title: 'unit' }] }, nodes: [graph.node('implement:U1:1', 'implement', [], { state: 'pending', subgoal_id: 'U1' })] }));
+  return graph.node(`dispatch:${p}:1`, 'dispatch', ['shape'], { subgoal_id: p, state: 'running', child: { run_id, cwd: wt, driver: { pid: DEAD_PID, restarts: [], started_at: T0 - ago }, waiting_capacity: driverPark(ago) } });
+}
+
+// A size-S task whose one harness driver is dead and parked.
+function seedParkedS(extra) {
+  const id = seedTask([]);
+  save(id, (t) => {
+    t.size = 'S';
+    t.harness_run = { cwd: t.cwd, opened_at: T0 - PAST_DUE, report_path: join(tm.taskDir(id), 'harness-report.md'), run: null, driver: { pid: DEAD_PID, restarts: [], started_at: T0 - PAST_DUE }, waiting_capacity: driverPark(PAST_DUE) };
+    Object.assign(t, extra);
+  });
+  return id;
+}
+
+test('a judge park on an idle task holds it: waiting_capacity, engine, one task_held; a standing hold is kept', async () => {
+  const id = seedTask([gateNode()]);
+  await frozen(T0, async () => {
+    const n = await judgeOnce(id, 'report', LIMIT);
+    const { hold } = load(id);
+    assert.deepEqual(Object.keys(hold).sort(), ['by', 'reason', 'since']);
+    assert.equal(hold.reason, `waiting_capacity: ${parkOf(n).reason}`.slice(0, 300));
+    assert.equal(hold.by, 'engine');
+    assert.ok(!Number.isNaN(Date.parse(hold.since)), hold.since); // setHold reads new Date(), which the pin leaves alone
+    assert.equal(events(id, 'task_held').length, 1);
+    assert.deepEqual(order(id, ['judge_capacity', 'task_held']), ['judge_capacity', 'task_held']);
+  });
+  // The hold lands while the judge is running (a person's hold ends a tick before any judge starts,
+  // so it can only meet a park this way); the verdict is the park.
+  // The first pass, with no standing hold, is the control of the two that follow.
+  for (const standing of [null, { reason: 'budget_stopped', since: new Date(T0).toISOString(), by: 'engine' }, personHold()]) {
+    const other = seedTask([gateNode()]);
+    await daemon.stepOnce(other, {
+      judge: async () => {
+        if (standing) mutateTask(other, (t) => { t.hold = { ...standing }; });
+        return { stage_ok: false, judge_failed: true, reason: LIMIT, waiting_capacity: { reason: LIMIT, since: T0, first_since: T0, parks: 1 } };
+      },
+    });
+    assert.ok(parkOf(nodeOf(other, 'report')), 'the park was applied');
+    if (standing) assert.deepEqual(load(other).hold, standing, standing.reason);
+    else assert.equal(load(other).hold.reason, `waiting_capacity: ${LIMIT}`, 'control');
+    assert.equal(events(other, 'task_held').length, standing ? 0 : 1, standing ? standing.reason : 'control');
+  }
+});
+
+// Control for the "nothing happens" asserts: the next test, the same fixture at the due tick.
+test('before the reset three daemon ticks start nothing and spend no attempt; a re-park on the same instant counts up', async () => {
+  const id = seedTask([gateNode()]);
+  await frozen(T0, async (at) => {
+    await judgeOnce(id, 'report', LIMIT);
+    const ran = calls();
+    for (const t of [T0 + MIN, T0 + 60 * MIN, DUE - 1000]) {
+      at(t);
+      assert.equal(await daemon.stepOnce(id), false);
+    }
+    const task = load(id);
+    const n = task.nodes.find((x) => x.node_id === 'report');
+    assert.notEqual(n.final, true);
+    // taskState is what the daemon reads: the raw graph state says blocked, and the scheduled
+    // re-judge turns it back into running.
+    assert.equal(tm.taskState(task).state, 'running');
+    assert.equal(tm.pendingRejudgeAt(task), DUE);
+    assert.equal(calls(), ran);
+    assert.equal(starts(id), 0);
+    assert.ok(!n.judge_attempts);
+    assert.equal(events(id, 'daemon_rejudge').length, 0);
+    assert.equal(events(id, 'judge_capacity_cleared').length, 0);
+    // cleared by hand before the instant, the same reply parks the same wait again
+    at(T0 + 61 * MIN);
+    mutateTask(id, (t) => tm.clearCapacity(t, null));
+    await daemon.stepOnce(id);
+    const w = parkOf(nodeOf(id, 'report'));
+    assert.equal(w.first_since, T0);
+    assert.equal(w.parks, 2);
+    assert.equal(calls(), ran + 1);
+  });
+});
+
+test('at the due tick a parked judge reopens once, is judged once, and the hold is lifted after judge_capacity_cleared', async () => {
+  const id = seedTask([gateNode()]);
+  await frozen(T0, async (at) => {
+    await judgeOnce(id, 'report', LIMIT);
+    const ran = calls();
+    setReply(JSON.stringify({ stage_ok: true, reason: 'fine' }));
+    at(DUE - 1000);
+    await daemon.stepOnce(id);
+    assert.equal(events(id, 'judge_capacity_cleared').length, 0, 'not earlier');
+    assert.ok(load(id).hold, 'still held');
+    at(DUE);
+    await daemon.stepOnce(id);
+    assert.equal(events(id, 'judge_capacity_cleared').length, 1);
+    assert.equal(calls(), ran + 1, 'exactly one judge');
+    assert.equal(nodeOf(id, 'report').state, 'done');
+    assert.equal(load(id).hold, undefined);
+    assert.deepEqual(order(id, LIFT), ['judge_capacity_cleared', 'task_resumed']);
+  });
+});
+
+test('a parked dispatch resumes at the due tick only: one daemon_capacity_resumed, one spawn, then task_resumed', async () => {
+  const id = seedTask([parkedDispatch('P1', 0)]);
+  save(id, (t) => { t.hold = engineHold(); });
+  await frozen(T0 + 33 * MIN - 1000, async (at) => {
+    await daemon.stepOnce(id);
+    assert.equal(events(id, 'daemon_capacity_resumed').length, 0, 'not earlier');
+    assert.equal(starts(id), 0);
+    assert.ok(load(id).hold);
+    at(T0 + 33 * MIN);
+    await daemon.stepOnce(id);
+    assert.equal(events(id, 'daemon_capacity_resumed').length, 1);
+    assert.equal(starts(id), 1);
+    assert.equal(load(id).hold, undefined);
+    assert.deepEqual(order(id, LIFT), ['daemon_capacity_resumed', 'task_resumed']);
+  });
+  // two holders, one due: the lift follows any resume, as shipped, though P2 is still parked
+  const two = seedTask([parkedDispatch('P1', PAST_DUE), parkedDispatch('P2', 0)]);
+  save(two, (t) => { t.hold = engineHold(); });
+  await frozen(T0, async () => {
+    await daemon.stepOnce(two);
+    assert.equal(events(two, 'daemon_capacity_resumed').length, 1);
+    assert.ok(nodeOf(two, 'dispatch:P2:1').child.waiting_capacity);
+    assert.equal(load(two).hold, undefined);
+  });
+});
+
+test('a parked judge reopened by a same-package dispatch resume: one task_resumed, before daemon_capacity_resumed', async () => {
+  const parkedJudge = gateNode({ subgoal_id: 'P1', state: 'failed', finished_at: T0, result: { stage_ok: false, judge_failed: true, reason: LIMIT, waiting_capacity: { reason: LIMIT, since: T0, first_since: T0, parks: 1 } } });
+  const id = seedTask([parkedDispatch('P1', PAST_DUE), parkedJudge]);
+  save(id, (t) => { t.hold = engineHold(); });
+  setReply(JSON.stringify({ stage_ok: true, reason: 'fine' }));
+  await frozen(T0, async () => { // the judge's own park is not due: only clearCapacity can reopen it
+    await daemon.stepOnce(id);
+    assert.deepEqual(order(id, LIFT), ['judge_capacity_cleared', 'task_resumed', 'daemon_capacity_resumed']);
+    assert.equal(load(id).hold, undefined);
+  });
+});
+
+// Each stop case has its control: the same fixture without budget_stopped resumes on that tick.
+// Protecting path: autoResumeCapacity's `if (task.budget_stopped) return false` (taskmanager-repair.mjs).
+// A parked judge is not asserted here: autoRejudge has no budget_stopped guard (F1 hand-off).
+test('under budget_stopped a due dispatch or size-S park is not resumed and nothing starts (control: without the stop it is)', async () => {
+  const stop = { budget_stopped: { at: T0, spend: 0, skipped_packages: [] }, hold: { reason: 'budget_stopped', since: new Date(T0).toISOString(), by: 'engine' } };
+  const fixtures = {
+    dispatch: (extra) => { const id = seedTask([parkedDispatch('P1', PAST_DUE)]); save(id, (t) => { Object.assign(t, extra); }); return id; },
+    S: (extra) => seedParkedS(extra),
+  };
+  for (const [name, seed] of Object.entries(fixtures)) {
+    await frozen(T0, async () => {
+      const control = seed({});
+      await daemon.stepOnce(control);
+      assert.equal(events(control, 'daemon_capacity_resumed').length, 1, `${name} control resumes`);
+      assert.equal(starts(control), 1, `${name} control starts one driver`);
+      const id = seed(structuredClone(stop));
+      await daemon.stepOnce(id);
+      assert.equal(events(id, 'daemon_capacity_resumed').length, 0, name);
+      assert.equal(starts(id), 0, name);
+      assert.equal(load(id).hold.reason, 'budget_stopped', name);
+    });
+  }
+});
+
+// Protecting path, both cases: the personHeld early return in stepOnceInner (daemon.mjs, `if
+// (personHeld(t)) return`), which runs before autoRejudge and autoResumeCapacity. autoResumeCapacity
+// itself has no personHeld check; the judge reopen path is autoRejudge.
+test('person hold is never cleared by autoResumeCapacity', async () => {
+  // dispatch park
+  const dispatch = () => seedTask([parkedDispatch('P1', PAST_DUE)]);
+  // judge park, already due
+  const judged = () => seedTask([gateNode({ state: 'failed', finished_at: T0 - PAST_DUE, result: { stage_ok: false, judge_failed: true, reason: LIMIT_NO_RESET, waiting_capacity: { reason: LIMIT_NO_RESET, since: T0 - PAST_DUE, first_since: T0 - PAST_DUE, parks: 1 } } })]);
+  setReply(JSON.stringify({ stage_ok: true, reason: 'fine' }));
+  for (const [name, seed, resumeEvent] of [['dispatch', dispatch, 'daemon_capacity_resumed'], ['judge', judged, 'judge_capacity_cleared']]) {
+    await frozen(T0, async () => {
+      const control = seed();
+      const before = calls();
+      await daemon.stepOnce(control);
+      assert.equal(events(control, resumeEvent).length, 1, `${name} control resumes`);
+      assert.equal(starts(control) + calls() - before, 1, `${name} control starts one process`);
+      const id = seed();
+      const hold = personHold();
+      save(id, (t) => { t.hold = hold; });
+      const ran = calls();
+      await daemon.stepOnce(id);
+      assert.deepEqual(load(id).hold, hold, name);
+      for (const e of ['task_resumed', 'daemon_capacity_resumed', 'judge_capacity_cleared']) assert.equal(events(id, e).length, 0, `${name} ${e}`);
+      assert.equal(starts(id), 0, name);
+      assert.equal(calls(), ran, `${name}: no judge call`);
+    });
+  }
+});

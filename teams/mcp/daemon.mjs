@@ -29,7 +29,7 @@ import { join, dirname } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { loadRunAt, readyNodes } from './graph.mjs';
 import { mutateTask, LockTimeoutError } from './store.mjs';
-import { applySuspends, clearHold, personHeld } from './taskstate.mjs';
+import { applySuspends, clearHold, holdIfIdle, personHeld } from './taskstate.mjs';
 import { pidAlive } from './proc.mjs';
 import {
   taskPath, taskDir, record, noDriver, taskState,
@@ -615,6 +615,7 @@ function applyJudged(taskId, nodeId, stamp, result) {
       if (verdict.waiting_capacity) {
         recordFailureKind(t, f, 'capacity', { via: 'park' });
         record(t, { event: 'judge_capacity', task_id: t.run_id, node_id: nodeId, reason: String(verdict.waiting_capacity.reason).slice(0, 200) });
+        holdIfIdle(t, `waiting_capacity: ${verdict.waiting_capacity.reason}`);
       }
       // finish() alone does not delegate a size-S task to its own run - toolSubmit calls
       // delegateIfSmall right after finish() for the size node, and the daemon makes the same
@@ -738,6 +739,7 @@ async function stepOnceInner(taskId, judgeFn, answerFn) {
   // A running STORY that asked its TeamLeader (tm_ask) is parked: answer, or forward to the person.
   // Checked before the await: a tick with no question to answer must not yield, or the judge pass
   // below would read the task a moment later than every tick before this one did.
+  if (claimableStoryAsks(loadRunAt(taskPath(taskId)) || {}, liveAnswering).length && (await import('./storyevidence.mjs')).selfAnswerStoryAsks(taskId, liveAnswering)) progressed = true; // evidence asks: no answer node
   if (claimableStoryAsks(loadRunAt(taskPath(taskId)) || {}, liveAnswering).length && await answerStoryAsks(taskId, answerFn)) progressed = true;
 
   // Judge every ready reasoning node - size, shape, critique, accept, integrate, gate, report -

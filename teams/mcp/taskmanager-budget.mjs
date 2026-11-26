@@ -1,5 +1,5 @@
 // taskmanager-budget.mjs - budget / timebox and the max_parallel_teams AIMD controller; split out of taskmanager.mjs (card 128 step 1), moved verbatim.
-import { applySuspends, record, taskDir } from './taskstate.mjs';
+import { applySuspends, clearHold, record, setHold, taskDir } from './taskstate.mjs';
 import { availableParallelism } from 'node:os';
 import { taskFigure } from './drivercost.mjs';
 import { existsSync, readFileSync } from 'node:fs';
@@ -279,6 +279,9 @@ export function enforceBudget(task) {
       skipped_packages: [],
     };
     record(task, { event: 'budget_stopped', task_id: task.run_id, ...task.budget_stopped, ...(status.estimated ? { estimated: true } : {}) });
+    // A stopped box resumes nothing, so a capacity park's hold gives way; any other hold stands.
+    clearHold(task, { by: 'engine', reasonPrefix: 'waiting_capacity:' });
+    setHold(task, { reason: 'budget_stopped', by: 'engine' });
     progressed = true;
   }
   // Stopped before shape ever produced packages (code-sprint-S2, 2026-09-26: the whole $6 went

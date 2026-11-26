@@ -414,6 +414,167 @@ test('daemon tick: a size-S run past grace ends partial, with budget_killed in t
   }
 });
 
+// ---------- the stop's own hold (F7-AC-7, F7-AC-11) ----------
+const holdEvents = (dir) => ledgerOf(dir).filter((e) => ['budget_stopped', 'task_held', 'task_resumed'].includes(e.event));
+
+test('enforceBudget at the stop: one budget_stopped, one task_held {budget_stopped, since, engine}; a second tick writes neither', async () => {
+  const store = await import('../mcp/taskstate.mjs');
+  withTask(({ dir, task }) => {
+    mod.enforceBudget(task);
+    mod.enforceBudget(task);
+    assert.deepEqual(holdEvents(dir).map((e) => e.event), ['budget_stopped', 'task_held']);
+    assert.deepEqual(Object.keys(task.hold).sort(), ['by', 'reason', 'since']);
+    assert.equal(task.hold.reason, 'budget_stopped');
+    assert.equal(task.hold.by, 'engine');
+    assert.ok(Number.isFinite(Date.parse(task.hold.since)));
+    // a later capacity park does not overwrite it
+    assert.equal(store.holdIfIdle(task, 'waiting_capacity: usage limit'), false);
+    assert.equal(task.hold.reason, 'budget_stopped');
+    assert.equal(holdEvents(dir).length, 2);
+  }, { stream: over, opts: { budget_usd: 1 } });
+});
+
+test('enforceBudget at the stop replaces an engine waiting_capacity hold: budget_stopped, task_resumed, task_held', () => {
+  withTask(({ dir, task }) => {
+    task.hold = { reason: 'waiting_capacity: usage limit', since: new Date().toISOString(), by: 'engine' };
+    mod.enforceBudget(task);
+    mod.enforceBudget(task);
+    assert.deepEqual(holdEvents(dir).map((e) => [e.event, e.reason]), [
+      ['budget_stopped', undefined], ['task_resumed', 'waiting_capacity: usage limit'], ['task_held', 'budget_stopped'],
+    ]);
+    assert.equal(task.hold.reason, 'budget_stopped');
+  }, { stream: over, opts: { budget_usd: 1 } });
+});
+
+test('enforceBudget at the stop keeps a person\'s hold: no task_held, no task_resumed', () => {
+  for (const reason of ['look first', 'waiting_capacity: typed by a person']) {
+    withTask(({ dir, task }) => {
+      const mine = { reason, since: new Date().toISOString(), by: 'person' };
+      task.hold = { ...mine };
+      mod.enforceBudget(task);
+      mod.enforceBudget(task);
+      assert.deepEqual(task.hold, mine);
+      assert.deepEqual(holdEvents(dir).map((e) => e.event), ['budget_stopped']);
+    }, { stream: over, opts: { budget_usd: 1 } });
+  }
+});
+
+// ---------- nothing new spawns after the stop (F7-AC-9) ----------
+// P1 runs on a live driver, P2 is parked on a usage limit, P3 is a ready dispatch; two finished
+// driver streams of $3 each. Tick 1 runs now (the park is not due), the rest 61 minutes later
+// (park due, time grace spent). The same fixture under a large budget is the control.
+async function stopTicks(budgetUsd) {
+  const { execFileSync } = await import('node:child_process');
+  const root = mkdtempSync(join(tmpdir(), 'budget-ac9-'));
+  const keys = ['HARNESS_TASKS_DIR', 'HARNESS_TEST_NO_DAEMON', 'HARNESS_CHILD_DRIVER', 'HARNESS_TEST_NO_DRIVER', 'TEAMS_RUNS_DIR'];
+  const saved = Object.fromEntries(keys.map((k) => [k, process.env[k]]));
+  Object.assign(process.env, { HARNESS_TASKS_DIR: root, HARNESS_TEST_NO_DAEMON: '1', TEAMS_RUNS_DIR: 'off', HARNESS_CHILD_DRIVER: 'node -e 0 --' });
+  delete process.env.HARNESS_TEST_NO_DRIVER;
+  const driver = liveDriver();
+  const realNow = Date.now;
+  try {
+    const daemon = await import('../mcp/daemon.mjs');
+    const store = await import('../mcp/taskstate.mjs');
+    const graph = await import('../mcp/graph.mjs');
+    const cwd = join(root, 'repo');
+    mkdirSync(cwd);
+    const git = (...a) => execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', ...a], { cwd, stdio: 'ignore' });
+    git('init', '-q', '-b', 'main');
+    writeFileSync(join(cwd, '.gitignore'), '.teams_output/\n');
+    git('add', '-A');
+    git('commit', '-qm', 'init');
+    const childRun = (id) => {
+      const wt = join(root, `wt-${id}`);
+      mkdirSync(join(wt, '.teams_output', 'broker', 'runs'), { recursive: true });
+      writeFileSync(join(wt, '.teams_output', 'broker', 'runs', `${id}.json`), JSON.stringify({ run_id: id, flow: 'develop', max_retries: 2, cwd: wt, spec: { subgoals: [{ id: 'U1', title: 'unit' }] }, nodes: [graph.node('implement:U1:1', 'implement', [], { state: 'pending', subgoal_id: 'U1' })] }));
+      return { run_id: id, cwd: wt };
+    };
+    const id = '0000aaaa-eeee-ffff-0000-444444444444';
+    const dir = store.taskDir(id);
+    mkdirSync(join(dir, 'drivers'), { recursive: true });
+    for (const n of ['judge_shape', 'judge_critique']) writeFileSync(join(dir, 'drivers', `${n}.stream.jsonl`), JSON.stringify({ type: 'result', total_cost_usd: 3, num_turns: 1, duration_ms: 1 }) + '\n');
+    const done = (nid, stage, deps) => graph.node(nid, stage, deps, { state: 'done', result: { stage_ok: true } });
+    const dispatch = (p, extra) => [graph.node(`dispatch:${p}:1`, 'dispatch', ['critique'], { subgoal_id: p, ...extra }), graph.node(`accept:${p}:1`, 'accept', [`dispatch:${p}:1`], { subgoal_id: p })];
+    writeFileSync(store.taskPath(id), JSON.stringify({
+      run_id: id, kind: 'task', store_path: store.taskPath(id), cwd, request: 'r', created_at: realNow(), flow: 'develop', flow_chosen: 'develop', size: 'L', max_retries: 2, driver_restarts: 2, base_ref: null,
+      team: { opts: { budget_usd: budgetUsd, budget_grace_minutes: 5, max_parallel_teams: 4, max_live_drivers: 8 } },
+      spec: { acceptance: ['a'], packages: ['P1', 'P2', 'P3'].map((p) => ({ id: p, title: p, flow: 'develop', brief: 'b', acceptance: ['a'], touches: [`${p}.txt`], deps: [] })) },
+      nodes: [done('size', 'size', []), done('shape', 'shape', ['size']), done('critique', 'critique', ['shape']),
+        ...dispatch('P1', { state: 'running', child: { ...childRun('c1'), driver: { ...driver, restarts: [], started_at: realNow() } } }),
+        ...dispatch('P2', { state: 'running', child: { ...childRun('c2'), driver: { pid: 2 ** 22 + 778, restarts: [], started_at: realNow() }, waiting_capacity: { reason: "You've hit your session limit", since: realNow(), first_since: realNow(), parks: 1 } } }),
+        ...dispatch('P3', {})],
+    }));
+    for (let i = 0; i < 5; i++) {
+      if (i === 1) Date.now = () => realNow() + 61 * 60000;
+      await daemon.stepOnce(id);
+    }
+    const task = JSON.parse(readFileSync(store.taskPath(id), 'utf8'));
+    return { events: ledgerOf(dir), state: Object.fromEntries(task.nodes.map((n) => [n.node_id, n.state])), spawnedPids: task.nodes.map((n) => n.child && n.child.driver && n.child.driver.pid) };
+  } finally {
+    Date.now = realNow;
+    try { process.kill(-driver.pid, 'SIGKILL'); } catch {}
+    for (const [k, v] of Object.entries(saved)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
+    await new Promise((r) => setTimeout(r, 500));
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
+test('after budget_stopped: no new driver or dispatch, budget_killed after the grace, no parked dispatch resumed (control: same fixture under budget does all three)', async () => {
+  const count = (r, ev, nodeId) => r.events.filter((e) => e.event === ev && (!nodeId || e.node_id === nodeId)).length;
+  const control = await stopTicks(1000);
+  assert.equal(count(control, 'budget_stopped'), 0);
+  assert.equal(count(control, 'child_driver_spawned', 'dispatch:P3:1'), 1, 'control: the ready dispatch is opened');
+  assert.equal(count(control, 'daemon_capacity_resumed'), 1, 'control: the parked dispatch is resumed once due');
+  assert.equal(count(control, 'budget_killed'), 0);
+  const capacityRestarts = control.events.filter((e) => e.event === 'child_driver_restarted' && e.node_id === 'dispatch:P2:1' && e.reason === 'reset_capacity');
+  assert.equal(capacityRestarts.length, 1, "control: the parked dispatch's dead driver is restarted");
+
+  // Judge starts are not verified here: this fixture has no judge process.
+  const r = await stopTicks(5.9);
+  assert.equal(count(r, 'budget_stopped'), 1);
+  assert.equal(count(r, 'task_held'), 1);
+  assert.equal(count(r, 'child_driver_spawned'), 0);
+  assert.equal(count(r, 'child_driver_restarted'), 0);
+  assert.equal(count(r, 'daemon_capacity_resumed'), 0);
+  assert.equal(r.state['dispatch:P3:1'] === 'running', false, 'no new claim');
+  assert.equal(count(r, 'budget_killed', 'dispatch:P2:1'), 1, 'the parked dispatch is settled at once');
+  assert.equal(count(r, 'budget_killed', 'dispatch:P1:1'), 1, 'the running dispatch is killed after the grace');
+  const at = (nodeId) => r.events.find((e) => e.event === 'budget_killed' && e.node_id === nodeId).ts;
+  assert.ok(at('dispatch:P1:1') - at('dispatch:P2:1') >= 5 * 60000, 'P1 only after the grace');
+});
+
+// The tick above settles a parked dispatch at the stop, before its park is due, so it never reaches
+// autoResumeCapacity's own refusal. Here the stop is set and the park is due but not yet settled.
+// The clock is passed explicitly: the park is two hours old at `now`.
+test('autoResumeCapacity under budget_stopped resumes no due, unsettled park (control: same fixture without the stop resumes)', async () => {
+  const { mutateTask } = await import('../mcp/store.mjs');
+  const was = process.env.HARNESS_TEST_NO_DRIVER;
+  process.env.HARNESS_TEST_NO_DRIVER = '1';
+  const resume = (stopped) => {
+    let out;
+    withTask(({ dir, task }) => {
+      const now = Date.now();
+      const since = now - 2 * 3600000;
+      const parked = { reason: "You've hit your session limit", since, first_since: since, parks: 1 };
+      const path = join(dir, 'task.json');
+      Object.assign(task, { kind: 'task', store_path: path, nodes: [{ node_id: 'dispatch:P1:1', stage: 'dispatch', subgoal_id: 'P1', state: 'running', deps: [], after: [], child: { cwd: dir, run_id: 'c1', waiting_capacity: parked } }] });
+      if (stopped) task.budget_stopped = { at: now, spend: 2 };
+      writeFileSync(path, JSON.stringify(task));
+      writeFileSync(join(dir, 'ledger.jsonl'), '');
+      const resumed = mutateTask('T1', (t) => facade.autoResumeCapacity(t, now));
+      const after = JSON.parse(readFileSync(path, 'utf8'));
+      out = { resumed, parked: !!after.nodes[0].child.waiting_capacity, events: ledgerOf(dir).map((e) => e.event) };
+    }, { stream: null });
+    return out;
+  };
+  try {
+    assert.deepEqual(resume(false), { resumed: true, parked: false, events: ['child_driver_capacity_cleared', 'daemon_capacity_resumed'] });
+    assert.deepEqual(resume(true), { resumed: false, parked: true, events: [] });
+  } finally {
+    if (was === undefined) delete process.env.HARNESS_TEST_NO_DRIVER; else process.env.HARNESS_TEST_NO_DRIVER = was;
+  }
+});
+
 // ---------- closeFailedPlanning: the deciding attempt (card 129, E-89982ed5) ----------
 const pNode = (node_id, stage, subgoal_id, attempt, state, extra = {}) => ({
   node_id, stage, subgoal_id, attempt, deps: [], after: [], state, final: state === 'failed' || state === 'done', result: null, ...extra,

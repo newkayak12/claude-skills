@@ -1,7 +1,7 @@
 // taskmanager-repair.mjs - repair, defect STORYs, upstream defects, the audit phase-Team; split out of taskmanager.mjs (card 128 step 1), moved verbatim.
 import { loadRun, nextIndex, node, pushChain, saveRun, settleFailure } from './graph.mjs';
 import { docPaths, latestBySubgoal, livePlanningPkgs, packageFiling, phaseOfId, planningPkgs, planningStories, qaPkgs, storyLabel } from './tickets.mjs';
-import { record, resolveHarnessRun } from './taskstate.mjs';
+import { clearHold, record, resolveHarnessRun } from './taskstate.mjs';
 import { spawnSync } from 'node:child_process';
 import { TEAM_DEFAULTS } from './teamconfig.mjs';
 import { existsSync } from 'node:fs';
@@ -549,6 +549,7 @@ function reopenParkedJudge(task, n) {
   n.reopened = (n.reopened || 0) + 1;
   delete n.result; delete n.finished_at; delete n.started_at;
   record(task, { event: 'judge_capacity_cleared', task_id: task.run_id, node_id: n.node_id });
+  clearHold(task, { by: 'engine', reasonPrefix: 'waiting_capacity:' });
 }
 
 // The daemon's own tm_retry({reset_capacity:true}): once the reset time a provider named has
