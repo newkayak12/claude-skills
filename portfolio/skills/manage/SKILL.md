@@ -145,7 +145,7 @@ context or in a figure either; `claims` flags it on any page citing the item), w
    `references/principles.md` § Chapters. Assemble after the last chapter, then review the
    whole once for what spans chapters: contents vs titles, one cover archetype, appendix size,
    figure forms by page role (user, 2026-11-24: "작은 단위로 작성-퇴고 나중에 모아서 진행").
-   Each page that carries a figure or a reason cites its items on one line under its heading, `글감: <id>, <id>` (a ledger item is
+   Every page heading names its template archetype, `## N쪽 · @sK · 제목` (without it `sync` and `verify-build` matched nothing, bench29a). Each page that carries a figure or a reason cites its items on one line under its heading, `글감: <id>, <id>` (a ledger item is
    `NN_프로젝트/A1`, never a README or index; a fact only `확정사실.md` holds needs no cite); a reason the item does not give is written `[확인 필요: …]`, never filled in.
    The draft ends with `claims`: each problem fixed (a `제외` item's lines go) or left `[확인 필요]`. A `no_figure`
    page cites results but shows none: put the result the reader needs on it (claims offers them, results first) —

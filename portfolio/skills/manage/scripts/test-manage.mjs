@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { spawnSync } from 'node:child_process'
-import { svgLines, bannedFigs, heldFigs, addQuestion, readQuestions, roundCheck, freezeStable, enginePathWarnings, safeArea, bump, claims, compare, confirmedFacts, deckPages, figs, headings, intake, resumePages, keepRender, layout, parseMap, readMaterial, readRounds, renumber, round, scaffold, selection, settle, settled, settledNote, snapshot, step, sync, verify, verifyBuild } from './manage.mjs'
+import { svgLines, bannedFigs, heldFigs, frameSlots, addQuestion, readQuestions, roundCheck, freezeStable, enginePathWarnings, safeArea, bump, claims, compare, confirmedFacts, deckPages, figs, headings, intake, resumePages, keepRender, layout, parseMap, readMaterial, readRounds, renumber, round, scaffold, selection, settle, settled, settledNote, snapshot, step, sync, verify, verifyBuild } from './manage.mjs'
 import { deflateRawSync } from 'node:zlib'
 
 const SKEL = `# 가상 포트폴리오
@@ -488,6 +488,12 @@ test('claims: a cover, contents or appendix attachment page is never no_figure',
   const page = h => `## ${h}\n글감: 01_이관/A1\n- 전환을 했습니다\n`
   const r = claims([page('4쪽 · 1장 배송 추적 이관'), page('21쪽 · 첨부 1 · 설계 문서'), page('5쪽 · 기준을 남겼습니다')].join('\n'), readMaterial(root))
   assert.deepEqual(r.problems.filter(p => p.kind === 'no_figure').map(p => p.page), [5])
+  // the deck source keeps only `@sN`: the skeleton's frame titles name which archetypes are frames
+  const skel = '## 4쪽 · @s5 · 1장 배송 추적 이관\n## 5쪽 · @s12 · 기준을 남겼습니다\n'
+  assert.deepEqual([...frameSlots(skel)], ['@s5'])
+  const mdx = deckPages('## @s5 4쪽 · 글감: 01_이관/A1\ntext1: 전환을 했습니다\n## @s12 5쪽 · 글감: 01_이관/A1\ntext1: 전환을 했습니다\n')
+  const d = claims(mdx, readMaterial(root), [], null, [], frameSlots(skel))
+  assert.deepEqual(d.problems.filter(p => p.kind === 'no_figure').map(p => p.page), [5])
 })
 
 test('selection: an item whose scene is a weak pass goes to 부록, never 제외', () => {
@@ -645,8 +651,8 @@ test('claims reads deck.mdx: one page per slide, cites from the slide comment, s
   const root = claimsWorkspace()
   const deck = '---\ntemplate: t.pptx\n---\n\n## @s1 표지\ntitle: 가상 인물\n\n## @s3 2쪽 · 글감: retro--검색-지연\ntitle: 검색이 느렸다\ntext1:\n  - 응답 시간 820ms → 210ms\n  - 조회 비용 40% 감소\npic1: assets/a.svg\nnotes: 99% 말로\n\n## @s3\ntitle: 알림\ntext1: 대기 5분 감소\n'
   const pages = deckPages(deck)
-  assert.match(pages, /^## 1쪽\n가상 인물/m)
-  assert.match(pages, /## 2쪽\n글감: retro--검색-지연\n검색이 느렸다\n응답 시간 820ms → 210ms\n조회 비용 40% 감소/)
+  assert.match(pages, /^## 1쪽 · @s1\n가상 인물/m)
+  assert.match(pages, /## 2쪽 · @s3\n글감: retro--검색-지연\n검색이 느렸다\n응답 시간 820ms → 210ms\n조회 비용 40% 감소/)
   assert.ok(!pages.includes('99%') && !pages.includes('a.svg'))
   const r = claims(pages, readMaterial(root))
   assert.deepEqual(r.problems.map(p => `${p.page}:${p.kind}`), ['2:unsupported', '3:uncited'])

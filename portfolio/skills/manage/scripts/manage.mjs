@@ -936,11 +936,11 @@ export function deckPages(text, readSvg = null) {
   const out = []
   let page = 0
   for (const l of text.replace(/^---\n[\s\S]*?\n---\n/, '').split('\n')) {
-    const s = l.match(/^##\s+@s\d+\b(.*)$/)
+    const s = l.match(/^##\s+(@s\d+)\b(.*)$/)
     if (s) {
-      page = Number(s[1].match(/(\d+)쪽/)?.[1] ?? page + 1)
-      out.push(`## ${page}쪽`)
-      const c = s[1].match(/글감\s*:\s*([^·|]+)/)
+      page = Number(s[2].match(/(\d+)쪽/)?.[1] ?? page + 1)
+      out.push(`## ${page}쪽 · ${s[1]}`)
+      const c = s[2].match(/글감\s*:\s*([^·|]+)/)
       if (c) out.push(`글감: ${c[1].trim()}`)
       continue
     }
@@ -1045,7 +1045,15 @@ export function settle(findings, lines) {
 
 // With a selection (sources/선정.md), a page citing an item marked 제외 is a problem, the reverse
 // lists cover only 본문/부록 items, and items the table does not name are listed `unselected`.
-export function claims(text, items, settledLines = [], sel = null, confirmed = []) {
+// A cover, contents or appendix-attachment page by its title; the deck source keeps only `@sN`, so
+// the archetypes the skeleton gives such titles are read from it (`frameSlots`).
+const FRAME_TITLE = /표지|내지|목차|첨부|부록|프로필|핵심 역량|·\s*\d+장\s/
+export function frameSlots(skeleton) {
+  return new Set(String(skeleton || '').split('\n').filter(l => HEADING.test(l) && FRAME_TITLE.test(l))
+    .flatMap(l => l.match(/@s\d+\b/g) || []))
+}
+
+export function claims(text, items, settledLines = [], sel = null, confirmed = [], frameSlots = new Set()) {
   const use = new Map((sel?.rows || []).map(r => [r.id, r.use]))
   // `안 씀: 149건, 14건` (or `쓰지 않음:`) in a row's 이유: figures that item never shows
   const held = new Map((sel?.rows || []).map(r => {
@@ -1099,7 +1107,8 @@ export function claims(text, items, settledLines = [], sel = null, confirmed = [
     const pageFigs = p.body.flatMap(figs)
     // a cover, contents or appendix attachment shows no result of its own: the document is the
     // evidence there (three full-skeleton runs were left with 10, 14 and 19 such pages, 2026-11-26)
-    const frame = /표지|내지|목차|첨부|부록|프로필|핵심 역량|@s5\b|·\s*\d+장\s/.test(p.title || '')
+    const slot = (p.title || '').match(/@s\d+\b/)?.[0]
+    const frame = FRAME_TITLE.test(p.title || '') || (slot && frameSlots.has(slot))
     if (offer.length && !pageFigs.length && !frame)
       problems.push({ page: p.page, kind: 'no_figure', text: `cites ${known.join(', ')} but carries none of their figures — put one on the page: ${[...new Set(offer)].slice(0, 4).join(', ')}` })
     for (const line of p.body) {
@@ -1667,8 +1676,11 @@ export function verifyBuild(root) {
   const footnotes_absent = footnotes.filter(f => !built.includes(flat(f)))
   const assets_absent = [...deckText.matchAll(/^\s*[a-z][a-z0-9_]*:[ \t]*(\S+\.(?:png|jpe?g|svg|gif))(?:\s*\|.*)?$/gim)]
     .map(m => m[1]).filter(f => !existsSync(join(dirname(deckPath), f)))
-  return { checked, absent, footnotes: footnotes.length, footnotes_absent, assets_absent,
-    ok: !absent.length && !footnotes_absent.length && !assets_absent.length }
+  // checking nothing proves nothing: a skeleton whose headings carry no `@sN` matched 0 slots and
+  // still reported ok (bench29a, 2026-11-26)
+  const none = checked ? undefined : 'no skeleton slot was checked: page headings carry no `@sN` (write `## N쪽 · @sK · 제목`)'
+  return { checked, absent, footnotes: footnotes.length, footnotes_absent, assets_absent, ...(none ? { problem: none } : {}),
+    ok: !!checked && !absent.length && !footnotes_absent.length && !assets_absent.length }
 }
 
 // ── the round's record folder: snapshot/rounds/round-NN/ ──
@@ -1889,7 +1901,9 @@ function main() {
     const text = readFileSync(file, 'utf8')
     const readSvg = p => { try { return readFileSync(resolve(dirname(file), p), 'utf8') } catch { return null } }
     const pages = /^##\s+@s\d+/m.test(text) ? deckPages(text, readSvg) :/(resume\.md|resume-deck\.mdx)$/.test(file) ? resumePages(text) : text
-    out = claims(pages, readMaterial(root), settled(root), selection(root), confirmedFacts(root))
+    let skel = ''
+    try { skel = readFileSync(wsFile(root, SKELETON), 'utf8') } catch { /* no skeleton yet */ }
+    out = claims(pages, readMaterial(root), settled(root), selection(root), confirmedFacts(root), frameSlots(skel))
     const note = settledNote(root)
     if (note) out.settled_note = note
   } else if (cmd === 'settle') {
