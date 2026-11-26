@@ -1,7 +1,8 @@
 # Lenses — the rendered text read five ways at once
 
 Step 3b of `render-review`. One opus subagent per lens, all five sent in **one message** so they run
-together. Each gets the same input and only its own lens; none edits a file.
+together. Each gets the same input and only its own lens; none edits the deck, skeleton or any input — each
+writes only its own `lens-<name>.md` (SKILL.md step 3b).
 
 ## Input every lens gets
 
@@ -9,7 +10,10 @@ together. Each gets the same input and only its own lens; none edits a file.
   (pdftotext or PyMuPDF through the same renderer, `DECK_RENDER_DOCKER` included), with the page number.
 - The render's own measures for that page: the `layout:` lines, `held …` lines and `figure text:`
   lines in `build/render.txt`, which `deck.py render` writes beside the PDF (figure text pt reached,
-  lone words, split numbers, zones). A resume has no such file; say so in the prompt.
+  lone words, split numbers, zones). A resume has no such file; say so in the prompt. `figure text:`
+  is printed only when a figure fell under 7.5pt: no such line means none did, not that it went unmeasured.
+- Workspace file names may be decomposed Hangul (NFD): give each lens the paths as `ls` prints them,
+  never retyped (two lenses reported `docs/확정사실.md` missing, bench29a).
 - `portfolio-skeleton.md` / `resume-skeleton.md` headlines, so a lens knows what each page claims.
 - The `[확정]` list from `manage` (settled wording): a settled sentence is not a finding.
 
