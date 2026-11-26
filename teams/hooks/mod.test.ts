@@ -11,7 +11,7 @@ import { STAGE_KEYS, stageOfNode } from '../scripts/lib/view-stages.mjs'
 import { askBandShown, backOf, carriesInput, escRoute, f2Key, HOME, levelOf, nextFlag, PAGE_KEYS, pageEsc, pageKey, pageStep, paneSlash, reconcileEpic, selectedOf, startNav, statusAnswer } from './pane'
 import type { Page, PageName, PageNav, RowRef, StepCtx } from './pane'
 import { NOW_KINDS } from '../scripts/lib/view-summary.mjs'
-import { KEYS_CHROME, SPINNER, clipText, clipWords, columnWidths, crumbFit, epicLines, footerPlan, handoffCells, homeRows, padText, phaseModel, phaseRowIds, plain, rowLine, runningRows,since, storyNow, storyReportLines, width, workerCells } from './teams-draw'
+import { KEYS_CHROME, SPINNER, TINT, clipText, clipWords, columnWidths, crumbFit, epicLines, floorRows, footerPlan, handoffCells, homeRows, padText, pageLines, phaseBar, phaseModel, phaseRowIds, plain, rowLine, rowTone, runningRows,since, storyNow, storyReportLines, width, workerCells } from './teams-draw'
 import type { PageOpts } from './teams-draw'
 
 const SURFACES = ['terminal', 'desktop', 'mobile', 'vscode'] as const
@@ -2371,7 +2371,7 @@ for (const surface of SURFACES) {
     const text = await shown(ui)
     expect(text).toContain('E-wwwwwwww · in a worktree')
     expect(text).toContain('E-mmmmmmmm · own checkout')
-    expect(text.split('⑂').length).toBe(2)
+    expect(text.split('⑂').length).toBe(3) // card 182: the Button's label and the same text in its tinted Text children
     expect(text.indexOf('in a worktree')).toBeLessThan(text.indexOf('⑂ wt'))
   })
   test(`${surface}: card 127 band reads key · name · ⑂ wt — now; null shows no ⑂`, async ($, on) => {
@@ -2893,7 +2893,7 @@ test('FLOOR: six Phase rows with mark, number, name, elapsed, cost, who works, d
   const [plan, build, integrate, , , report] = rows as [string, string, string, string, string, string]
   for (const part of ['✔', '1 Plan', '5m', '$0.40', 'decisions 3']) expect(plan).toContain(part)
   for (const part of ['●', '2 Build', '14m', '$2.07', '2 working', 'decisions 1', '⚑ 1', '⏸ 1']) expect(build).toContain(part)
-  expect(integrate).toMatch(/○ +3 Integrate +–/)
+  expect(integrate).toMatch(/○ +3 Integrate +░{6} +–/)
   expect(report).toContain('6 Report')
   expect(report).toContain('EPIC report opens here')
   expect(lines.at(-1)).toContain('w s move/click · d ⏎ Phase detail')
@@ -3378,7 +3378,7 @@ test('PHASE: Running, Handed over and Decisions in that order; the workers, the 
   // time · STORY · who · what, score, reason · where it goes
   expect(feed[0]).toMatch(/14:03 +S2 +judge +reject 61 "AC 3 missing" +→ implementer/)
   expect(feed[1]).toMatch(/13:58 +S1 +integrated 1 +→ judge/)
-  expect(feed[2]).toMatch(/13:52 +S2 +TeamLeader +needs you +"How many retries on refund failure\?" *$/)
+  expect(feed[2]).toMatch(/13:52 +S2 +TeamLeader +needs you +"How many retries on refund failure\?" *│$/)
   expect(feed[2]).not.toMatch(/→|asks you/) // the person is named once, by the state word
   expect(feed[3]).toMatch(/13:40 +S1 +judge +accept 91 +→ integrate/)
   // only the Build thread: the STORY's own verdict; the Plan entries are not here
@@ -3422,7 +3422,8 @@ test('PHASE: the Phase\'s own counts (working, needs you, stalled, decisions) ar
 test('PHASE: with no phases[] from the engine no count is drawn for the Phase', async ($, on) => {
   const bare = await homeLines($, on, 190, PAGES_FIXTURE({ tasks: P_TASKS({ phases: undefined }) }), 'terminal', undefined, { page: PHASE_BUILD })
   expect(bare.lines.join('\n')).not.toMatch(/decisions \d|working · /)
-  expect(bare.lines[2]).toContain('Running')
+  expect(bare.lines[2]).toMatch(/^┌─+┐$/) // card 182: the Running section's box, its head on the next line
+  expect(bare.lines[3]).toContain('Running')
 })
 
 test('PHASE: the rows are drawn through keys; w and s move the selected row, the window follows it, stopping at both ends', async ($, on) => {
@@ -3442,7 +3443,7 @@ test('PHASE: the rows are drawn through keys; w and s move the selected row, the
   expect(end.join('\n')).not.toContain('▼ ')
   expect(end.join('\n')).toContain('▲ ')
   expect(end.join('\n')).toContain('10:23')
-  expect(end.filter(l => l.startsWith('▸'))).toHaveLength(1)
+  expect(end.filter(l => l.startsWith('│ ▸'))).toHaveLength(1)
   for (let i = 0; i < 80; i++) await pressKey(ui, 'w')
   expect(sel()).toBe('w:S3')
   expect((await linesAt(ui, 190)).join('\n')).not.toContain('▲ ')
@@ -3589,7 +3590,8 @@ test('PHASE thread in Korean: verdict, answer (actor human), proposal "size S ·
   const { lines, ui } = await homeLines($, on, 190, PAGES_FIXTURE(), 'terminal', 'korean', { page: PHASE_PLAN })
   sound(lines, 190)
   const text = visible(await ui.drawn())
-  const thread = lines.slice(at$(lines, '결정 (이 Phase)') + 1, -1) // up to the footer line
+  // up to the footer line, without the section box's bottom edge and its side edges (card 182)
+  const thread = lines.slice(at$(lines, '결정 (이 Phase)') + 1, -1).filter(l => !l.startsWith('└')).map(l => l.replace(/^│ | *│$/g, ''))
   expect(thread).toHaveLength(6) // five entries and the verdict's one gap line; the STORY's own verdict belongs to Build
   expect(thread[0]).toMatch(/09:58 +claude·opus +제안 +size +규모 S · develop$/)
   expect(thread[1]).toMatch(/10:05 +claude·sonnet +반려 70% +critique +AC 3 missing$/)
@@ -4503,11 +4505,13 @@ for (const [lang, w] of [[undefined, WAIT_WORD.en], ['korean', WAIT_WORD.ko]] as
     expect(bare.lines.join('\n')).not.toMatch(/STORY \d+ \/|implementer \d/)
   })
 
-  test(`FLOOR ${lang ?? 'English'} at 110: the STORY / subagent cell stays, the roles cell drops first`, async ($, on) => {
+  // card 182: the Phase bar is on the row, so at 110 the desks (roles, then STORY / subagent) go before the bar does
+  test(`FLOOR ${lang ?? 'English'} at 110: the roles cell, then the STORY / subagent cell drop before the bar`, async ($, on) => {
     const { lines } = await homeLines($, on, 110, LEFT_FLOOR(), 'terminal', lang, { page: FLOOR_PAGE })
     const build = lines.find(l => l.includes('2 Build'))!
-    expect(build).toContain(lang === undefined ? 'STORY 2 / subagent 2' : 'STORY 2 / 서브에이전트 2')
+    expect(build).toMatch(/[█░]{6}/)
     expect(build).not.toContain('implementer')
+    expect(build).not.toMatch(/STORY \d/)
   })
 
   for (const cols of [110, 30]) {
@@ -4664,8 +4668,9 @@ for (const c of W110_CASES) {
             expect(lines[0]).toContain(`${t.f2FloorPhaseOf.replace('{n}', '2')} ${t.f2PhaseNameBuild}`)
             expect(lines[0]).toContain(c.size === 'L-FLOOR' ? '$2.47' : '~$10.86')
             const report = row(new RegExp(`6 ${t.f2PhaseNameReport}`))!
-            expect(report).toContain(lang === 'en' ? 'EPIC report' : 'EPIC 보고서')
-            if (term === 190 || c.size === 'L-FLOOR-est') expect(report).toContain(t.f2FloorReportHint)
+            // card 182: the FLOOR box takes 4 cells, so at 110 the hint is cut with … after its first words
+            expect(report).toContain(term === 190 ? (lang === 'en' ? 'EPIC report' : 'EPIC 보고서') : 'EPIC')
+            if (term === 190) expect(report).toContain(t.f2FloorReportHint)
           }
           if (c.size === 'S-FLOOR') {
             for (const w of lang === 'en' ? ['Plan', 'Implement', 'Test', 'Gate', 'Report'] : ['계획', '구현', '테스트', '게이트', '보고']) expect(body).toMatch(wholeName(w))
@@ -4691,8 +4696,10 @@ for (const c of W110_CASES) {
             expect(lines.at(-1)).toContain(W110_FOOT[c.foot][lang][term])
             if (term === 110) expect(lines.at(-1)).not.toContain(lang === 'en' ? 'w s move' : 'w s 이동')
           }
-          // the STORY/PHASE/LOG pages are not this card's: their own boxes fill the pane (sound() below holds them to cols - 4)
-          for (const l of lines) expect(width(l)).toBeLessThanOrEqual(LIVE[term] - (c.size === 'FOOT-STORY' ? 4 : 8))
+          // the STORY page's own boxes, and (card 182) the FLOOR and PHASE section boxes, fill the pane (sound() below holds them to cols - 4)
+          const boxed = c.size === 'FOOT-STORY' || /FLOOR|PHASE/.test(c.size)
+          // box lines fill the frame body (cols - 4); every other line (header, counts, footer) keeps cols - 8
+          for (const l of lines) expect(width(l)).toBeLessThanOrEqual(LIVE[term] - (c.size === 'FOOT-STORY' || (boxed && /^\s*[┌│└├╭╰╔║╚]/.test(l)) ? 4 : 8))
           sound(lines, LIVE[term])
         })
       }
@@ -5012,7 +5019,9 @@ for (const surface of SURFACES) {
     const seen = await accSeed($, on, surface)
     const ui = await atCols($, surface, 190)
     for (const k of [`e:${ATID}`, `s:${ATID}:P1`, `s:${ATID}:P2`]) expect(await keysOf(ui)).toContain(k)
-    expect(await ui.findAll({ type: 'Text', text: /E-c0ffee00 ·/ })).toEqual([]) // no row text is left as a plain Text
+    // no row text is left as a plain Text: card 182 draws it as the Button's own tinted Text children
+    const outside = (n: any): any[] => (n === null || typeof n !== 'object' || n.type === 'Button' ? [] : [...(n.type === 'Text' && /E-c0ffee00 ·/.test(JSON.stringify(n)) ? [n] : []), ...(n.children ?? []).flatMap(outside)])
+    expect(outside(await ui.drawn())).toEqual([])
     expect(await pressTo(seen, ui, `s:${ATID}:P2`, HOME_PAGE)).toEqual(accPage('STORY', { story: 'P2' }))
     expect(await pressTo(seen, ui, `e:${ATID}`, HOME_PAGE)).toEqual(accPage('FLOOR'))
   })
@@ -5375,3 +5384,417 @@ test('F5-AC-12: a capacity-parked task held by a person says held plus paused: p
     expect([page.epic[6], page.story[5], ...page.workers.flat()].join(' ')).not.toContain('51')
   }
 })
+
+// ---- card 182 U1 ----
+// The test renderer draws a nested bordered Box, a Button's children text and optional ANSI colour.
+{
+  const T = (props: Record<string, any>, ...children: any[]) => ({ type: 'Text', props, children })
+  const B = (props: Record<string, any>, ...children: any[]) => ({ type: 'Box', props, children })
+  const Btn = (props: Record<string, any>, ...children: any[]) => ({ type: 'Button', props, children })
+  const inBox = B({ flexDirection: 'column', borderStyle: 'single' }, T({}, 'abc'), T({}, 'de'))
+
+  test('card 182 U1: the root is laid out without its border; frame() draws the pane border once', () => {
+    const root = B({ flexDirection: 'column', borderStyle: 'round', borderColor: 'claude', paddingX: 1 }, T({}, 'hello'))
+    expect(draw(root, 20)).toEqual(['hello'])
+    const lines = frame(root, 'Teams', 30)
+    expect(lines.filter(l => l.startsWith('╭')).length).toBe(1)
+    expect(lines.filter(l => l.startsWith('╰')).length).toBe(1)
+  })
+
+  test('card 182 U1: a nested bordered Box is w+2 cols and h+2 rows', () => {
+    const lines = draw(B({ flexDirection: 'column' }, inBox), 12)
+    expect(lines.length).toBe(4)
+    expect(lines.map(cells)).toEqual([12, 12, 12, 12])
+    expect(lines[0]).toBe('┌──────────┐')
+    expect(lines[1]).toBe('│abc       │')
+    expect(lines[3]).toBe('└──────────┘')
+  })
+
+  test('card 182 U1: paddingX is honoured inside the border; content width is given - 2 - 2*paddingX', () => {
+    const box = B({ flexDirection: 'column', borderStyle: 'round', paddingX: 1 }, T({ wrap: 'truncate-end' }, 'abcdefghijklmnop'))
+    const lines = draw(B({ flexDirection: 'column' }, box), 10)
+    expect(lines.map(cells)).toEqual([10, 10, 10])
+    expect(lines[1]).toBe('│ abcde… │')
+  })
+
+  test('card 182 U1: in a row a bordered Box takes its content width', () => {
+    const lines = draw(B({}, B({ borderStyle: 'single' }, T({}, 'xy')), T({}, 'z')), 30)
+    expect(lines).toEqual(['┌──┐z', '│xy│ ', '└──┘ '])
+  })
+
+  test('card 182 U1: a Button without a label draws the text of its children', () => {
+    expect(draw(B({ flexDirection: 'column' }, Btn({ key: 'a' }, T({ color: 'error' }, 'one'), ' two')), 20)).toEqual(['one two'])
+    expect(draw(B({ flexDirection: 'column' }, Btn({ key: 'a', label: 'lab' }, T({}, 'kid'))), 20)).toEqual(['lab'])
+  })
+
+  test('card 182 U1: ANSI frames colour Text runs; cells() of an ANSI line equals its plain line', () => {
+    const tree = B({ flexDirection: 'column' },
+      Btn({ key: 'a', label: '● run dim bad' }, T({ color: 'claude' }, '● run'), ' ', T({ dimColor: true }, 'dim'), T({ bold: true, color: 'error' }, ' bad')),
+      B({ flexDirection: 'column', borderStyle: 'single', borderDimColor: true }, T({ color: 'success' }, 'ok')))
+    const plain = frame(tree, 'Teams', 40)
+    const ansi = frame(tree, 'Teams', 40, { ansi: true })
+    expect(plain.join('\n')).not.toContain('\x1b')
+    expect(ansi.join('\n')).toContain('\x1b[38;5;173m')
+    expect(ansi.join('\n')).toContain('\x1b[32m')
+    expect(ansi.join('\n')).toContain('\x1b[2m')
+    expect(ansi.map(cells)).toEqual(plain.map(cells))
+    expect(ansi.map(l => l.replace(/\x1b\[[0-9;]*m/g, ''))).toEqual(plain)
+    expect(frame(tree, 'Teams', 40)).toEqual(plain)
+  })
+
+  test('card 182 U1: an ANSI line cut by fit() keeps its cells and ends reset', () => {
+    const lines = draw(B({ flexDirection: 'column' }, T({ wrap: 'truncate-end', color: 'error' }, 'abcdefghijkl')), 8)
+    expect(lines.length).toBe(1)
+    expect(cells(lines[0]!)).toBe(8)
+    expect(lines[0]!.endsWith('…')).toBe(true)
+    const a = frame(B({ flexDirection: 'column' }, T({ wrap: 'truncate-end', color: 'error' }, 'abcdefghijkl')), 'T', 12, { ansi: true })
+    expect(cells(a[1]!)).toBe(12)
+    expect(a[1]!).toContain('\x1b[0m')
+  })
+}
+
+// ---- card 182 U2 ----
+// Draw helpers: held has its own tint, rowTone, phaseBar, the FLOOR bar column, PhaseItem sections.
+{
+  const sayEn = ((k: string, v?: Record<string, string | number>) =>
+    String((STRINGS.en as Record<string, string>)[k] ?? k).replace(/\{(\w+)\}/g, (_m, n: string) => String(v?.[n] ?? ''))) as never
+  const stage = (key: string, state: string) => ({ key, state })
+  const fixture = (over: Record<string, unknown> = {}) => ({
+    task_id: 'E-1', key: 'E-1', title: 'Demo', live: true, state: 'running', items: [], workers: [], handoffs: [],
+    stages: [stage('plan', 'done'), stage('build', 'running'), stage('integrate', 'pending'), stage('qa', 'pending'), stage('gate', 'pending'), stage('report', 'pending')],
+    phases: [{ key: 'build', workers: 4, acting: 2, you: 0, stalled: 0, idle: 0, done: 1 }],
+    ...over,
+  }) as never
+  const PHASE_NAMES = ['Plan', 'Build', 'Integ', 'QA', 'Gate', 'Report']
+
+  test('card 182 U2: held has its own tint, apart from stalled', () => {
+    expect(TINT.held).toBe('suggestion')
+    expect(TINT.stalled).toBe('inactive')
+    expect(TINT.held).not.toBe(TINT.stalled)
+  })
+
+  test('card 182 U2: rowTone table, one case per state', () => {
+    expect(rowTone({ mark: 'failed' })).toBe('error')
+    expect(rowTone({ mark: 'running', you: 1 })).toBe('warning')
+    expect(rowTone({ mark: 'running', held: true })).toBe('suggestion')
+    expect(rowTone({ mark: 'running' })).toBe('claude')
+    expect(rowTone({ mark: 'done' })).toBe('success')
+    expect(rowTone({ mark: 'pending' })).toBe('dim')
+    expect(rowTone({ stalled: true })).toBe('inactive')
+  })
+
+  test('card 182 U2: rowTone precedence failed > you > held > running > done > pending > stalled', () => {
+    expect(rowTone({ mark: 'failed', you: 2, held: true })).toBe('error')
+    expect(rowTone({ mark: 'running', you: 2, held: true })).toBe('warning')
+    expect(rowTone({ mark: 'done', held: true })).toBe('suggestion')
+    expect(rowTone({ mark: 'pending', stalled: true })).toBe('dim')
+    expect(rowTone({ mark: 'done', stalled: true })).toBe('success')
+    expect(rowTone({ mark: 'running', you: 0 })).toBe('claude')
+  })
+
+  test('card 182 U2: phaseBar is exactly w cells for total 0, 1, 4 and every done', () => {
+    for (const total of [0, 1, 4]) {
+      for (let d = 0; d <= total; d++) for (const w of [0, 1, 8, 12]) expect(width(plain(phaseBar(d, total, w, 'claude')))).toBe(w)
+    }
+    expect(plain(phaseBar(2, 4, 8, 'claude'))).toBe('████░░░░')
+    expect(plain(phaseBar(4, 4, 8, 'success'))).toBe('████████')
+    expect(plain(phaseBar(0, 4, 8, 'claude'))).toBe('░░░░░░░░')
+    expect(phaseBar(2, 4, 8, 'claude')[0]).toEqual({ t: '████', tint: 'claude' })
+    expect(plain(phaseBar(9, 4, 8, 'claude'))).toBe('████████')
+  })
+
+  test('card 182 U2: floorRows adds the bar cell filled by D3 and tints mark and name by tone', () => {
+    const rows = floorRows(fixture({ progress: { key: 'build', done: 1, total: 3 } }), sayEn)
+    const bar = (i: number) => plain(rows[i]!.cells[3] as never)
+    expect(bar(0)).toBe('██████')
+    expect(bar(1)).toBe('██░░░░')
+    expect(bar(2)).toBe('░░░░░░')
+    expect(rows.map(r => width(plain(r.cells[3] as never)))).toEqual([6, 6, 6, 6, 6, 6])
+    expect(rows[0]!.tints.slice(1, 3)).toEqual(['success', 'success'])
+    expect(rows[1]!.tints.slice(1, 3)).toEqual(['claude', 'claude'])
+    expect(rows[2]!.tints.slice(1, 3)).toEqual(['dim', 'dim'])
+    // no workers on the Phase: the EPIC's progress when it is this Phase's
+    const own = floorRows(fixture({ phases: [], progress: { key: 'build', done: 1, total: 4 } }), sayEn)
+    expect(plain(own[1]!.cells[3] as never)).toBe('██░░░░')
+    expect(plain(floorRows(fixture({ phases: [] }), sayEn)[1]!.cells[3] as never)).toBe('░░░░░░')
+  })
+
+  test('card 182 U2: floorRows tones a waiting, failed and held Phase', () => {
+    const waiting = floorRows(fixture({ phases: [{ key: 'build', workers: 4, acting: 1, you: 1, stalled: 0, idle: 0, done: 1 }] }), sayEn)
+    expect(waiting[1]!.tints.slice(1, 3)).toEqual(['warning', 'warning'])
+    const failed = floorRows(fixture({ stages: [stage('plan', 'done'), stage('build', 'failed')] }), sayEn)
+    expect(failed[1]!.tints.slice(1, 3)).toEqual(['error', 'error'])
+    const held = floorRows(fixture({ hold: { reason: 'later', since: 1, by: 'person' } }), sayEn)
+    expect(held[1]!.tints.slice(1, 3)).toEqual(['suggestion', 'suggestion'])
+    expect(held[0]!.tints.slice(1, 3)).toEqual(['success', 'success'])
+  })
+
+  test('card 182 U2: floorRows on the size-S steps path has the bar and the tone', () => {
+    const steps = [
+      { key: 'plan', state: 'done', phase: 1, acting: 0, you: 0, stalled: 0 }, { key: 'implement', state: 'running', phase: 2, acting: 1, you: 0, stalled: 0 },
+      { key: 'test', state: 'pending', phase: 2, acting: 0, you: 0, stalled: 0 }, { key: 'gate', state: 'pending', phase: 5, acting: 0, you: 0, stalled: 0 },
+      { key: 'report', state: 'pending', phase: 6, acting: 0, you: 0, stalled: 0 },
+    ]
+    const rows = floorRows(fixture({ steps, progress: { key: 'sg', k: 1, n: 2, stage_key: 'implement' } }), sayEn)
+    expect(rows.map(r => plain(r.cells[3] as never))).toEqual(['██████', '███░░░', '░░░░░░', '░░░░░░', '░░░░░░'])
+    expect(rows[0]!.tints[1]).toBe('success')
+    expect(rows[1]!.tints[1]).toBe('claude')
+  })
+
+  test('card 182 U2: FLOOR lines fit inner 186, 106, 60 and 40 and keep every Phase name whole', () => {
+    const rows = floorRows(fixture({ progress: { key: 'build', done: 1, total: 3 } }), sayEn)
+    for (const inner of [186, 106, 60, 40]) {
+      const lines = pageLines(rows, null, inner)
+      expect(lines.length).toBe(6)
+      lines.forEach((l, i) => {
+        expect(width(plain(l).trimEnd())).toBeLessThanOrEqual(inner)
+        expect(plain(l)).toContain(`${i + 1} ${PHASE_NAMES[i]}`)
+      })
+    }
+    // wide: the bar is drawn; narrow: it drops (after the desks) before the name
+    expect(plain(pageLines(rows, null, 186)[1]!)).toContain('██░░░░')
+    expect(plain(pageLines(rows, null, 40)[1]!)).not.toContain('░')
+  })
+
+  test('card 182 U2: an empty running bar carries the running tone, a pending one stays dim', () => {
+    const rows = floorRows(fixture({ phases: [], progress: undefined }), sayEn)
+    const run = rows[1]!.cells[3] as unknown as Array<{ t: string; tint?: string; dim?: boolean }>
+    const pend = rows[2]!.cells[3] as unknown as Array<{ t: string; tint?: string; dim?: boolean }>
+    expect(plain(run as never)).toBe('░░░░░░')
+    expect(run.every(s => s.tint === 'claude' && !s.dim)).toBe(true)
+    expect(pend.every(s => s.dim === true && s.tint === undefined)).toBe(true)
+    const held = floorRows(fixture({ phases: [], progress: undefined, hold: { reason: 'later', since: 1, by: 'person' } }), sayEn)
+    expect((held[1]!.cells[3] as unknown as Array<{ tint?: string }>).every(s => s.tint === 'suggestion')).toBe(true)
+  })
+
+  test('card 182 U2: every PhaseItem carries its section', () => {
+    const t = fixture({
+      workers: [{ id: 'P1', state: 'acting', word: 'x', phase: 'build', role: 'dev' }], phase_handoffs: { build: [{ time: '10:00', from: 'a', to: 'b', what: 'w' }] },
+    })
+    const o = { say: sayEn, wo: (_k: string, f: string) => f, fixed: (k: string) => k, verdictOf: (v: string | null) => v ?? '', frame: 0, now: 0 } as never
+    const dec = [{ kind: 'decision', phase: 'build', actor: 'a', time: '10:00', text: 'ok', blocking: ['b1'] }] as never
+    const items = phaseModel(t, 'build', dec, o, 100, null)
+    const sections = (s: string) => items.filter(i => i.section === s)
+    expect(items.every(i => ['run', 'hand', 'dec', 'counts'].includes(i.section))).toBe(true)
+    expect(sections('counts').length).toBe(1)
+    expect(sections('run').length).toBe(2)
+    expect(sections('hand').length).toBe(2)
+    expect(sections('dec').length).toBe(3)
+    expect(items.filter(i => i.row !== undefined).map(i => i.section)).toEqual(['run', 'hand', 'dec'])
+  })
+}
+
+// ---- card 182 U3 ----
+// The pane draws them: coloured Button rows, one FLOOR box, one PHASE box per section.
+{
+  type N = { type: string; props: Record<string, any>; children: any[] }
+  const all = (tree: any, pick: (n: N) => boolean): N[] => {
+    const out: N[] = []
+    const walk = (n: any) => {
+      if (n === null || typeof n !== 'object') return
+      if (pick(n)) out.push(n)
+      for (const c of n.children ?? []) walk(c)
+    }
+    walk(tree)
+    return out
+  }
+  // the section boxes, not the pane root (the root carries a borderColor)
+  const nested = (tree: any) => all(tree, n => n.type === 'Box' && n.props?.borderStyle !== undefined && n.props?.borderColor === undefined)
+  const textOfKids = (n: any): string => (typeof n === 'string' ? n : (n.children ?? []).map(textOfKids).join(''))
+  const keyOf = (n: any): string => String(n.props?.key ?? n.key)
+  const buttonOf = (tree: any, key: string) => all(tree, n => n.type === 'Button' && keyOf(n) === key)[0]!
+  const toneOf = (b: any) => (b.children as any[]).filter(c => c.type === 'Text').map(c => c.props?.color)
+  const column = (...children: any[]) => ({ type: 'Box', props: { flexDirection: 'column' }, children }) as never
+
+  for (const surface of SURFACES) {
+    test(`card 182 U3 ${surface}: FLOOR draws one bordered Box holding the 6 Phase Buttons, label = children text`, async ($, on) => {
+      await accSeed($, on, surface, { page: accPage('FLOOR') })
+      const ui = await atCols($, surface, 190)
+      const tree = (await ui.drawn()) as any
+      const boxes = nested(tree)
+      expect(boxes.length).toBe(1)
+      const buttons = all(boxes[0], n => n.type === 'Button')
+      expect(buttons.map(keyOf)).toEqual(['p:1', 'p:2', 'p:3', 'p:4', 'p:5', 'p:6'])
+      for (const b of buttons) expect(textOfKids(b)).toBe(b.props.label)
+      expect(all(tree, n => ['Progress', 'Svg', 'Client'].includes(n.type))).toEqual([])
+    })
+
+    test(`card 182 U3 ${surface}: PHASE draws one bordered Box per non-empty section`, async ($, on) => {
+      await accSeed($, on, surface, { page: accPage('PHASE', { phase: 2 }) })
+      const ui = await atCols($, surface, 190)
+      const tree = (await ui.drawn()) as any
+      const boxes = nested(tree)
+      expect(boxes.length).toBe(3)
+      expect(textOfKids(boxes[0])).toContain('Running')
+      expect(textOfKids(boxes[1])).toContain('Handed over')
+      expect(textOfKids(boxes[2])).toContain('Decisions')
+      expect(all(tree, n => ['Progress', 'Svg', 'Client'].includes(n.type))).toEqual([])
+    })
+  }
+
+  for (const cols of [190, 110]) {
+    for (const name of ['FLOOR', 'PHASE'] as const) {
+      test(`card 182 U3 ${name} at ${cols}: nested boxes are the pane width and their content fits width-4`, async ($, on) => {
+        await accSeed($, on, 'terminal', { page: name === 'FLOOR' ? accPage('FLOOR') : accPage('PHASE', { phase: 2 }) })
+        const ui = await atCols($, 'terminal', cols)
+        const tree = (await ui.drawn()) as any
+        const boxes = nested(tree)
+        expect(boxes.length > 0).toBe(true)
+        // the pane's content width: what the root draws at the frame's body width
+        const w = cols - 4
+        for (const b of boxes) {
+          expect(draw(column(b), w).map(cells).every(c => c === w)).toBe(true)
+          // box content is inner-4 = cols-12
+          expect(draw(column(...b.children), cols - 12).every(l => cells(l) <= cols - 12)).toBe(true)
+        }      })
+    }
+  }
+
+  // the width the mod hands pageLines/phaseModel, read off what it generates (a Button's label, a Text row), before draw() can clip or wrap it
+  const rowTexts = (box: any): string[] => {
+    const out: string[] = []
+    const walk = (n: any) => {
+      if (n === null || typeof n !== 'object') return
+      if (n.type === 'Button') { out.push(String(n.props.label)); return }
+      if (n.type === 'Text') { out.push(textOfKids(n)); return }
+      for (const c of n.children ?? []) walk(c)
+    }
+    walk(box)
+    return out
+  }
+  const LONG = 'a very long worker and feed and decision wording that keeps going and going well past ninety eight cells so only the cut keeps it inside the box content width'
+  const longPhase = (): Data => {
+    const d = ACC_DATA() as any
+    const dec = typeof d.decisions === 'function' ? d.decisions : () => d.decisions
+    d.decisions = (...a: any[]) => JSON.parse(JSON.stringify(dec(...a)).replace(/"(subject|question|text|title|reason|doing|summary)":"([^"]*)"/g, (_m, k) => `"${k}":"${LONG}"`))
+    d.stories = JSON.parse(JSON.stringify(d.stories).replace(/"(title|reason|doing|text|summary|subject)":"([^"]*)"/g, (_m, k) => `"${k}":"${LONG}"`))
+    return d
+  }
+  // the roles cell widens one step at a time, so some row lands between cols-12 and cols-8 and only the width the mod passes decides whether it is cut
+  // (a row's drop plan lands between cols-12 and cols-8 only at some widths, so the FLOOR check sweeps the widths around 110)
+  for (let cols = 100; cols <= 125; cols++) {
+    test(`card 182 U3 FLOOR at ${cols}: rows cut within cols-12`, async ($, on) => {
+      const { ui } = await homeLines($, on, cols, LEFT_FLOOR(), 'terminal', undefined, { page: FLOOR_PAGE })
+      const rows = nested((await ui.drawn()) as any).flatMap(rowTexts)
+      expect(rows.length > 0).toBe(true)
+      for (const r of rows) expect(cells(r) <= cols - 12).toBe(true)
+    })
+  }
+
+  for (const cols of [190, 110]) {
+    for (const name of ['FLOOR', 'PHASE'] as const) {
+      test(`card 182 U3 ${name} at ${cols}: the rows the mod generates are cut within cols-12, not left to draw()`, async ($, on) => {
+        let ui: any
+        if (name === 'FLOOR') ui = (await homeLines($, on, cols, LEFT_FLOOR(), 'terminal', undefined, { page: FLOOR_PAGE })).ui
+        else {
+          await accSeed($, on, 'terminal', { page: accPage('PHASE', { phase: 2 }) }, undefined, longPhase())
+          ui = await atCols($, 'terminal', cols)
+        }
+        const tree = (await ui.drawn()) as any
+        const boxes = nested(tree)
+        expect(boxes.length > 0).toBe(true)
+        const rows = boxes.flatMap(rowTexts)
+        expect(rows.length > 0).toBe(true)
+        for (const r of rows) expect(cells(r) <= cols - 12).toBe(true)
+        // PHASE at 110 must really overflow: a row is cut with … at the limit
+        if (name === 'PHASE' && cols === 110) expect(rows.some(r => r.endsWith('…') && cells(r) === cols - 12)).toBe(true)
+      })
+    }
+  }
+
+  test('card 182 U3: a done Phase row carries success, a running one claude on its Button children', async ($, on) => {
+    await accSeed($, on, 'terminal', { page: accPage('FLOOR') })
+    const ui = await atCols($, 'terminal', 190)
+    const tree = (await ui.drawn()) as any
+    expect(toneOf(buttonOf(tree, 'p:1'))).toContain('success')
+    expect(all(tree, n => n.type === 'Button' && keyOf(n).startsWith('p:')).flatMap(toneOf)).toContain('claude')
+  })
+
+  // one EPIC with a Phase in each state; matched per row by the mark's tint (the first coloured child after the ▸ pointer)
+  const stateData = (over: Record<string, unknown>): Data => {
+    const d = ACC_DATA() as any
+    const phase = (key: string, you = 0) => ({ key, workers: 0, acting: 0, you, stalled: 0, idle: 0, done: 0, stories: 0, roles: {}, decisions: 0 })
+    d.tasks = [{ ...d.tasks[0], ...over }, ...d.tasks.slice(1)]
+    d.tasks[0].phases = ['plan', 'build', 'integrate', 'qa', 'gate', 'report'].map(k => phase(k, k === 'integrate' ? 1 : 0))
+    return d
+  }
+  const markTone = (tree: any, key: string) => toneOf(buttonOf(tree, key)).slice(1).filter(Boolean)[0]
+  const stages = (states: string[]) => ['plan', 'build', 'integrate', 'qa', 'gate', 'report'].map((key, i) => ({ key, state: states[i] }))
+
+  test('card 182 U3: FLOOR rows carry claude / warning / error / success / suggestion on their Button children, per row', async ($, on) => {
+    await accSeed($, on, 'terminal', { page: accPage('FLOOR') }, undefined, stateData({ hold: null, stages: stages(['done', 'running', 'running', 'failed', 'pending', 'pending']) }))
+    const tree = (await (await atCols($, 'terminal', 190)).drawn()) as any
+    expect(markTone(tree, 'p:1')).toBe('success')
+    expect(markTone(tree, 'p:2')).toBe('claude')
+    expect(markTone(tree, 'p:3')).toBe('warning')
+    expect(markTone(tree, 'p:4')).toBe('error')
+    expect(toneOf(buttonOf(tree, 'p:2')).slice(1)).not.toContain('success')
+    expect(toneOf(buttonOf(tree, 'p:1')).slice(1)).not.toContain('claude')
+  })
+
+  test('card 182 U3: a held EPIC draws its running Phase row in suggestion', async ($, on) => {
+    await accSeed($, on, 'terminal', { page: accPage('FLOOR') }, undefined, stateData({ hold: { reason: 'later', since: 1, by: 'person' }, stages: stages(['done', 'running', 'pending', 'pending', 'pending', 'pending']) }))
+    const tree = (await (await atCols($, 'terminal', 190)).drawn()) as any
+    expect(markTone(tree, 'p:1')).toBe('success')
+    expect(markTone(tree, 'p:2')).toBe('suggestion')
+    expect(toneOf(buttonOf(tree, 'p:2')).slice(1)).not.toContain('claude')
+  })
+
+  test('card 182 U3: pressing a FLOOR row opens PHASE 2, a PHASE worker row opens STORY', async ($, on) => {
+    const seen = await accSeed($, on, 'terminal', { page: accPage('FLOOR') })
+    const ui = await atCols($, 'terminal', 190)
+    expect(await pressTo(seen, ui, 'p:2', accPage('FLOOR'))).toEqual(accPage('PHASE', { phase: 2 }))
+    const build = accPage('PHASE', { phase: 2 })
+    seen.store.set('page', build)
+    await ui.redraw()
+    expect(await pressTo(seen, ui, 'w:P1', build)).toEqual(accPage('STORY', { story: 'P1' }))
+  })
+}
+
+// ---- card 182 U4 ----
+// The eight frames for approval: FLOOR and PHASE x en/ko x 190/110 on one EPIC with a done, a running (held), a waiting, a failed Phase.
+// Plain frames are printed between '@@frame182 <name>' and '@@end', the ANSI ones between '@@ansi182 <name>' and '@@end'.
+{
+  const stages = ['plan', 'build', 'integrate', 'qa', 'gate', 'report']
+  const states = ['done', 'running', 'running', 'failed', 'pending', 'pending']
+  const fixture = (): Data => {
+    const d = ACC_DATA() as any
+    const phase = (key: string, you = 0) => ({ key, workers: key === 'build' ? 2 : 0, acting: 0, you, stalled: 0, idle: 0, done: key === 'build' ? 1 : 0, stories: 0, roles: {}, decisions: key === 'build' ? 2 : 0 })
+    d.tasks = [{ ...d.tasks[0], hold: { reason: 'later', since: 1, by: 'person' }, stages: stages.map((key, i) => ({ key, state: states[i] })), phases: stages.map(k => phase(k, k === 'integrate' ? 1 : 0)) }, ...d.tasks.slice(1)]
+    return d
+  }
+  const U4_FRAMES = new Map<string, { plain: string[]; ansi: string[] }>()
+  for (const [pageName, page] of [['floor', accPage('FLOOR')], ['phase', accPage('PHASE', { phase: 2 })]] as [string, Record<string, unknown>][]) {
+    for (const lang of ['en', 'ko'] as const) {
+      for (const cols of [190, 110] as const) {
+        test(`card 182 U4 frame ${pageName} ${lang} at ${cols}: every line within cols, no cut glyph, ANSI cells equal plain cells`, async ($, on) => {
+          await accSeed($, on, 'terminal', { page }, lang === 'ko' ? 'korean' : undefined, fixture())
+          const tree = (await (await atCols($, 'terminal', cols)).drawn()) as any
+          const plainLines = frame(tree, 'Teams', cols)
+          const ansiLines = frame(tree, 'Teams', cols, { ansi: true })
+          U4_FRAMES.set(`${pageName}-${lang}-${cols}`, { plain: plainLines, ansi: ansiLines })
+          expect(plainLines.filter(l => cells(l) > cols)).toEqual([])
+          for (const l of bodyOf(plainLines)) {
+            expect(l).not.toContain('……')
+            expect(/(^|\s\s)…/.test(l)).toBe(false)
+          }
+          expect(ansiLines.length).toBe(plainLines.length)
+          expect(ansiLines.map(cells)).toEqual(plainLines.map(cells))
+          if (pageName === 'floor') {
+            const build = plainLines.filter(l => l.includes('2 Build'))
+            expect(build.length).toBe(1)
+            expect(build[0]).toContain('█')
+            expect(build[0]).toContain('░')
+          }
+          const text = visible(tree)
+          if (lang === 'ko') expect(latinOutside(text, [...ACC_WORDS, ...ACC_CUTS, 'later'])).toEqual([])
+        })
+      }
+    }
+  }
+  test('card 182 U4 demo frames: 8 plain and 8 ANSI frames printed on stdout', () => {
+    expect(U4_FRAMES.size).toBe(8)
+    for (const [name, f] of U4_FRAMES) console.log(`@@frame182 ${name}\n${f.plain.join('\n')}\n@@end`)
+    for (const [name, f] of U4_FRAMES) console.log(`@@ansi182 ${name}\n${f.ansi.join('\n')}\n@@end`)
+  })
+}

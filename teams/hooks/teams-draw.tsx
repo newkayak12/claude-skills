@@ -8,7 +8,7 @@ import type { Decision, Handoff, Mark, ReportPayload, SummaryItem, SummaryTask, 
 import { f2Key } from './pane'
 import type { Page, RowRef } from './pane'
 
-export type Tint = 'success' | 'claude' | 'inactive' | 'error' | 'warning'
+export type Tint = 'success' | 'claude' | 'inactive' | 'error' | 'warning' | 'suggestion'
 export type Seg = { t: string; tint?: Tint; dim?: boolean; bold?: boolean }
 export type Line = Seg[]
 // the resolved components from $.ui.resolve(e)
@@ -73,7 +73,31 @@ export function clipWords(s: string, w: number): string {
 /* --- icons and tints: one glyph and one colour per state, no faces --- */
 
 export const ICON: Record<WorkState | 'failed' | 'held', string> = { acting: '●', idle: '◌', you: '⚑', done: '✔', stalled: '⏸', failed: '✘', held: '⏸' }
-export const TINT: Record<WorkState | 'failed' | 'held', Tint> = { acting: 'claude', idle: 'inactive', you: 'warning', done: 'success', stalled: 'inactive', failed: 'error', held: 'inactive' }
+export const TINT: Record<WorkState | 'failed' | 'held', Tint> = { acting: 'claude', idle: 'inactive', you: 'warning', done: 'success', stalled: 'inactive', failed: 'error', held: 'suggestion' }
+
+// One tone per row, high to low: failed=error, waiting on a person (you > 0)=warning, held=suggestion, running=claude, done=success,
+// pending=dim, stalled=inactive. Display mapping of fields the engine already sends; nothing inferred.
+export type Tone = Tint | 'dim'
+export function rowTone(s: { mark?: Mark; you?: number; held?: boolean; stalled?: boolean }): Tone {
+  if (s.mark === 'failed') return 'error'
+  if ((s.you ?? 0) > 0) return 'warning'
+  if (s.held === true) return 'suggestion'
+  if (s.mark === 'running') return 'claude'
+  if (s.mark === 'done') return 'success'
+  if (s.mark === 'pending') return 'dim'
+  return 'inactive'
+}
+
+// A text bar of exactly w cells: █ filled in the tone, ░ dim; done/total clamped, total 0 is empty
+export function phaseBar(done: number, total: number, w: number, tint?: Tone): Seg[] {
+  if (w <= 0) return []
+  const k = total > 0 ? Math.min(w, Math.max(0, Math.round((w * done) / total))) : 0
+  return [
+    ...(k > 0 ? [{ t: '█'.repeat(k), ...(tint === 'dim' ? { dim: true } : { tint }) } as Seg] : []),
+    ...(k < w ? [{ t: '░'.repeat(w - k), dim: true } as Seg] : []),
+  ]
+}
+const BAR_W = 6
 
 // the EPIC list: ● running, ⚑ waits on a person, ⏸ stalled, ⏸ held (the engine's hold, whatever the state word)
 export const epicState = (t: Pick<SummaryTaskEntry, 'live' | 'state' | 'hold'>): WorkState | 'held' => (t.hold ? 'held' : t.state === 'waiting_human' ? 'you' : t.live ? 'acting' : 'stalled')
@@ -390,7 +414,7 @@ export const HOME_PLANS: Record<string, BlockPlan> = {
   epic: { shrink: [3], drop: [5, 6, 10, 9, 4], named: true, narrow: [5, 6, 7, 8, 10, 9, 4] },
   ended: { shrink: [3], drop: [6, 5, 4, 2], named: true },
   story: { shrink: [4], drop: [7, 10, 9, 6, 11], titleMin: 12 },
-  phase: { shrink: [5], drop: [9, 10, 6, 3, 4], titleMin: 20 },
+  phase: { shrink: [6], drop: [10, 11, 3, 7, 4, 5], titleMin: 24 },
 }
 
 // below this inner width a plan's `narrow` drop order applies (EPIC: Build n/m and STORY n/m go before since and cost, so `key · first word`
@@ -437,6 +461,9 @@ export function homeHeader(listed: readonly SummaryTaskEntry[], now: number, say
 // FLOOR: the six Phases of one EPIC, one row each: mark · number and name · elapsed · cost · who works · decisions · ⚑ and ⏸ counts.
 // Elapsed and cost are the ledger's per-Phase numbers (metrics.stages), counts come from the engine's phases[]; absent, blank.
 // The name is never cut: at a narrow pane desks, decisions, elapsed and cost drop in that order (HOME_PLANS.phase), the hint last.
+// the Phase bar by D3: done full, pending empty, running done/total of its work (else empty in the running tone)
+const barCell = (state: Mark, tone: Tone, done: number, total: number): Seg[] =>
+  state === 'running' && total <= 0 ? [{ t: '░'.repeat(BAR_W), tint: tone } as Seg] : phaseBar(state === 'done' ? 1 : state === 'running' ? done : 0, state === 'done' ? 1 : state === 'running' ? total : 0, BAR_W, tone)
 const STEP_ID = { plan: 'p:1', implement: 'p:2', test: 'p:2t', gate: 'p:5', report: 'p:6' } as const
 export function floorRows(t: SummaryTaskEntry, say: Say): PageRow[] {
   // a size-S entry: its five steps (engine's `steps`), the running one reads `<stage> · k/n` from progress
@@ -445,14 +472,15 @@ export function floorRows(t: SummaryTaskEntry, say: Say): PageRow[] {
     return t.steps.map((st): PageRow => {
       const name = say(`sgStage${cap(st.key)}`)
       const label = st.state === 'running' && p?.key === 'sg' ? say('f2FloorStepOf', { stage: name, k: p.k, n: p.n }) : name
+      const tone = rowTone({ mark: st.state, you: st.you, held: !!t.hold && st.state === 'running' })
       return {
         id: STEP_ID[st.key], block: 'phase', ref: { type: 'phase', epic: t.task_id, phase: st.phase },
         cells: [
-          ' ', MARK_ICON[st.state], label, st.state === 'pending' ? '–' : '', '',
+          ' ', MARK_ICON[st.state], label, barCell(st.state, tone, st.state === 'running' && p?.key === 'sg' ? p.k : 0, st.state === 'running' && p?.key === 'sg' ? p.n : 0), st.state === 'pending' ? '–' : '', '',
           st.key === 'report' ? say('f2FloorReportHintS') : st.acting > 0 ? `${st.acting} ${say('wordActing')}` : '',
           '', st.you > 0 ? `⚑ ${st.you}` : '', st.stalled > 0 ? `${ICON.stalled} ${st.stalled}` : '',
         ],
-        tints: [undefined, MARK_TINT[st.state], undefined, 'dim', 'dim', 'dim', undefined, 'warning', 'error'],
+        tints: [undefined, tone, tone, undefined, 'dim', 'dim', 'dim', undefined, 'warning', 'error'],
       }
     })
   }
@@ -464,10 +492,14 @@ export function floorRows(t: SummaryTaskEntry, say: Say): PageRow[] {
     const ledger = t.metrics?.stages?.find(x => x.stage === key)
     const usd = ledger === undefined ? 0 : ledger.cost_usd + ledger.retry_cost_usd
     const started = state !== 'pending'
+    const tone = rowTone({ mark: state, you: pc?.you, held: !!t.hold && state === 'running' })
+    // running: the Phase's own workers done/total, else the EPIC's progress when it is this Phase's (build, qa)
+    const prog = t.progress
+    const own = pc !== undefined && pc.workers > 0 ? [pc.done, pc.workers] : prog !== undefined && prog.key === key ? [prog.done, prog.total] : [0, 0]
     return {
       id: `p:${i + 1}`, block: 'phase', ref: { type: 'phase', epic: t.task_id, phase: i + 1 },
       cells: [
-        ' ', MARK_ICON[state], `${i + 1} ${phaseName(say, key)}`,
+        ' ', MARK_ICON[state], `${i + 1} ${phaseName(say, key)}`, barCell(state, tone, own[0]!, own[1]!),
         !started ? '–' : ledger !== undefined && ledger.wall_ms > 0 ? since(ledger.wall_ms) : '', started && usd > 0 ? costText(usd, false) : '',
         key === 'report' ? say('f2FloorReportHint') : pc !== undefined && pc.acting > 0 ? `${pc.acting} ${say('wordActing')}` : '',
         pc !== undefined && typeof pc.decisions === 'number' ? say('f2FloorDecisionsN', { n: pc.decisions }) : '',
@@ -477,7 +509,7 @@ export function floorRows(t: SummaryTaskEntry, say: Say): PageRow[] {
           pc !== undefined && (pc.stories ?? 0) > 0 ? say('f2FloorStoriesAgents', { s: pc.stories!, a: pc.subagents ?? 0 }) : '',
         ]),
       ],
-      tints: [undefined, MARK_TINT[state], undefined, 'dim', 'dim', 'dim', undefined, 'warning', 'error', ...(desks ? ['dim' as const, 'dim' as const] : [])],
+      tints: [undefined, tone, tone, undefined, 'dim', 'dim', 'dim', undefined, 'warning', 'error', ...(desks ? ['dim' as const, 'dim' as const] : [])],
     }
   })
 }
@@ -628,12 +660,14 @@ export function phaseRowIds(t: PhaseEntry, phase: string, decisions: readonly De
 }
 
 // A line of the Phase page, and the row it is when it is one (the pane draws a row as a Button)
-export type PhaseItem = { line: Line; row?: PageRow }
+// `section` says which box of the page the line belongs to: the counts line, Running, Handed over, Decisions
+export type PhaseSectionKey = 'run' | 'hand' | 'dec' | 'counts'
+export type PhaseItem = { line: Line; row?: PageRow; section: PhaseSectionKey }
 const POINT: Seg = { t: `${POINTER} `, tint: 'claude' }
-function phaseSection(rows: PageRow[], sel: string | null, inner: number, shrink: number[], drop: number[] = []): PhaseItem[] {
-  if (rows.length === 0) return [{ line: none }]
+function phaseSection(rows: PageRow[], sel: string | null, inner: number, shrink: number[], drop: number[] = [], section: PhaseSectionKey = 'run'): PhaseItem[] {
+  if (rows.length === 0) return [{ line: none, section }]
   const widths = columnWidths(rows.map(r => r.cells.map(cellText)), inner - INDENT.t.length, 2, shrink, 4, drop)
-  return rows.map(r => ({ row: r, line: [r.id === sel ? POINT : INDENT, ...rowLine(r.cells, widths, 2, r.tints)] }))
+  return rows.map(r => ({ row: r, section, line: [r.id === sel ? POINT : INDENT, ...rowLine(r.cells, widths, 2, r.tints)] }))
 }
 
 // Phase detail: Running, Handed over, Decisions (this Phase), in that order. The hand-offs are the Phase's own (the engine's
@@ -664,21 +698,21 @@ export function phaseModel(t: PhaseEntry, phase: (typeof PHASE_KEYS)[number], de
     typeof pc.decisions === 'number' ? say('f2FloorDecisionsN', { n: pc.decisions }) : '',
   ].filter(Boolean)
   return [
-    ...(counts.length === 0 ? [] : [{ line: [INDENT, { t: counts.join(' · '), dim: true }] as Line }]),
-    { line: head(say('f2PhaseRunning')) },
+    ...(counts.length === 0 ? [] : [{ line: [INDENT, { t: counts.join(' · '), dim: true }] as Line, section: 'counts' as const }]),
+    { line: head(say('f2PhaseRunning')), section: 'run' },
     // a narrow pane sheds the role, then the node, then the model before the what-cell is cut to nothing
-    ...phaseSection(running, sel, inner, [5], [4, 3, 6]),
-    { line: head(say('f2PhaseHandoffs')) },
-    ...phaseSection(feed, sel, inner, [3]),
-    { line: head(say('f2PhaseDecisions')) },
-    ...(thread.length === 0 ? [{ line: none }] : thread.flatMap((d, i): PhaseItem[] => {
+    ...phaseSection(running, sel, inner, [5], [4, 3, 6], 'run'),
+    { line: head(say('f2PhaseHandoffs')), section: 'hand' },
+    ...phaseSection(feed, sel, inner, [3], [], 'hand'),
+    { line: head(say('f2PhaseDecisions')), section: 'dec' },
+    ...(thread.length === 0 ? [{ line: none, section: 'dec' as const }] : thread.flatMap((d, i): PhaseItem[] => {
       const row: PageRow = {
         id: `d:${i}`, block: 'dec', cells: [d.time, d.actor, d.label, d.node, d.why], tints: ['dim', undefined, d.tint, 'dim', undefined],
         ref: { type: 'entry', epic: t.task_id, phase: no, entry: `d:${i}` },
       }
       return [
-        { row, line: [row.id === sel ? POINT : INDENT, ...rowLine(row.cells, dwidths, 2, row.tints)] },
-        ...d.subs.map((x): PhaseItem => ({ line: [INDENT, { t: `  ${x}`, dim: true }] })),
+        { row, section: 'dec', line: [row.id === sel ? POINT : INDENT, ...rowLine(row.cells, dwidths, 2, row.tints)] },
+        ...d.subs.map((x): PhaseItem => ({ section: 'dec', line: [INDENT, { t: `  ${x}`, dim: true }] })),
       ]
     })),
   ]
@@ -727,7 +761,13 @@ export function windowItems(items: readonly PhaseItem[], at: number, rows = PAGE
   const max = Math.max(0, items.length - rows)
   const from = Math.min(Math.max(0, at), max)
   const below = items.length - from - rows
-  return [...(from > 0 ? [{ line: [{ t: `▲ ${from}`, dim: true }] as Line }] : []), ...items.slice(from, from + rows), ...(below > 0 ? [{ line: [{ t: `▼ ${below}`, dim: true }] as Line }] : [])]
+  // a ▲ / ▼ line belongs to the section of the row beside it
+  const upper = items[from]?.section ?? 'counts'
+  const lower = items[Math.min(items.length, from + rows) - 1]?.section ?? 'counts'
+  return [
+    ...(from > 0 ? [{ line: [{ t: `▲ ${from}`, dim: true }] as Line, section: upper }] : []), ...items.slice(from, from + rows),
+    ...(below > 0 ? [{ line: [{ t: `▼ ${below}`, dim: true }] as Line, section: lower }] : []),
+  ]
 }
 
 // the line label of the STORY page, padded to one width

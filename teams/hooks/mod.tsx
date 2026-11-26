@@ -973,7 +973,7 @@ export const register: Register = on => {
     const opts: PageOpts = { say, wo, fixed: fixedWord, verdictOf: v => s(VERDICT_WORD[v ?? ''] ?? 'vReject'), frame: await read($, frame), now }
     const phaseKey = PHASE_KEYS[Math.min(5, Math.max(0, (pg.phase ?? 1) - 1))]!
     // the Phase page's rows are its workers, hand-offs and decisions; the model is built twice, once to know them and once with the pointer on the selected one
-    const phaseOf = (sel: string | null): PhaseItem[] | null => (pg.name === 'PHASE' && entry !== undefined ? phaseModel(entry as PhaseEntry, phaseKey, thread, opts, inner, sel) : null)
+    const phaseOf = (sel: string | null): PhaseItem[] | null => (pg.name === 'PHASE' && entry !== undefined ? phaseModel(entry as PhaseEntry, phaseKey, thread, opts, inner - 4, sel) : null)
     const phaseItems0 = phaseOf(null)
     const rows: PageRow[] = pg.name === 'HOME' ? [...home.flags, ...home.body] : pg.name === 'FLOOR' && entry !== undefined ? floorRows(entry, say)
       : pg.name === 'STORY' && entry !== undefined && storyId !== null ? storyRows(entry, storyId, sd, doc, opts)
@@ -1017,8 +1017,14 @@ export const register: Register = on => {
       await settle(pageStep(picked, { kind: 'open' }, { ...ctx, row: row.ref }), picked)
     }
     // a selectable row is one whole-row Button (its tints give way to the Button's own)
+    // card 182: the label is the row's plain text (the accessible name), the children the same text in its tints
+    const rowButton = (l: Line, r: PageRow) => (
+      <Button key={r.id} plain label={plain(l)} onPress={() => press(r)}>
+        {l.map((x, j) => <Text key={j} color={x.tint} bold={x.bold} dimColor={x.dim}>{x.t}</Text>)}
+      </Button>
+    )
     const buttonRows = (lines: readonly Line[], rs: readonly PageRow[]) => (
-      <Box flexDirection="column">{lines.map((l, i) => <Button key={rs[i]!.id} plain label={plain(l)} onPress={() => press(rs[i]!)} />)}</Box>
+      <Box flexDirection="column">{lines.map((l, i) => rowButton(l, rs[i]!))}</Box>
     )
     const onKey = async (text: string) => {
       const key = pageKey(text)
@@ -1162,13 +1168,27 @@ export const register: Register = on => {
     } else {
       let page$
       if (entry === undefined) page$ = <Text dimColor>{s('loading')}</Text>
-      else if (pg.name === 'FLOOR') page$ = buttonRows(pageLines(rows, sel, inner, HOME_PLANS), rows)
+      else if (pg.name === 'FLOOR') page$ = <Box flexDirection="column" borderStyle="single" borderDimColor paddingX={1}>{buttonRows(pageLines(rows, sel, inner - 4, HOME_PLANS), rows)}</Box>
       else if (pg.name === 'PHASE') {
         // Running, Handed over and Decisions: each worker, hand-off and decision a Button; the window keeps the selected row in view
         const items = phaseOf(sel) ?? []
         const at = items.findIndex(i => i.row !== undefined && i.row.id === sel)
         const shown = windowItems(items, at < 0 ? 0 : at - PAGE_ROWS + 1)
-        page$ = <Box flexDirection="column">{shown.map((i, n) => (i.row === undefined ? <Box key={`t${n}`}>{renderLines(ui, [i.line], `t${n}`)}</Box> : <Button key={i.row.id} plain label={plain(i.line)} onPress={() => press(i.row!)} />))}</Box>
+        // one bordered Box per section (Running, Handed over, Decisions); the counts line stays above them
+        const item$ = (i: PhaseItem, n: number) => (i.row === undefined ? <Box key={`t${n}`}>{renderLines(ui, [i.line], `t${n}`)}</Box> : rowButton(i.line, i.row))
+        const groups: { section: PhaseItem['section']; at: number[] }[] = []
+        shown.forEach((i, n) => {
+          const last = groups[groups.length - 1]
+          if (last !== undefined && last.section === i.section) last.at.push(n)
+          else groups.push({ section: i.section, at: [n] })
+        })
+        page$ = (
+          <Box flexDirection="column">
+            {groups.map(g => (g.section === 'counts'
+              ? <Box key={`g${g.at[0]}`} flexDirection="column">{g.at.map(n => item$(shown[n]!, n))}</Box>
+              : <Box key={`g${g.at[0]}`} flexDirection="column" borderStyle="single" borderDimColor paddingX={1}>{g.at.map(n => item$(shown[n]!, n))}</Box>))}
+          </Box>
+        )
       } else if (pg.name === 'ENTRY') {
         // one hand-off or decision of the Phase, the fields it carries
         page$ = renderLines(ui, entryLines(entry as PhaseEntry, phaseKey, pg.entry, thread, opts, inner), 'n')

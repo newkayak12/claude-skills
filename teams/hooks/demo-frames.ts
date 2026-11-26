@@ -6,11 +6,13 @@
 // Fictional data only.
 type Node = { type?: string; props?: Record<string, any>; children?: (Node | string)[] }
 
-const chars = (s: string) => Array.from(s)
+// glyphs of a line; an ANSI SGR sequence (ESC [ ... m) is one zero-width token
+const chars = (s: string): string[] => s.match(/\x1b\[[0-9;]*m|[\s\S]/gu) ?? []
 
-// Display cells of a line: wide (CJK, emoji) glyphs take two, combining marks none.
+// Display cells of a line: wide (CJK, emoji) glyphs take two, combining marks and SGR escapes none.
 export const cells = (s: string): number =>
   chars(s).reduce((n, c) => {
+    if (c.length > 1 && c.charCodeAt(0) === 0x1b) return n
     const p = c.codePointAt(0)!
     if (p === 0x200d || (p >= 0x300 && p <= 0x36f) || (p >= 0xfe00 && p <= 0xfe0f)) return n
     const wide = (p >= 0x1100 && p <= 0x115f) || (p >= 0x2e80 && p <= 0xa4cf) || (p >= 0xac00 && p <= 0xd7a3) || (p >= 0xf900 && p <= 0xfaff) ||
@@ -35,11 +37,39 @@ const fitCount = (c: string[], w: number): number => {
 export const fit = (s: string, w: number): string => {
   if (cells(s) <= w) return s
   const c = chars(s)
-  return `${c.slice(0, fitCount(c, Math.max(0, w - 1))).join('').trimEnd()}…`
+  const cut = `${c.slice(0, fitCount(c, Math.max(0, w - 1))).join('').trimEnd()}…`
+  return cut.includes('\x1b') ? `${cut}${RESET}` : cut
 }
 
-const textOf = (n: Node | string): string =>
-  typeof n === 'string' ? n : n.type === 'Button' ? String(n.props?.label ?? '') : n.type === 'Input' ? String(n.props?.value || n.props?.placeholder || '') : (n.children ?? []).map(textOf).join('')
+// ANSI colour: set only by frame(..., { ansi: true }); theme key -> fixed SGR code
+const RESET = '\x1b[0m'
+const THEME_SGR: Record<string, string> = {
+  text: '39', inactive: '90', subtle: '90', success: '32', error: '31', warning: '33',
+  claude: '38;5;173', suggestion: '38;5;105', permission: '38;5;105',
+}
+let ansiOn = false
+const sgr = (codes: string[]) => (codes.length ? `\x1b[${codes.join(';')}m` : '')
+const styleOf = (p: Record<string, any> | undefined, colorKey = 'color', dimKey = 'dimColor'): string[] => [
+  ...(p?.bold ? ['1'] : []),
+  ...(p?.[dimKey] ? ['2'] : []),
+  ...(p?.[colorKey] && THEME_SGR[p[colorKey]] ? [THEME_SGR[p[colorKey]]!] : []),
+]
+
+// the text of a node; with ANSI on, a styled Text is wrapped in its SGR run and the outer style is re-applied after it
+const textOf = (n: Node | string, outer = ''): string => {
+  if (typeof n === 'string') return n
+  if (n.type === 'Input') return String(n.props?.value || n.props?.placeholder || '')
+  const kids = n.children ?? []
+  if (n.type === 'Button') {
+    if (ansiOn && kids.length > 0) return kids.map(k => textOf(k, outer)).join('')
+    const label = n.props?.label
+    if (label !== undefined && label !== null) return String(label)
+    return kids.map(k => textOf(k, outer)).join('')
+  }
+  const own = ansiOn && n.type === 'Text' ? sgr(styleOf(n.props)) : ''
+  const inner = kids.map(k => textOf(k, outer + own)).join('')
+  return own ? `${own}${inner}${RESET}${outer}` : inner
+}
 
 const num = (v: unknown) => Number(v ?? 0) || 0
 const marginL = (n: Node | string) => (typeof n === 'string' ? 0 : num(n.props?.marginLeft ?? n.props?.marginX ?? n.props?.margin))
@@ -78,10 +108,42 @@ function block(n: Node | string, cols: number): string[] {
   return [...Array(marginT(n)).fill(''), ...body, ...Array(marginB(n)).fill('')]
 }
 
-function content(n: Node | string, cols: number): string[] {
+const BORDERS: Record<string, string[]> = {
+  single: ['┌', '─', '┐', '│', '└', '┘'],
+  round: ['╭', '─', '╮', '│', '╰', '╯'],
+  double: ['╔', '═', '╗', '║', '╚', '╝'],
+  bold: ['┏', '━', '┓', '┃', '┗', '┛'],
+}
+
+// A Box with `borderStyle` below the root: top and bottom lines and │ sides, 2 cols and 2 rows of chrome, `paddingX`
+// each side. It fills the width it is given (as a column child does); `fill` false (a row child) takes its content's width.
+function boxed(n: Node, cols: number, fill: boolean): string[] {
+  const [tl, hz, tr, vt, bl, br] = BORDERS[String(n.props?.borderStyle)] ?? BORDERS.single!
+  const px = num(n.props?.paddingX ?? n.props?.padding)
+  const avail = Math.max(1, cols - 2 - 2 * px)
+  const kids = (n.children ?? []).filter(k => k !== '' && k !== undefined && k !== null)
+  const lines = n.props?.flexDirection === 'column' ? kids.flatMap(k => block(k, avail)) : rowOf(n, kids, avail)
+  const h = n.props?.height
+  const body = h !== undefined ? lines.slice(0, Math.max(0, num(h) - 2)) : lines
+  const w = fill ? Math.max(avail, widthOf(body)) : widthOf(body)
+  const edge = (s: string) => {
+    const codes = ansiOn ? sgr(styleOf(n.props, 'borderColor', 'borderDimColor')) : ''
+    return codes ? `${codes}${s}${RESET}` : s
+  }
+  const side = edge(vt!)
+  const padx = ' '.repeat(px)
+  return [
+    edge(`${tl}${hz!.repeat(w + 2 * px)}${tr}`),
+    ...body.map(l => `${side}${padx}${pad(l, w)}${padx}${side}`),
+    edge(`${bl}${hz!.repeat(w + 2 * px)}${br}`),
+  ]
+}
+
+function content(n: Node | string, cols: number, fill = true): string[] {
   if (typeof n === 'string') return wrapText(n, cols)
   if (n.type === 'Text') return n.props?.wrap === 'truncate-end' || n.props?.wrap === 'truncate' ? [fit(textOf(n), cols)] : wrapText(textOf(n), cols)
   if (n.type === 'Button' || n.type === 'Input') return [fit(textOf(n), cols)]
+  if (n.props?.borderStyle) return boxed(n, cols, fill)
   const kids = (n.children ?? []).filter(k => k !== '' && k !== undefined && k !== null)
   const lines = n.props?.flexDirection === 'column' ? kids.flatMap(k => block(k, cols)) : rowOf(n, kids, cols)
   const h = n.props?.height
@@ -92,7 +154,7 @@ function rowOf(n: Node, kids: (Node | string)[], cols: number): string[] {
   if (kids.length === 0) return []
   const gap = num(n.props?.columnGap ?? n.props?.gap)
   const space = (c: Node | string) => marginL(c) + marginR(c)
-  const blocks = kids.map(k => content(k, cols - space(k)))
+  const blocks = kids.map(k => content(k, cols - space(k), false))
   const widths = kids.map((k, i) => widthOf(blocks[i]!) + space(k))
   const total = () => widths.reduce((s, w) => s + w, 0) + gap * (kids.length - 1)
   if (n.props?.flexWrap === 'wrap' && total() > cols) return wrapRow(kids, blocks, widths, gap, cols)
@@ -103,7 +165,7 @@ function rowOf(n: Node, kids: (Node | string)[], cols: number): string[] {
     const over = total() - cols
     if (over <= 0) break
     const w = Math.max(1, widths[i]! - space(kids[i]!) - over)
-    blocks[i] = content(kids[i]!, w)
+    blocks[i] = content(kids[i]!, w, false)
     widths[i] = widthOf(blocks[i]!) + space(kids[i]!)
   }
   // the room left: a `flexGrow` box takes it all, else `space-between` spreads it between the boxes
@@ -144,13 +206,21 @@ function wrapRow(kids: (Node | string)[], blocks: string[][], widths: number[], 
 }
 
 // The lines as laid out, not clipped: a line wider than `cols` stays wider, so a test can see it.
+// The root node is laid out without its own border (frame() draws the pane border); only borders below it are boxes.
 export function draw(n: Node | string, cols: number): string[] {
-  return block(n, cols)
+  const root = typeof n === 'string' || !n.props?.borderStyle ? n : { ...n, props: { ...n.props, borderStyle: undefined } }
+  return block(root, cols)
 }
 
-// The frame a pane sits in: a rounded border, body width = cols - 4.
-export function frame(tree: Node, title: string, cols: number): string[] {
-  const body = draw(tree, cols - 4)
-  const top = `╭─ ${title} ${'─'.repeat(Math.max(0, cols - len(title) - 5))}╮`
-  return [top, ...body.map(l => `│ ${l}${' '.repeat(Math.max(0, cols - 4 - len(l)))} │`), `╰${'─'.repeat(cols - 2)}╯`]
+// The frame a pane sits in: a rounded border, body width = cols - 4. `{ ansi: true }` colours Text runs with SGR codes.
+export function frame(tree: Node, title: string, cols: number, opts?: { ansi?: boolean }): string[] {
+  const before = ansiOn
+  ansiOn = opts?.ansi === true
+  try {
+    const body = draw(tree, cols - 4)
+    const top = `╭─ ${title} ${'─'.repeat(Math.max(0, cols - len(title) - 5))}╮`
+    return [top, ...body.map(l => `│ ${l}${' '.repeat(Math.max(0, cols - 4 - len(l)))} │`), `╰${'─'.repeat(cols - 2)}╯`]
+  } finally {
+    ansiOn = before
+  }
 }
