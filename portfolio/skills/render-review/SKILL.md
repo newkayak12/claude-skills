@@ -30,7 +30,8 @@ for the next render. Portfolio deck and resume alike. **Not for** content judgem
 
 1. **Keep the render.** Deck: `node ${CLAUDE_PLUGIN_ROOT}/skills/manage/scripts/manage.mjs keep-render --version vX.Y.Z`
    (previews from `build/pages/` to `snapshot/render/deck-vX.Y.Z/`, `검토.md` with a row per page).
-   Resume: `pdftoppm -r 80 -png build/resume.pdf snapshot/render/resume-<YYYY-MM-DD>/pages/p`, then
+   Resume: copy the previews `render` already wrote (`build/pages/resume-p-N.png`) to
+   `snapshot/render/resume-<YYYY-MM-DD>/pages/` (no pdftoppm needed; a bench host had none), then
    the same `검토.md` table (`| 쪽 | 본 것 | 문제 | next-render |`) beside it.
 2. **List what a tool can.** `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/office_render.py margins build/<file>.pdf`
    (each side from `style/레이아웃.md`: `- top/bottom/left/right: <pt>` lines or a table with a

@@ -8,9 +8,15 @@ The resume is the portfolio's second output, built the same way: designed in `re
 - Sections in the order of the user's template (`template/template.docx` or `resume.docx`); projects in
   the portfolio's order.
 - Facts and sentences come from `portfolio-skeleton.md` only. A fact the portfolio lacks is fixed
-  there first, then carried over.
+  there first, then carried over. Identity, contact, education, company dates and the skills list
+  are the exception: they come from the template's own text and `확정사실.md` (the skeleton has none).
+- The template's sample sentences are the user's older resume, not material: every claim in them
+  is replaced or dropped, never carried (a bench template held banned "2.7초", "628건" and projects
+  the portfolio leaves out, 2026-11-26).
 - A developer term gets a plain gloss in the same line, as in the portfolio.
-- Page budget (`pages:`) is the user's; what to cut to meet it is the user's decision.
+- Page budget (`pages:`) is the user's. In a portfolio workspace the cut follows manage
+  `principles.md` § Resume (appendix items first, then the weakest body line) and is listed, not
+  asked (user, 2026-11-25: "이런 판단이 아쉬운거임"); elsewhere, propose the cuts and wait.
 
 ## Build (`resume-deck.mdx` → `build/resume.docx`)
 
