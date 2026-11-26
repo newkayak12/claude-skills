@@ -486,6 +486,14 @@ const MEASURED = /\d\s*(?:ms|초|분|req\/s|건\/s|TPS|RPS)(?![과기A-Za-z])|\d
 // lock and wait settings are configuration, not an outcome (bench22b's B2B passed on "분산락 … 5초, 3초")
 const NOT_OUTCOME = /주의|덱 반영|이력|미측정|거짓|타임아웃|timeout|TTL|대기 시간 \d|유지 \d|설정|최대 \d+초 대기|leaseTime|waitTime|구현 리뷰/i
 
+// `안 씀: 149건, 14건; 3건` (or `쓰지 않음:`) in a 선정.md row's 이유: the figures that item never shows.
+// The list runs to a sentence stop (`. `) or the cell; `,` and `;` both separate (a run's rows used `;`
+// and only the first figure was held, 2026-11-26). A decimal point (7.5%, 2.7초) is no stop.
+export function heldFigs(why) {
+  const m = String(why || '').match(/(?:안 씀|쓰지 않음)\s*[:：]\s*((?:[^|.]|\.(?=\d))+)/)
+  return new Set(m ? figs(m[1]) : [])
+}
+
 export function selection(root) {
   let text = ''
   try { text = readFileSync(at(root, 'sources', '선정.md'), 'utf8') } catch { return null }
@@ -507,10 +515,7 @@ export function selection(root) {
   // outcome (not held back with `안 씀:`, not a plan or draft line) goes to 부록 whole (three runs
   // of one skill put the unfinished B2B project in the body 3, 0 and 0 times, 2026-11-24)
   const items = readMaterial(root)
-  const heldOf = r => {
-    const m = String(r.why || '').match(/(?:안 씀|쓰지 않음)\s*[:：]\s*((?:[^;|.]|\.(?=\d))+)/)
-    return new Set(m ? figs(m[1]) : [])
-  }
+  const heldOf = r => heldFigs(r.why)
   const byProject = new Map()
   for (const r of rows.filter(r => r.use === '본문' && r.id.includes('/') && items.has(r.id))) {
     const p = r.id.split('/')[0]
@@ -534,7 +539,8 @@ export function selection(root) {
   // a figure 확정사실 states that no item holds (not banned there): the drafter cannot cite or explain
   // it (three chapter runs asked what 98.1% was; its base was in the analysis increment, 2026-11-25)
   const all = [...items.values()].map(i => i.text).join('\n')
-  const factOnly = confirmedFacts(root).flatMap(c => c.figs.filter(f => !(c.banned || []).includes(f) && !all.includes(f))
+  const heldAny = new Set(rows.flatMap(r => [...heldOf(r)]))
+  const factOnly = confirmedFacts(root).flatMap(c => c.figs.filter(f => !(c.banned || []).includes(f) && !all.includes(f) && !heldAny.has(f))
     .map(f => `${f} — ${c.text.slice(0, 80)}`))
   return { rows, problems: bad, fact_only: [...new Set(factOnly)] }
 }
@@ -1043,9 +1049,7 @@ export function claims(text, items, settledLines = [], sel = null, confirmed = [
   const use = new Map((sel?.rows || []).map(r => [r.id, r.use]))
   // `안 씀: 149건, 14건` (or `쓰지 않음:`) in a row's 이유: figures that item never shows
   const held = new Map((sel?.rows || []).map(r => {
-    // the list ends at a sentence stop (`. `), `;` or the cell — a decimal point (7.5%, 2.7초) is not one
-    const m = String(r.why || '').match(/(?:안 씀|쓰지 않음)\s*[:：]\s*((?:[^;|.]|\.(?=\d))+)/)
-    return [r.id, new Set(m ? figs(m[1]) : [])]
+    return [r.id, heldFigs(r.why)]
   }))
   const problems = [], listed = { self_confirmed: [], user_stated: [], tone: [], confirmed: [], summary: [], in_text: [] }
   const carried = new Map()   // item id → figures some page carries
@@ -1056,7 +1060,7 @@ export function claims(text, items, settledLines = [], sel = null, confirmed = [
   let cur = null
   for (const l of lines) {
     const h = l.match(HEADING)
-    if (h) { cur = { page: Number(h[2]), body: [], ids: [] }; pages.push(cur); continue }
+    if (h) { cur = { page: Number(h[2]), title: l, body: [], ids: [] }; pages.push(cur); continue }
     if (/^#{1,2}\s/.test(l)) { cur = null; continue }
     if (!cur || CHANGE_LINE.test(l)) continue
     const c = l.match(CITE)
@@ -1093,7 +1097,10 @@ export function claims(text, items, settledLines = [], sel = null, confirmed = [
     const offer = ground.flatMap(it => it.rows.filter(r => !/근거 없음/.test(r.evidence) && !PLAN.test(r.evidence) && !PLAN.test(r.head || '')).flatMap(r => r.figs.filter(f => !banned.has(f) && !heldBy.get(it.id).has(f)).map(f => ({ f, s: `${f} (${it.id})` }))))
       .sort((a, b) => weight(b.f) - weight(a.f)).map(x => x.s)
     const pageFigs = p.body.flatMap(figs)
-    if (offer.length && !pageFigs.length)
+    // a cover, contents or appendix attachment shows no result of its own: the document is the
+    // evidence there (three full-skeleton runs were left with 10, 14 and 19 such pages, 2026-11-26)
+    const frame = /표지|내지|목차|첨부|부록|프로필|핵심 역량|@s5\b|·\s*\d+장\s/.test(p.title || '')
+    if (offer.length && !pageFigs.length && !frame)
       problems.push({ page: p.page, kind: 'no_figure', text: `cites ${known.join(', ')} but carries none of their figures — put one on the page: ${[...new Set(offer)].slice(0, 4).join(', ')}` })
     for (const line of p.body) {
       for (const t of TONE) if (line.includes(t)) listed.tone.push({ page: p.page, phrase: t.trim(), text: line })

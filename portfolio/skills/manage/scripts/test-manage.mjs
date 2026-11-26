@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { spawnSync } from 'node:child_process'
-import { svgLines, bannedFigs,addQuestion, readQuestions, roundCheck, freezeStable, enginePathWarnings, safeArea, bump, claims, compare, confirmedFacts, deckPages, figs, headings, intake, resumePages, keepRender, layout, parseMap, readMaterial, readRounds, renumber, round, scaffold, selection, settle, settled, settledNote, snapshot, step, sync, verify, verifyBuild } from './manage.mjs'
+import { svgLines, bannedFigs, heldFigs, addQuestion, readQuestions, roundCheck, freezeStable, enginePathWarnings, safeArea, bump, claims, compare, confirmedFacts, deckPages, figs, headings, intake, resumePages, keepRender, layout, parseMap, readMaterial, readRounds, renumber, round, scaffold, selection, settle, settled, settledNote, snapshot, step, sync, verify, verifyBuild } from './manage.mjs'
 import { deflateRawSync } from 'node:zlib'
 
 const SKEL = `# 가상 포트폴리오
@@ -471,6 +471,23 @@ test('selection: a figure only 확정사실 holds (not banned there) is listed a
   writeFileSync(join(root, 'docs/확정사실.md'), '- 2026-11-11: 운영 대조 수치(98.1%)는 각주에 쓴다\n- 스테이지 대조 9건\n')
   writeFileSync(join(root, 'sources/선정.md'), '| 글감 | 쓰임 | 쪽 | 이유 | 대표 |\n|---|---|---|---|---|\n| 01_이관/A4 | 본문 | 5 | x | y |\n')
   assert.deepEqual(selection(root).fact_only.map(s => s.split(' ')[0]), ['98.1%'])
+  // a figure held on any row is handled: not listed again
+  writeFileSync(join(root, 'sources/선정.md'), '| 글감 | 쓰임 | 쪽 | 이유 | 대표 |\n|---|---|---|---|---|\n| 01_이관/A4 | 본문 | 5 | 안 씀: 3건; 98.1% | y |\n')
+  assert.deepEqual(selection(root).fact_only, [])
+})
+
+test('heldFigs: `,` and `;` both separate, a sentence stop ends the list, a decimal point does not', () => {
+  assert.deepEqual([...heldFigs('안 씀: 149건; 14건, 2.7초. 대표는 30%')], ['149건', '14건', '2.7초'])
+  assert.deepEqual([...heldFigs('강한 신호')], [])
+})
+
+test('claims: a cover, contents or appendix attachment page is never no_figure', () => {
+  const root = mkdtempSync(join(tmpdir(), 'manage-frame-'))
+  mkdirSync(join(root, 'sources', '01_이관'), { recursive: true })
+  writeFileSync(join(root, 'sources/01_이관/A1_전환.md'), '# 전환\n## 사실\n- 응답이 0.7초에서 0.3초로 줄었다\n')
+  const page = h => `## ${h}\n글감: 01_이관/A1\n- 전환을 했습니다\n`
+  const r = claims([page('4쪽 · 1장 배송 추적 이관'), page('21쪽 · 첨부 1 · 설계 문서'), page('5쪽 · 기준을 남겼습니다')].join('\n'), readMaterial(root))
+  assert.deepEqual(r.problems.filter(p => p.kind === 'no_figure').map(p => p.page), [5])
 })
 
 test('selection: an item whose scene is a weak pass goes to 부록, never 제외', () => {

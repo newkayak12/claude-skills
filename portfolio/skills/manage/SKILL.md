@@ -151,7 +151,7 @@ context or in a figure either; `claims` flags it on any page citing the item), w
    page cites results but shows none: put the result the reader needs on it (claims offers them, results first) —
    a page of reasons with no number lost every such pair in a blind bench (2026-11-21). Take the
    offered result, not a count of parts; a figure 확정사실 rules out is replaced by another measured
-   one, never by a vaguer sentence; an offered figure that is no result for this reader goes on the item's 선정.md row as `안 씀: <figure>`, never swapped for a test or scale count (a run put "9건" to pass and the reviewer flagged it as scale, 2026-11-25). Every project cover uses the same cover archetype, so each carries
+   one, never by a vaguer sentence; an offered figure that is no result for this reader goes on the item's 선정.md row as `안 씀: <figure>`, never swapped for a test or scale count (a run put "9건" to pass and the reviewer flagged it as scale, 2026-11-25). Every project cover uses the same cover archetype (a one-person project leaves team and contribution out, user: "개인이 뭐해요"; all three full runs hit the clash), so each carries
    period, team, role and contribution, and its subtitle names the concrete problem (`502 응답`, not
    `일부 요청이 실패`) — a bench lost the side project's cover for dropping them (2026-11-22). A cover
    cites its chapter's items too, and its tech-stack table names only technologies those items name
