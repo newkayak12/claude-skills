@@ -20,11 +20,13 @@ export const STEP_KEYS = ['plan', 'implement', 'test', 'gate', 'report'];
 export const STEP_PHASE = { plan: 1, implement: 2, test: 2, gate: 5, report: 6 };
 
 export function stepOfNode(id) {
-  const base = String(id).split(':')[0];
+  const parts = String(id).split(':');
+  const base = parts[0];
   if (/^(size|shape|plan|setgoal|critique)$/.test(base)) return 'plan';
-  if (base === 'implement') return 'implement';
-  if (/^(test|cases|execute)$/.test(base)) return 'test';
-  if (base === 'gate') return 'gate';
+  if (/^(implement|repair)$/.test(base)) return 'implement';
+  if (/^(test|cases|execute|reduce)$/.test(base)) return 'test';
+  // only the goal gate is the Gate step; a per-subgoal gate (gate:<sg>:<round>) belongs to Test
+  if (base === 'gate') return parts[1] === 'goal' ? 'gate' : 'test';
   if (base === 'report') return 'report';
   return null;
 }

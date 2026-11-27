@@ -634,10 +634,24 @@ function harnessSteps(run, sg, loadRun = loadRunAt) {
   const by = Object.fromEntries(STEP_KEYS.map((k) => [k, []]));
   if (run && run.route === 'graph') {
     const g = loadRun(graphRunPath(run.cwd, run.run_id));
+    // only each node group's latest round counts (group = id minus a trailing `:<digits>[a-z]?`; no
+    // suffix = round 1): a rejected gate or retried attempt stays in the graph as failed
+    const groups = new Map();
     for (const n of (g && Array.isArray(g.nodes) ? g.nodes : [])) {
       if (!n || n.state === 'skipped') continue;
-      const k = stepOfNode(n.node_id);
-      if (k) by[k].push(nodeState(n.state));
+      const id = String(n.node_id);
+      const m = /^(.*):(\d+)[a-z]?$/.exec(id);
+      const group = m ? m[1] : id;
+      const round = m ? Number(m[2]) : 1;
+      const cur = groups.get(group);
+      if (!cur || round > cur.round) groups.set(group, { round, nodes: [n] });
+      else if (round === cur.round) cur.nodes.push(n);
+    }
+    for (const { nodes } of groups.values()) {
+      for (const n of nodes) {
+        const k = stepOfNode(n.node_id);
+        if (k) by[k].push(nodeState(n.state));
+      }
     }
   } else if (run && run.route === 'fallback') {
     let names = [];

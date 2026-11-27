@@ -259,6 +259,13 @@ const railSegs = (stages: SummaryTask['stages'], say: Say): Seg[] =>
     { t: `${MARK_ICON[g.state]}${phaseName(say, g.key, true)}`, ...(g.state === 'pending' ? { dim: true } : { tint: MARK_TINT[g.state] as Tint, bold: g.state === 'running' }) },
   ])
 
+// the rail of an entry that carries `steps` (size S): its five steps as sent, whole words (✔Plan ●Implement ○Test ○Gate ○Report)
+const stepSegs = (steps: NonNullable<SummaryTaskEntry['steps']>, say: Say): Seg[] =>
+  steps.flatMap((st, i): Seg[] => [
+    ...(i === 0 ? [] : [{ t: ' ' }]),
+    { t: `${MARK_ICON[st.state]}${say(`sgStage${cap(st.key)}`)}`, ...(st.state === 'pending' ? { dim: true } : { tint: MARK_TINT[st.state] as Tint, bold: st.state === 'running' }) },
+  ])
+
 // F3's in-stage progress as its own keys (Build n/m, QA n/m, SGk stage); blank when the engine sent none
 export function progressText(p: SummaryTask['progress'], say: Say): string {
   if (p === undefined) return ''
@@ -363,6 +370,7 @@ export function homeRows(listed: readonly SummaryTaskEntry[], o: HomeOpts): Home
     const ended = isEnded(t)
     const state = epicState(t)
     const stage = t.stages.find(g => g.state === 'running')
+    const running = t.steps?.find(st => st.state === 'running')
     const cost = t.cost.usd > 0 || t.cost.estimated ? costText(t.cost.usd, t.cost.estimated === true) : ''
     const after = t.cost.post_stop_usd == null ? '' : say('afterStop', { usd: costText(t.cost.post_stop_usd, false) })
     const keyName = `${t.key} · ${t.title}`
@@ -379,7 +387,10 @@ export function homeRows(listed: readonly SummaryTaskEntry[], o: HomeOpts): Home
     return {
       id: `e:${t.task_id}`, block: 'epic', ref,
       cells: [
-        ' ', '▾', ICON[state], keyName, wt, compact ? (stage === undefined ? '' : phaseName(say, stage.key)) : railSegs(t.stages, say),
+        ' ', '▾', ICON[state], keyName, wt,
+        t.steps !== undefined
+          ? compact ? (running === undefined ? '' : say(`sgStage${cap(running.key)}`)) : stepSegs(t.steps, say)
+          : compact ? (stage === undefined ? '' : phaseName(say, stage.key)) : railSegs(t.stages, say),
         compact ? '' : (state === 'you' ? say('wordYou') : heldWord(t, say) ?? ''),compact ? '' : progressText(t.progress, say), compact ? '' : `STORY ${t.done}/${t.total}`, since(epicElapsed(t, now)), [cost, after].filter(Boolean).join(' '),
       ],
       tints: [undefined, 'claude', TINT[state], undefined, 'dim', compact ? 'claude' : undefined, 'dim', 'dim', 'dim', 'dim', 'dim'],
@@ -465,6 +476,12 @@ export function homeHeader(listed: readonly SummaryTaskEntry[], now: number, say
 const barCell = (state: Mark, tone: Tone, done: number, total: number): Seg[] =>
   state === 'running' && total <= 0 ? [{ t: '░'.repeat(BAR_W), tint: tone } as Seg] : phaseBar(state === 'done' ? 1 : state === 'running' ? done : 0, state === 'done' ? 1 : state === 'running' ? total : 0, BAR_W, tone)
 const STEP_ID = { plan: 'p:1', implement: 'p:2', test: 'p:2t', gate: 'p:5', report: 'p:6' } as const
+// the step a Phase page stands for on an entry that carries `steps`: the FLOOR row that was selected (Implement and Test share
+// phase 2), else the first step of that phase; undefined for an entry with no steps
+export function stepKeyAt(t: Pick<SummaryTaskEntry, 'steps'>, phase: number, floorSel: string | undefined): string | undefined {
+  const of = t.steps?.filter(s => s.phase === phase) ?? []
+  return (of.find(s => STEP_ID[s.key] === floorSel) ?? of[0])?.key
+}
 export function floorRows(t: SummaryTaskEntry, say: Say): PageRow[] {
   // a size-S entry: its five steps (engine's `steps`), the running one reads `<stage> · k/n` from progress
   if (t.steps !== undefined) {
@@ -773,9 +790,41 @@ export function windowItems(items: readonly PhaseItem[], at: number, rows = PAGE
 // the line label of the STORY page, padded to one width
 const labelled = (labels: readonly string[], i: number): Seg => ({ t: padText(labels[i]!, Math.max(...labels.map(width)) + 2), bold: true })
 
+// a line cut to w cells by the code, ending in … (trailing blanks do not count); the host never gets to cut it at the box edge
+export function clipLine(line: Line, w: number): Line {
+  const segs = line.map(s => ({ ...s }))
+  while (segs.length > 0 && segs[segs.length - 1]!.t.trimEnd() !== segs[segs.length - 1]!.t) {
+    const last = segs[segs.length - 1]!
+    last.t = last.t.trimEnd()
+    if (last.t === '') segs.pop()
+  }
+  if (segs.reduce((n, s) => n + width(s.t), 0) <= w) return segs
+  const out: Line = []
+  let used = 0
+  for (const s of segs) {
+    if (used + width(s.t) <= w - 1) {
+      out.push(s)
+      used += width(s.t)
+      continue
+    }
+    // this segment holds the cut: its tail gives way to the …
+    out.push({ ...s, t: clipText(`${s.t}…`, w - used) })
+    break
+  }
+  // a cut that fell in blank padding leaves a lone …: it joins the text before it
+  if (out[out.length - 1]!.t.replace(/…$/, '').trim() === '') {
+    out.pop()
+    while (out.length > 0 && out[out.length - 1]!.t.trim() === '') out.pop()
+    if (out.length === 0) return [{ t: '…' }]
+    const last = out[out.length - 1]!
+    last.t = last.t.trimEnd().endsWith('…') ? last.t.trimEnd() : `${last.t.trimEnd()}…`
+  }
+  return out
+}
+
 // STORY detail, top block: FLOW (one mark and node per stage, a solid link into a started stage, a dotted one before a pending
 // one), the try's progress bar and numbers, the subagents by kind and model. Blank lines are left out, never faked.
-export function storyTop(p: StoryPayload | null, say: Say): Line[] {
+export function storyTop(p: StoryPayload | null, say: Say, inner: number): Line[] {
   if (p === null || p.missing === true) return []
   const labels = [say('f2StoryFlow'), say('f2StoryProgress'), say('f2StoryParticipants')]
   const flow: Line = [labelled(labels, 0)]
@@ -796,7 +845,7 @@ export function storyTop(p: StoryPayload | null, say: Say): Line[] {
     out.push([labelled(labels, 2), { t: say('f2StoryAgents', { total: sum(p.participants.total), live: sum(p.participants.live) }) }])
     out.push([{ t: ' '.repeat(Math.max(...labels.map(width)) + 2) }, { t: p.participants.total.map(x => `${x.kind} ×${x.n}${x.model ? ` ${x.model}` : ''}`).join('  '), dim: true }])
   }
-  return out
+  return out.map(l => clipLine(l, inner))
 }
 
 // the attempt-by-node grid: a header of the nodes, one row per attempt (n/max), a mark per node, a rejected judge as `✘ 61/80`
@@ -819,7 +868,7 @@ export function storyGrid(p: StoryPayload | null, max: number | null, say: Say, 
     tints.push(['dim', ...stages.map(k => { const c = a.cells[k]; return c == null ? undefined : MARK_TINT[c.state] }), 'warning'])
   }
   const widths = columnWidths(rows.map(r => r.map(cellText)), inner, 2, [stages.length + 1], 4)
-  return rows.map((r, i) => rowLine(r, widths, 2, tints[i]))
+  return rows.map((r, i) => clipLine(rowLine(r, widths, 2, tints[i]), inner))
 }
 
 // who works the STORY now (the payload's workers: its drivers and the judge), under the Now heading

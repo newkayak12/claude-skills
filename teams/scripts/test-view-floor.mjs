@@ -1007,6 +1007,73 @@ test('S step_head: Test with k/n mid-run; Plan alone with no goal spec; Report w
   } finally { w2.cleanup(); }
 });
 
+// A graph-route run: nodes given as [id, stage, state, subgoal_id]; the run file keeps its request tag and created_at.
+function sGraph(w, spec) {
+  const s = sTask(w, { graphFile: true });
+  const nodes = spec.map(([id, stage, state, sg]) => node(id, stage, [], { state, subgoal_id: sg === undefined ? null : sg }));
+  write(s.graphPath, JSON.stringify({ run_id: s.runId, request: `do it [teams-task ${s.id}]`, created_at: Date.now(), nodes }));
+  refresh(s.graphPath); refresh(join(s.dir, 'task.json'));
+  return s;
+}
+const planNodes = [['plan', 'plan', 'done'], ['setgoal', 'setgoal', 'done'], ['critique', 'critique', 'done']];
+const sgNodes = (sg, n, state = 'done') => [[`implement:${sg}:${n}`, 'implement', state, sg], [`test:${sg}:${n}`, 'test', state, sg], [`gate:${sg}:${n}`, 'gate', state, sg]];
+const allSub = [...planNodes, ...sgNodes('U1', 1), ...sgNodes('U2', 1), ['reduce', 'reduce', 'done']];
+
+test('S steps graph: mid-build, a finished subgoal gate does not move Gate while another subgoal implements', () => {
+  const w = world();
+  try {
+    sGraph(w, [...planNodes, ...sgNodes('U1', 1), ['implement:U2:1', 'implement', 'running', 'U2'], ['test:U2:1', 'test', 'pending', 'U2'], ['gate:U2:1', 'gate', 'pending', 'U2'],
+      ['reduce', 'reduce', 'pending'], ['gate:goal:1', 'gate', 'pending'], ['report', 'report', 'pending']]);
+    const t = summary(w).tasks[0];
+    assert.deepEqual(stepStates(t), ['plan:done', 'implement:running', 'test:running', 'gate:pending', 'report:pending']);
+    assert.deepEqual(t.step_head, { key: 'implement' });
+    assert.equal(t.workers.find((x) => x.id === 'S').phase, 'build');
+  } finally { w.cleanup(); }
+});
+
+test('S steps graph: goal gate running (regression guard: green on the old mapping too)', () => {
+  const w = world();
+  try {
+    sGraph(w, [...allSub, ['gate:goal:1', 'gate', 'running'], ['report', 'report', 'pending']]);
+    assert.deepEqual(stepStates(summary(w).tasks[0]), ['plan:done', 'implement:done', 'test:done', 'gate:running', 'report:pending']);
+  } finally { w.cleanup(); }
+});
+
+test('S steps graph: rejected goal gate, repair running (gate:goal:1 is superseded by round 2, which is pending)', () => {
+  const w = world();
+  try {
+    sGraph(w, [...allSub, ['gate:goal:1', 'gate', 'failed'], ['repair:1', 'repair', 'running'], ['gate:goal:2', 'gate', 'pending'], ['report', 'report', 'pending']]);
+    const t = summary(w).tasks[0];
+    assert.deepEqual(stepStates(t), ['plan:done', 'implement:running', 'test:done', 'gate:pending', 'report:pending']);
+    assert.deepEqual(t.step_head, { key: 'implement' });
+  } finally { w.cleanup(); }
+});
+
+test('S steps graph: recovered goal gate (repair done, round 2 done) reads gate done', () => {
+  const w = world();
+  try {
+    sGraph(w, [...allSub, ['gate:goal:1', 'gate', 'failed'], ['repair:1', 'repair', 'done'], ['gate:goal:2', 'gate', 'done'], ['report', 'report', 'running']]);
+    assert.deepEqual(stepStates(summary(w).tasks[0]), ['plan:done', 'implement:done', 'test:done', 'gate:done', 'report:running']);
+  } finally { w.cleanup(); }
+});
+
+test('S steps graph: retried subgoal gate (attempt 1 failed, attempt 2 done) is not failed', () => {
+  const w = world();
+  try {
+    sGraph(w, [...planNodes, ['implement:U1:1', 'implement', 'done', 'U1'], ['test:U1:1', 'test', 'done', 'U1'], ['gate:U1:1', 'gate', 'failed', 'U1'],
+      ...sgNodes('U1', 2), ['reduce', 'reduce', 'done'], ['gate:goal:1', 'gate', 'running'], ['report', 'report', 'pending']]);
+    assert.deepEqual(stepStates(summary(w).tasks[0]), ['plan:done', 'implement:done', 'test:done', 'gate:running', 'report:pending']);
+  } finally { w.cleanup(); }
+});
+
+test('S steps graph: exhausted goal gate (failed, no later round) still reads failed', () => {
+  const w = world();
+  try {
+    sGraph(w, [...allSub, ['gate:goal:1', 'gate', 'failed'], ['report', 'report', 'pending']]);
+    assert.deepEqual(stepStates(summary(w).tasks[0]), ['plan:done', 'implement:done', 'test:done', 'gate:failed', 'report:pending']);
+  } finally { w.cleanup(); }
+});
+
 test('S steps: an L task entry has no steps key', () => {
   const w = world();
   try {

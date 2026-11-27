@@ -4,7 +4,7 @@ import type { EngineInterface, Register } from 'claude-code'
 import type { Dash, DecisionsPayload, ReportPayload, StatusInfo, SummaryTask, SummaryTaskEntry, TeamsEvent, TeamsView } from '../types'
 import { HOME, askBandShown, carriesInput, escRoute, fallbackSelection, levelOf, pageEsc, pageKey, pageStep, paneSlash, reconcileEpic, selectedOf, statusAnswer } from './pane'
 import type { Page, PageKey, PageNav, RowRef, StepCtx, StepResult } from './pane'
-import { HOME_PLANS, PAGE_ROWS, PHASE_KEYS, clipText, clipWords, crumbFit, costText, entryLines, epicElapsed, floorRows, footerPlan, KEYS_CHROME, homeHeader, homeRows, isEnded, logLines, needsOf, pageLines, phaseModel, plain, renderLines, rowIdsOf, since, storyGrid, storyLabel, storyNow, storyReportLines, storyRows, storyThreads, storyTop, width, windowItems, windowOf } from './teams-draw'
+import { HOME_PLANS, PAGE_ROWS, PHASE_KEYS, clipLine, clipText, stepKeyAt, clipWords, crumbFit, costText, entryLines, epicElapsed, floorRows, footerPlan, KEYS_CHROME, homeHeader, homeRows, isEnded, logLines, needsOf, pageLines, phaseModel, plain, renderLines, rowIdsOf, since, storyGrid, storyLabel, storyNow, storyReportLines, storyRows, storyThreads, storyTop, width, windowItems, windowOf } from './teams-draw'
 import type { DecisionX, Line, PageOpts, PageRow, PhaseEntry, PhaseItem, StoryPayload, StoryReport } from './teams-draw'
 
 // the person's unread message rows (view-bus.mjs `unread.notice`, listed as status `notices`): `text` is the band row, already clipped by the
@@ -1084,7 +1084,12 @@ export const register: Register = on => {
     }
 
     // line 1: the breadcrumb from HOME (page names and Phase names by key), the Phase header of FLOOR on its right
-    const phaseLabel = (n: number) => `${n} ${say(`f2PhaseName${cap(PHASE_KEYS[n - 1]!)}`)}`
+    // an entry that carries `steps` (size S) names the step as sent, without a number; the FLOOR row last selected tells Implement from Test
+    const floorSel = stored.sel[levelOf({ name: 'FLOOR', epic: pg.epic, story: null, phase: null })]
+    const phaseLabel = (n: number) => {
+      const stepKey = entry === undefined ? undefined : stepKeyAt(entry, n, floorSel)
+      return stepKey !== undefined ? say(`sgStage${cap(stepKey)}`) : `${n} ${say(`f2PhaseName${cap(PHASE_KEYS[n - 1]!)}`)}`
+    }
     const item = entry?.items.find(i => i.key === pg.story)
     const storyName = pg.story === null ? '' : `${storyLabel(pg.story)}${item === undefined ? '' : ` ${item.title}`}`
     const epicName = entry ? `${entry.key} · ${entry.title}` : ''
@@ -1196,7 +1201,7 @@ export const register: Register = on => {
         // Log waits for its payload; Phase detail and the Report draw their sections (a dim – where nothing is recorded)
         page$ = pg.name === 'LOG' && sd === null ? <Text dimColor>{s('loading')}</Text> : renderLines(ui, windowed.lines, 't')
       } else if (pg.name === 'STORY') {
-        const top = storyTop(sd, say)
+        const top = storyTop(sd, say, inner)
         const grid = storyGrid(sd, item?.max ?? null, say, inner)
         const working = storyNow(sd, opts, inner, entry as PhaseEntry | undefined)
         const threads = storyThreads(sd, say, inner)
@@ -1207,7 +1212,7 @@ export const register: Register = on => {
             {working.length > 0 && <Box flexDirection="column">{rule('r3')}{renderLines(ui, working, 'c')}</Box>}
             {threads.length > 0 && <Box flexDirection="column">{rule('r5')}{renderLines(ui, threads, 'm')}</Box>}
             {rule('r4')}
-            {buttonRows(pageLines(rows, sel, inner, HOME_PLANS), rows)}
+            {buttonRows(pageLines(rows, sel, inner, HOME_PLANS).map(l => clipLine(l, inner)), rows)}
           </Box>
         )
       } else if (pg.name === 'EPIC_REPORT') {

@@ -4176,6 +4176,13 @@ const sizeS = (stageKey: 'plan' | 'build') => epicOf('tS', SIZE_S_ID, [story(SIZ
   stages: [stage('plan', stageKey === 'plan' ? 'running' : 'done'), stage('build', stageKey === 'build' ? 'running' : 'pending'), ...P_STAGES.slice(2).map(g => stage(g.key, 'pending'))],
   phases: [{ key: 'plan', ...NO_PHASE, workers: 1, acting: stageKey === 'plan' ? 1 : 0 }, { key: 'build', ...NO_PHASE, workers: stageKey === 'build' ? 1 : 0, acting: stageKey === 'build' ? 1 : 0 }, ...P_PHASES.slice(2)],
   workers: [{ ...wk('S', 'acting', 'planning'), phase: stageKey }],
+  // the engine's five steps of a size-S entry (key, state, phase), as sent
+  steps: (['plan', 'implement', 'test', 'gate', 'report'] as const).map((key, i) => ({
+    key, phase: [1, 2, 2, 5, 6][i]!, you: 0, stalled: 0,
+    state: stageKey === 'plan' ? (i === 0 ? 'running' : 'pending') : i === 0 ? 'done' : i === 1 ? 'running' : 'pending',
+    acting: (stageKey === 'plan' ? i === 0 : i === 1) ? 1 : 0,
+  })),
+  step_head: { key: stageKey === 'plan' ? 'plan' : 'implement' },
 })
 const sizeSData = (stageKey: 'plan' | 'build' = 'plan') => PAGES_FIXTURE({ tasks: [sizeS(stageKey)] })
 const SIZE_S_FLOOR = { name: 'FLOOR', epic: 'tS', story: null, phase: null }
@@ -4221,8 +4228,9 @@ for (const [lang, t] of [[undefined, STRINGS.en], ['korean', STRINGS.ko]] as con
 
 test('size S in Plan: FLOOR counts 1 working on Plan and none on Build', async ($, on) => {
   const { lines } = await homeLines($, on, 190, sizeSData('plan'), 'terminal', undefined, { epic: 'tS', page: SIZE_S_FLOOR })
-  const plan = lines.find(l => /1 Plan/.test(l))!
-  const build = lines.find(l => /2 Build/.test(l))!
+  // the entry carries its five steps (card 125), so the rows are the step words
+  const plan = lines.find(l => /[✔●○✘] +Plan( |$)/.test(l))!
+  const build = lines.find(l => /[✔●○✘] +Implement( |$)/.test(l))!
   expect(plan).toContain('1 working')
   expect(build).not.toContain('working')
 })
@@ -4626,6 +4634,70 @@ test('card 125 S floor demo renders', () => {
   for (const [name, lines] of last) console.log(`=== ${name} ===\n${lines.join('\n')}\n=== end ===`)
 })
 
+// ---- card 125 S rail: an entry that carries `steps` draws its five steps on HOME, never the six-phase rail ----
+const SIX_PHASE_WORD = /(^|[^A-Za-z])(Build|Integ|QA|Rep)([^A-Za-z]|$)/
+const stepWords = (ko: boolean) => (ko ? ['계획', '구현', '테스트', '게이트', '보고'] : ['Plan', 'Implement', 'Test', 'Gate', 'Report'])
+test('card 125 S rail: the sizeS fixture carries its five steps', () => {
+  for (const k of ['plan', 'build'] as const) {
+    const t = sizeS(k) as unknown as { steps: { key: string; state: string }[] }
+    expect(t.steps.map(s => s.key)).toEqual(['plan', 'implement', 'test', 'gate', 'report'])
+  }
+  expect((sizeS('plan') as any).steps.map((s: any) => s.state)).toEqual(['running', 'pending', 'pending', 'pending', 'pending'])
+  expect((sizeS('build') as any).steps.map((s: any) => s.state)).toEqual(['done', 'running', 'pending', 'pending', 'pending'])
+})
+for (const [name, data, key, running] of [['S_FLOOR', S_FLOOR, 'E-5c1d7e20', 'test'], ['sizeSData', () => sizeSData('build'), SIZE_S_ID, 'implement']] as const) {
+  for (const surface of SURFACES) {
+    for (const lang of ['en', 'ko'] as const) {
+      for (const cols of [190, 110]) {
+        test(`card 125 S rail: HOME ${name} ${surface} ${lang} at ${cols}: five steps, no six-phase word`, async ($, on) => {
+          const ko = lang === 'ko'
+          const { lines } = await homeLines($, on, cols, data(), surface, ko ? 'korean' : undefined, { epic: name === 'S_FLOOR' ? 'tA' : 'tS', page: HOME_PAGE })
+          sound(lines, cols)
+          const row = lines.find(l => l.includes(key))!
+          expect(row).toBeDefined()
+          expect(row).not.toMatch(SIX_PHASE_WORD)
+          const words = stepWords(ko)
+          if (carriesInput(surface) && cols === 190) {
+            for (const w of words) expect(row).toMatch(new RegExp(`(^|\\s)[✔●○✘]${w}( |$)`))
+          }
+          if (!carriesInput(surface)) {
+            // the compact cell names the running step
+            expect(row).toMatch(new RegExp(`(^|\\s)${words[['plan', 'implement', 'test', 'gate', 'report'].indexOf(running)]}( |$)`))
+          }
+        })
+      }
+    }
+  }
+}
+
+// ---- card 125 S crumb: the Phase page, ENTRY and EPIC_REPORT of a size-S entry name the step ----
+const S_CRUMB_PHASE = (phase: number) => ({ name: 'PHASE', epic: 'tA', story: null, phase })
+for (const lang of ['en', 'ko'] as const) {
+  const ko = lang === 'ko'
+  const [wPlan, wImpl, wTest, wGate, wReport] = stepWords(ko)
+  for (const [label, phase, sel, word] of [
+    ['p:1', 1, 'p:1', wPlan], ['p:2', 2, 'p:2', wImpl], ['p:2t', 2, 'p:2t', wTest], ['p:5', 5, 'p:5', wGate], ['p:6', 6, 'p:6', wReport],
+    ['no selection, phase 2', 2, undefined, wImpl],
+  ] as const) {
+    test(`card 125 S crumb: Phase page from FLOOR row ${label} ends in the step word (${lang})`, async ($, on) => {
+      const page = phase === 6 ? EPIC_REPORT : S_CRUMB_PHASE(phase)
+      const { lines } = await homeLines($, on, 190, S_FLOOR(), 'terminal', ko ? 'korean' : undefined, { page, ...(sel === undefined ? {} : { pageSel: { 'FLOOR:tA::': sel } }) })
+      const crumb = lines[0]!
+      expect(crumb).toMatch(new RegExp(`› ${phase === 6 ? 'FLOOR › ' : ''}${word}( {2}|$)`))
+      expect(crumb).not.toMatch(/› \d |Build|Phase/)
+    })
+  }
+  test(`card 125 S crumb: ENTRY of a size-S entry names the step without a number (${lang})`, async ($, on) => {
+    const { lines } = await homeLines($, on, 190, S_FLOOR(), 'terminal', ko ? 'korean' : undefined, { page: { name: 'ENTRY', epic: 'tA', story: null, phase: 2, entry: 'd:0' }, pageSel: { 'FLOOR:tA::': 'p:2t' } })
+    expect(lines[0]).toContain(`› ${wTest} ›`)
+    expect(lines[0]).not.toMatch(/› \d |Build/)
+  })
+  test(`card 125 S crumb: an L entry keeps its numbered crumbs (${lang})`, async ($, on) => {
+    const { lines } = await homeLines($, on, 190, P_FIXTURE(), 'terminal', ko ? 'korean' : undefined, { page: PHASE_BUILD })
+    expect(lines[0]).toContain(`› 2 ${STRINGS[lang].f2PhaseNameBuild}`)
+  })
+}
+
 // ---- card 125 width at the live pane: 110 -> inner 44, 190 -> inner 79 ----
 const LIVE = { 110: 52, 190: 87 } as const // terminal columns -> the cols argument whose pane matches the live capture
 const W110_SHOTS: { name: string; lines: string[] }[] = []
@@ -4696,10 +4768,10 @@ for (const c of W110_CASES) {
             expect(lines.at(-1)).toContain(W110_FOOT[c.foot][lang][term])
             if (term === 110) expect(lines.at(-1)).not.toContain(lang === 'en' ? 'w s move' : 'w s 이동')
           }
-          // the STORY page's own boxes, and (card 182) the FLOOR and PHASE section boxes, fill the pane (sound() below holds them to cols - 4)
-          const boxed = c.size === 'FOOT-STORY' || /FLOOR|PHASE/.test(c.size)
-          // box lines fill the frame body (cols - 4); every other line (header, counts, footer) keeps cols - 8
-          for (const l of lines) expect(width(l)).toBeLessThanOrEqual(LIVE[term] - (c.size === 'FOOT-STORY' || (boxed && /^\s*[┌│└├╭╰╔║╚]/.test(l)) ? 4 : 8))
+          // (card 182) the FLOOR and PHASE section boxes fill the pane (sound() below holds them to cols - 4); the STORY page has no boxes
+          const boxed = /FLOOR|PHASE/.test(c.size)
+          // box lines fill the frame body (cols - 4); every other line (header, counts, footer, the whole STORY page) keeps cols - 8
+          for (const l of lines) expect(width(l)).toBeLessThanOrEqual(LIVE[term] - (boxed && /^\s*[┌│└├╭╰╔║╚]/.test(l) ? 4 : 8))
           sound(lines, LIVE[term])
         })
       }
