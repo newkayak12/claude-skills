@@ -173,6 +173,7 @@ headless 실행(`claude -p`)에서는 이 명령들이 텍스트를 출력합니
 한 세션에서 `main`으로의 `git push`가 성공하면(`origin main`, `HEAD:main`, `x:main`, main 브랜치에서의 그냥 push), 같은 저장소에서 최근 30분 안에 움직인 다른 열린 세션마다 `main moved to <sha> … Fetch before editing or bumping versions.` 메시지가 갑니다. 세션당 2분에 한 번까지이고, 이 세션에는 `main moved: told N of M` toast가 뜹니다. headless 실행은 보내지 않습니다.
 
 ## 상태
+- `0.14.0`: node로 그리는 상태 줄(모델, 시간, git 브랜치, 컨텍스트 %, 5시간/7일 한도)을 `status_line` 옵션으로 켭니다. 직접 설정한 statusLine이 있으면 그것을 씁니다. 정책 플러그인이 설정 hook을 건너뛰는 계정에서는 statusLine을 직접 설정해야 합니다.
 - `0.13.0`: smart-compact가 기준점 근처에서 compaction마다 한 번 handoff를 미리 써 두고, compaction이 오면(auto, plugin, 표식이 있는 수동, precompute) 그것을 다시 씁니다. 미리 쓴 호출 비용은 그 compaction에 붙이고, 엔진이 compact한 뒤에는 엔진 요약을 남기며, `/smart-compact log`가 before/after/off별 합계를 보여 줍니다.
 - `0.12.0`: 정책 플러그인이 `session.compact` mod 훅을 건너뛰는 환경에서도 auto-compact가 handoff 항목을 받습니다. PreCompact 명령 훅이 넣어 주며, 수동 compact, 표식, smart-compact off일 때는 아무것도 하지 않습니다.
 - `0.11.1`: `classic.SessionStart`를 건너뛰게 하는 정책 플러그인 아래에서도 `/compact`나 `/clear` 뒤 `/memo`가 다시 들어갑니다. 대화가 마지막으로 보낸 때보다 짧아지면 다시 보냅니다. session은 그 정책이 건너뛰는 이벤트에 훅을 두지 않아, 시작할 때 "hook was skipped" 줄이 뜨지 않습니다.
