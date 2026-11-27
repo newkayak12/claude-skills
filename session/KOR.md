@@ -44,7 +44,11 @@ Claude Code가 사용자 단계 플러그인의 `settings.read` 이벤트를 받
 
 - 어떤 설정 계층에서도 `statusLine`을 지정하지 않았을 때만 추가됩니다. 직접 지정한 `statusLine`이 항상 우선합니다.
 - 끄려면 `/config`에서 `status_line`을 끄거나, 직접 `statusLine`을 지정합니다.
-- 훅이 동작하지 않는 환경(한계 참고)에서는 직접 `statusLine`을 `node "<플러그인 루트>/scripts/statusline.mjs"`로 지정합니다.
+- 훅이 동작하지 않는 환경(한계 참고)에서는 `/session:statusline`을 실행합니다. 상태줄 스크립트를 플러그인 데이터 디렉터리의 고정된 위치로 복사하고, 사용자 `settings.json`에 `node "<데이터 디렉터리>/statusline/statusline.mjs"`를 실행하는 `statusLine` 항목 하나를 씁니다. 먼저 설정 파일 경로, 데이터 디렉터리, 현재 `statusLine`을 보여 줍니다.
+- 이 명령은 사용자 단계 `settings.json`에 쓰므로, 프로젝트·로컬·관리 설정의 `statusLine`이 여전히 이 항목보다 우선합니다.
+- `/session:statusline off`는 이 명령이 쓴 항목과 복사해 둔 스크립트만 지웁니다. 직접 지정한 `statusLine`은 그대로 둡니다. `/session:statusline show`는 현재 상태만 보여 줍니다.
+- 직접 지정한 `statusLine`은 묻지 않고 바꾸지 않습니다. 명령이 멈춰서 물어보고, 예라고 답한 뒤에만 `on --replace`를 실행합니다. 이때 이전 값을 먼저 데이터 디렉터리의 `statusline/previous.json`에 저장합니다. `off`는 이를 되돌리지 않으며, 파일은 그대로 남으므로 직접 복사해 넣어야 합니다.
+- 플러그인을 업데이트해도 복사본은 바뀌지 않으므로 `/session:statusline`을 다시 실행해 갱신합니다. 플러그인을 삭제하기 전에 `/session:statusline off`를 실행하세요. 그러지 않으면 항목이 복사해 둔 스크립트를 계속 가리킵니다.
 - 미확인: `/config` 토글이 즉시 반영되는지, 재시작이 필요한지.
 
 ## 가드
@@ -173,6 +177,7 @@ headless 실행(`claude -p`)에서는 이 명령들이 텍스트를 출력합니
 한 세션에서 `main`으로의 `git push`가 성공하면(`origin main`, `HEAD:main`, `x:main`, main 브랜치에서의 그냥 push), 같은 저장소에서 최근 30분 안에 움직인 다른 열린 세션마다 `main moved to <sha> … Fetch before editing or bumping versions.` 메시지가 갑니다. 세션당 2분에 한 번까지이고, 이 세션에는 `main moved: told N of M` toast가 뜹니다. headless 실행은 보내지 않습니다.
 
 ## 상태
+- `0.15.0`: `/session:statusline`이 설정에 상태 줄 항목을 써 넣고(`off`로 지움), 플러그인이 스스로 설정하지 못하는 계정에서 씁니다.
 - `0.14.1`: smart-compact가 미리 쓴 handoff를 bridge 파일로 남겨, 조직 정책이 mod의 compact hook을 건너뛰는 곳에서도 PreCompact hook이 그것을 씁니다.
 - `0.14.0`: node로 그리는 상태 줄(모델, 시간, git 브랜치, 컨텍스트 %, 5시간/7일 한도)을 `status_line` 옵션으로 켭니다. 직접 설정한 statusLine이 있으면 그것을 씁니다. 정책 플러그인이 설정 hook을 건너뛰는 계정에서는 statusLine을 직접 설정해야 합니다.
 - `0.13.0`: smart-compact가 기준점 근처에서 compaction마다 한 번 handoff를 미리 써 두고, compaction이 오면(auto, plugin, 표식이 있는 수동, precompute) 그것을 다시 씁니다. 미리 쓴 호출 비용은 그 compaction에 붙이고, 엔진이 compact한 뒤에는 엔진 요약을 남기며, `/smart-compact log`가 before/after/off별 합계를 보여 줍니다.
@@ -204,5 +209,5 @@ headless 실행(`claude -p`)에서는 이 명령들이 텍스트를 출력합니
 - Windows: 고아 프로세스 영역은 숨겨지고 중지는 꺼집니다. Retro 보기와 밴드는 동작합니다.
 - 보드의 harness 칸은 통과한 subgoal 수를 spec과 실행 폴더의 subgoal 수와 비교해 셉니다. 전체 단계 보기는 `/harness-status`에 있습니다.
 - UI는 인터랙티브 세션 전용입니다. 헤드리스 실행은 기록과 요약 저장만 하고 아무것도 그리지 않습니다.
-- 상태줄 명령: `settings.read` 이벤트가 없는 빌드에서는 줄이 그려지지 않습니다. 조직 플러그인이 `settings.read`를 올리는 환경(팀 계정에서 확인)에서는 훅이 건너뛰어져 줄이 그려지지 않습니다. Claude Code는 플러그인 `settings.json`의 `statusLine`을 무시하므로 그 방식으로는 설정할 수 없습니다. 실제 실행에서 줄이 그려지는 것은 아직 보지 못했습니다.
+- 상태줄 명령: `settings.read` 이벤트가 없는 빌드에서는 줄이 그려지지 않습니다. 조직 플러그인이 `settings.read`를 올리는 환경(팀 계정에서 확인)에서는 훅이 건너뛰어져 줄이 그려지지 않습니다. 이때는 `/session:statusline`이 `settings.json`에 항목을 대신 씁니다. Claude Code는 플러그인 `settings.json`의 `statusLine`을 무시하므로 그 방식으로는 설정할 수 없습니다. 실제 실행에서 줄이 그려지는 것은 아직 보지 못했습니다.
 - 실제 터미널 세션(2.1.294)에서 확인했습니다. 패널, `[stop]`, 회고 밴드, auto·bypass 모드의 가드 확인, `/clear` 뒤 `/memo`. 데스크톱 Code 탭은 아직 확인하지 않았습니다.

@@ -44,7 +44,11 @@ Where Claude Code honours the `settings.read` event for a user-tier plugin, the 
 
 - It is added only when no settings layer sets `statusLine`. A `statusLine` of your own always wins.
 - Turn it off in `/config` (`status_line` off), or set your own `statusLine`.
-- Where the hook does not run (see Limits), point your own `statusLine` at `node "<plugin root>/scripts/statusline.mjs"`.
+- Where the hook does not run (see Limits), run `/session:statusline`. It copies the status line scripts to a stable place in the plugin data dir and writes one `statusLine` entry that runs `node "<data dir>/statusline/statusline.mjs"` into your user `settings.json`. It first prints the settings path, the data dir and the current `statusLine`.
+- The command writes the user-level `settings.json`, so a `statusLine` in project, local or managed settings still overrides it.
+- `/session:statusline off` removes only the entry this command wrote, and the copied scripts. A `statusLine` that is not its own is left alone. `/session:statusline show` only prints the current state.
+- A `statusLine` of your own is never replaced without asking. The command stops and asks; only after you say yes does it run `on --replace`, which saves the old value to `statusline/previous.json` in the data dir first. `off` does not restore it; the file stays there for you to copy back by hand.
+- A plugin update does not replace the copy; rerun `/session:statusline` to refresh it. Run `/session:statusline off` before uninstalling the plugin, or the entry keeps pointing at the copied scripts.
 - Not verified: whether the `/config` toggle takes effect live or needs a restart.
 
 ## Guard
@@ -173,6 +177,7 @@ One row per `git worktree list --porcelain` entry of this repo: branch (or detac
 When a `git push` to `main` goes through in one session (`origin main`, `HEAD:main`, `x:main`, or a plain push while on main), every other open session of the same repository that was active in the last 30 minutes gets a message: `main moved to <sha> … Fetch before editing or bumping versions.` At most one message per session every 2 minutes; this session gets a toast `main moved: told N of M`. Headless runs send nothing.
 
 ## Status
+- `0.15.0`: `/session:statusline` writes the status line entry into your settings (and `off` removes it) where the plugin cannot set it itself.
 - `0.14.1`: smart-compact writes a bridge file with the pre-written handoff, so the PreCompact hook reuses it where an org policy skips the mod's compact hook.
 - `0.14.0`: a status line drawn by node (model, time, git branch, context %, 5h/7d limits), on by the `status_line` option unless you set your own statusLine; where a policy plugin skips the settings hook, set statusLine by hand.
 - `0.13.0`: smart-compact writes the handoff ahead, once per compaction, near the threshold and reuses it when the compaction comes (auto, plugin, marked manual or precompute), charges that call to the compaction, keeps the engine's own summary after an engine compaction, and `/smart-compact log` gives totals per arm (before, after, off).
@@ -204,5 +209,5 @@ When a `git push` to `main` goes through in one session (`origin main`, `HEAD:ma
 - Windows: the orphan section is hidden and stopping is off; the Retro view and band work.
 - The board's harness cell counts subgoals that passed against the spec's and the run folder's subgoals; the full stage view stays in `/harness-status`.
 - Interactive sessions only for UI; headless runs record the ledger and save the summary, nothing is drawn.
-- Status line command: on a build without the `settings.read` event no line is drawn. Where an organization plugin raises `settings.read` (seen on a team account), the hook is skipped and no line is drawn. Claude Code ignores `statusLine` in a plugin's `settings.json`, so the plugin cannot set it that way. Drawing the line has not been seen in a real run.
+- Status line command: on a build without the `settings.read` event no line is drawn. Where an organization plugin raises `settings.read` (seen on a team account), the hook is skipped and no line is drawn; `/session:statusline` writes the entry into `settings.json` instead. Claude Code ignores `statusLine` in a plugin's `settings.json`, so the plugin cannot set it that way. Drawing the line has not been seen in a real run.
 - Checked in a live terminal session (2.1.294): panes, `[stop]`, the retro band, guard asks in auto and bypass mode, and `/memo` after `/clear`. The desktop Code tab is not checked yet.

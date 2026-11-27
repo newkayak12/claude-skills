@@ -293,6 +293,7 @@ toasts).
 ### session plugin
 
 183. **Installing session gives the user's current status line, with no settings edit**
+   - 2026-11-28 (E-1d712ba1, gate 93): `/session:statusline` writes (and `off` removes) a statusLine entry in the user settings pointing at a stable copy in the plugin data dir; never replaces a user's own line without asking. Done; remove at next trim.
    - Why: user, 2026-11-26: "현재 statusline plugins session에서 설치하면 그대로 쓸 수 있게도 해주고". Today the line comes from `~/.claude/statusline-command.sh` (94 lines: model, HH:MM, 🧠 Ctx %, ⏱️ 5h / 📅 7d rate limits, git branch …), wired by hand in `~/.claude/settings.json` `statusLine` behind a phantom wrapper; session has status code (`session/hooks/status.ts`) but does not ship this line.
    - Acceptance: a fresh profile with only session installed shows the same fields in the same order (compared against the script on the same stdin JSON); a user's own `statusLine` setting still wins; jq not required; `cd session && claude plugin test .` counts; README/KOR say how to turn it off.
 
