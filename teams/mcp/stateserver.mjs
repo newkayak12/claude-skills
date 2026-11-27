@@ -74,7 +74,12 @@ const SETTLED_MS = 30 * 1000;
 export function statePaths(tasksDir) {
   const root = resolve(tasksDir);
   let sock = join(root, '.state.sock');
-  if (Buffer.byteLength(sock) > SUN_PATH_MAX) sock = join(tmpdir(), `teams-state-${createHash('sha1').update(root).digest('hex').slice(0, 12)}.sock`);
+  if (Buffer.byteLength(sock) > SUN_PATH_MAX) {
+    const name = `teams-state-${createHash('sha1').update(root).digest('hex').slice(0, 12)}.sock`;
+    sock = join(tmpdir(), name);
+    // a long TMPDIR overflows sun_path too, and listen() then fails
+    if (Buffer.byteLength(sock) > SUN_PATH_MAX) sock = join('/tmp', name);
+  }
   return { sock, lock: join(root, '.state.lock') };
 }
 

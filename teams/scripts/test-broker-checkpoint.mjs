@@ -10,7 +10,7 @@ import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdtempSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import {
   applyRollback,
   attributionBase,
@@ -43,9 +43,15 @@ async function repo(fn) {
     rmSync(d, { recursive: true, force: true });
   }
 }
+// tmpdir() may sit inside a git checkout: the ceiling makes "outside git" true for the plain dir.
 async function plain(fn) {
   const d = realpathSync(mkdtempSync(join(tmpdir(), 'broker-checkpoint-plain-')));
-  try { return await fn(d); } finally { rmSync(d, { recursive: true, force: true }); }
+  const prev = process.env.GIT_CEILING_DIRECTORIES;
+  process.env.GIT_CEILING_DIRECTORIES = dirname(realpathSync(d));
+  try { return await fn(d); } finally {
+    if (prev === undefined) delete process.env.GIT_CEILING_DIRECTORIES; else process.env.GIT_CEILING_DIRECTORIES = prev;
+    rmSync(d, { recursive: true, force: true });
+  }
 }
 
 test('gitChanged lists modified and untracked paths verbatim (spaces, non-ASCII), skips .teams_wiki, and is null outside git', async () => {

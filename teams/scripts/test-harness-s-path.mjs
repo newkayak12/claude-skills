@@ -468,7 +468,13 @@ function openedTask({ git = true, commit = true } = {}) {
   }
   const task = { run_id, cwd, request: 'small request', size: 'S', flow: 'auto', nodes: [], goal_threshold: 90, driver_restarts: 0 };
   process.env.HARNESS_TEST_NO_DRIVER = '1';
-  try { openHarnessRun(task); } finally { delete process.env.HARNESS_TEST_NO_DRIVER; }
+  // tmpdir() may sit inside a git checkout: the ceiling makes "outside git" true for a plain dir.
+  const prevCeiling = process.env.GIT_CEILING_DIRECTORIES;
+  if (!git) process.env.GIT_CEILING_DIRECTORIES = dirname(realpathSync(cwd));
+  try { openHarnessRun(task); } finally {
+    delete process.env.HARNESS_TEST_NO_DRIVER;
+    if (prevCeiling === undefined) delete process.env.GIT_CEILING_DIRECTORIES; else process.env.GIT_CEILING_DIRECTORIES = prevCeiling;
+  }
   return task;
 }
 

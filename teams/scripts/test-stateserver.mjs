@@ -84,6 +84,8 @@ const query = (args, extra = 'proto=1') => {
 };
 
 async function ready(path) {
+  // a path over sun_path can never listen: fail now, not after 200 polls in every test
+  assert.ok(Buffer.byteLength(path) <= 103, `socket path is ${Buffer.byteLength(path)} bytes, over sun_path: ${path}`);
   for (let i = 0; i < 200; i++) {
     if (existsSync(path)) { try { if ((await get(path, query(['--format', 'events', '--since', '0', '--cwd', cwd]))).status === 200) return; } catch { /* not listening yet */ } }
     await sleep(50);
@@ -161,10 +163,29 @@ test('F2-AC-44, 49: story and story-report are served byte for byte like --once,
 });
 
 test('the socket is <tasksDir>/.state.sock, with no plugin version in its name', () => {
-  assert.equal(statePaths(tasks).sock, join(tasks, '.state.sock'));
-  assert.equal(statePaths(tasks).lock, join(tasks, '.state.lock'));
+  // a short root by construction: the fixture root sits under tmpdir(), which may itself be long
+  const short = '/tmp/ss-short/tasks';
+  assert.equal(statePaths(short).sock, join(short, '.state.sock'));
+  assert.equal(statePaths(short).lock, join(short, '.state.lock'));
   const version = JSON.parse(readFileSync(join(HERE, '..', '.claude-plugin', 'plugin.json'), 'utf8')).version;
-  assert.ok(!statePaths(tasks).sock.includes(version));
+  assert.ok(!statePaths(short).sock.includes(version));
+});
+
+test('statePaths() stays within 103 bytes when both the root and TMPDIR are long', () => {
+  const saved = process.env.TMPDIR;
+  try {
+    process.env.TMPDIR = '/tmp/' + 't'.repeat(120);
+    const deep = '/tmp/' + 'r'.repeat(120) + '/tasks';
+    const { sock: s, lock } = statePaths(deep);
+    assert.ok(Buffer.byteLength(s) <= 103, `${Buffer.byteLength(s)} bytes: ${s}`);
+    assert.ok(/^\/tmp\/teams-state-[0-9a-f]{12}\.sock$/.test(s), s);
+    assert.equal(lock, join(deep, '.state.lock'));
+    // a tmpdir that fits keeps the socket there
+    process.env.TMPDIR = '/tmp/short';
+    assert.equal(statePaths(deep).sock, join('/tmp/short', s.slice('/tmp/'.length)));
+  } finally {
+    if (saved === undefined) delete process.env.TMPDIR; else process.env.TMPDIR = saved;
+  }
 });
 
 test('protocol: proto=1 answers 200 with the headers; another proto, or none, is a 409 with the JSON body', async () => {
@@ -240,7 +261,9 @@ test('a bound socket whose listener is gone is replaced and answers', async () =
   // a listener that dies without unlinking: SIGKILL a child holding the socket
   const holder = spawn('node', ['-e', `require('net').createServer().listen(${JSON.stringify(path)}, () => process.stdout.write('up'))`], { stdio: ['ignore', 'pipe', 'ignore'] });
   pids.add(holder.pid);
-  await new Promise((r) => holder.stdout.once('data', r));
+  // a holder that fails to listen exits without writing: that fails the test, it does not wait forever
+  const up = await Promise.race([new Promise((r) => holder.stdout.once('data', () => r(true))), new Promise((r) => holder.once('exit', () => r(false)))]);
+  assert.ok(up, `holder could not listen on ${path} (${Buffer.byteLength(path)} bytes)`);
   holder.kill('SIGKILL');
   await new Promise((r) => holder.once('exit', r));
   assert.ok(existsSync(path), 'socket file left behind');
