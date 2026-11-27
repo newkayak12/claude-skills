@@ -64,6 +64,7 @@ export const onlyShared = (tree: any) => {
   const walk = (n: any): void => {
     if (Array.isArray(n)) return n.forEach(walk)
     if (n === null || typeof n !== 'object') return
+    if (n.type === 'engine') return // core's own drawing (the band's next(e) answer), not the plugin's tree
     if (typeof n.type === 'string') types.add(n.type)
     walk(n.children)
   }

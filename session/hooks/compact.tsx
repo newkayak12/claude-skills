@@ -236,17 +236,23 @@ async function keepGuidedRecap($: any) {
 // there and that uuid is found on a line of the session's transcript (lineCount is that line's 1-based number);
 // anything unproven writes nothing. Returns why: written, no-home, no-session, no-uuid, transcript-unreadable,
 // uuid-not-found or write-failed. Never throws.
-async function writeBridge($: any, key: string, text: string, sessionId: string, rows: readonly { uuid?: string }[]): Promise<string> {
+async function writeBridge($: any, key: string, text: string, sessionId: string, lastUuid: string | undefined): Promise<string> {
   let step = 'no-home'
   try {
     const home = (await $.env.get('HOME')) as string | undefined
     if (!home) return 'no-home'
     if (!sessionId) return 'no-session'
-    const lastUuid = rows[rows.length - 1]?.uuid
     if (typeof lastUuid !== 'string' || !lastUuid) return 'no-uuid'
     step = 'transcript-unreadable'
     const root = String(await $.session.root())
-    const lines = String(await $.fs.read(`${home}/.claude/projects/${root.replace(/[^A-Za-z0-9]/g, '-')}/${sessionId}.jsonl`)).split('\n')
+    // the session's own transcript path; the guessed project-dir path only where info has none
+    let path = ''
+    try {
+      const given = (await $.session.info())?.transcriptPath
+      if (typeof given === 'string') path = given
+    } catch {}
+    if (!path) path = `${home}/.claude/projects/${root.replace(/[^A-Za-z0-9]/g, '-')}/${sessionId}.jsonl`
+    const lines = String(await $.fs.read(path)).split('\n')
     let at = -1
     for (let i = lines.length - 1; i >= 0 && at < 0; i--) {
       try {
@@ -265,7 +271,7 @@ async function writeBridge($: any, key: string, text: string, sessionId: string,
 
 // One fork over the conversation as it stands, ahead of the threshold. Success: ring entry `prewritten`, the recap kept
 // with its key, the bridge written if proven. Failure: `prewrite-failed:<reason>`. Never throws.
-async function prewriteNow($: any, raw: number | null, threshold: number, key: string, rows: readonly { uuid?: string }[]) {
+async function prewriteNow($: any, raw: number | null, threshold: number, key: string, lastUuid: string | undefined) {
   prewriting = true
   try {
     const r = await $.model.fork({ prompt: RECAP_PROMPT })
@@ -284,7 +290,7 @@ async function prewriteNow($: any, raw: number | null, threshold: number, key: s
       sessionId = String(await $.session.id())
     } catch {}
     await keepRecap($, r.text, { key, sessionId: sessionId || undefined, prewriteId: id })
-    const bridge = await writeBridge($, key, r.text, sessionId, rows)
+    const bridge = await writeBridge($, key, r.text, sessionId, lastUuid)
     // a plain patch of the ring entry, not logOutcome: the charge and the compaction counts are untouched
     writeLog($, async list => list.map(e => (e.id === id ? { ...e, bridge } : e)))
   } catch (err) {
@@ -334,7 +340,14 @@ async function startPrewrite($: any, e: { agentId?: string }, raw: number, thres
     })
     if (!rows.length || !allowed) return
     attempted.add(arm)
-    void prewriteNow($, raw, threshold, key, rows)
+    // uuid is on a read that names `last` or `after` only, so the newest row's comes from its own read
+    let lastUuid: string | undefined
+    try {
+      const newest = (await $.session.messages({ last: 1 })) as { uuid?: string }[] | { deny?: unknown }
+      const uuid = Array.isArray(newest) ? newest[newest.length - 1]?.uuid : undefined
+      if (typeof uuid === 'string' && uuid) lastUuid = uuid
+    } catch {}
+    void prewriteNow($, raw, threshold, key, lastUuid)
   } catch {}
 }
 

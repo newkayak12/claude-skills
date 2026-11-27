@@ -121,6 +121,10 @@ type LogOpts = {
   rows?: readonly unknown[]
   // the conversation $.session.messages() returns
   convo?: () => readonly unknown[]
+  // what a ranged ($.session.messages({ last })) read answers instead of the newest rows
+  ranged?: () => unknown
+  // what $.session.info() answers (a throw when absent from the world)
+  info?: () => unknown
   // HOME, the transcript fs.read returns (a throw when absent) and what fs.write does
   home?: string
   transcript?: string
@@ -135,7 +139,18 @@ const logWorld = (on: any, o: LogOpts = {}) => {
   on('session.surfaces', () => ({ value: headless ? [] : (o.surfaces ?? ['terminal']) }))
   on('session.root', () => ({ value: '/proj' }))
   const writes: { path: string; text: string }[] = []
-  if (o.convo) on('session.messages', () => ({ value: o.convo!() }) as never)
+  // uuid rides only on a read that names `last` or `after`, as the real API does
+  if (o.convo) {
+    on('session.messages', (_$: any, e: any) => {
+      const all = o.convo!() as { uuid?: string }[]
+      if (e?.last !== undefined || e?.after !== undefined) {
+        if (o.ranged) return o.ranged() as never
+        return { value: all.slice(-Number(e.last ?? all.length)) } as never
+      }
+      return { value: all.map(({ uuid: _u, ...r }) => r) } as never
+    })
+  }
+  if (o.info) on('session.info', () => o.info!() as never)
   on('env.get', (_$: any, e: any) => ({ value: e.name === 'HOME' ? o.home : undefined }) as never)
   on('fs.read', (_$: any, e: any) => {
     if (o.transcript === undefined) throw new Error('ENOENT')
@@ -706,6 +721,48 @@ test('F1-AC-8 a proven bridge is written at the hashed path and passes bridgeFre
   expect(record).toMatchObject({ key: '4:h4', sessionId: w.sid, text: 'GOAL: ship smart-compact', lastUuid: 'h-u4', lineCount: 5 })
   expect(bridgeFresh(record, { session_id: w.sid, transcript_path: '/t' }, transcript, NOW)).toBe(true)
   await until(() => w.log().some(l => l.bridge === 'written'), 'bridge reason')
+})
+
+test('F1-AC-8 the unranged read carries no uuid; the ranged last-1 read supplies it and the bridge is written', async ($, on) => {
+  const w = logWorld(on, { usage: at(67), convo: () => convo('j'), home: '/home/me', transcript: lines('j').join('\n') })
+  await $.turn.complete(TURN)
+  await until(() => w.writes.length === 1, 'bridge write')
+  expect(JSON.parse(w.writes[0]!.text)).toMatchObject({ lastUuid: 'j-u4', lineCount: 5 })
+  await until(() => w.log().some(l => l.bridge === 'written'), 'bridge reason')
+})
+
+test('F1-AC-8 the transcript path session.info gives is read, not the guessed one', async ($, on) => {
+  const w = logWorld(on, {
+    usage: at(67),
+    convo: () => convo('k'),
+    home: '/home/me',
+    transcript: lines('k').join('\n'),
+    info: () => ({ value: { transcriptPath: '/elsewhere/k.jsonl' } }),
+  })
+  await $.turn.complete(TURN)
+  await until(() => w.writes.length === 1, 'bridge write')
+  expect(w.reads[0]).toBe('/elsewhere/k.jsonl')
+})
+
+for (const [why, info] of [
+  ['session.info throws', () => { throw new Error('no info') }],
+  ['session.info has an empty transcriptPath', () => ({ value: { transcriptPath: '' } })],
+] as [string, () => unknown][]) {
+  test(`F1-AC-8 ${why}: the guessed project-dir transcript is read`, async ($, on) => {
+    const w = logWorld(on, { usage: at(67), convo: () => convo('m'), home: '/home/me', transcript: lines('m').join('\n'), info })
+    await $.turn.complete(TURN)
+    await until(() => w.writes.length === 1, 'bridge write')
+    expect(w.reads[0]).toBe(`/home/me/.claude/projects/-proj/${w.sid}.jsonl`)
+  })
+}
+
+test('F1-AC-9 a denied ranged read: no-uuid, no bridge, the recap is still stored', async ($, on) => {
+  const w = logWorld(on, { usage: at(67), convo: () => convo('n'), home: '/home/me', transcript: lines('n').join('\n'), ranged: () => ({ deny: 'no' }) })
+  await $.turn.complete(TURN)
+  await settled(w)
+  await until(() => w.log().some(l => l.bridge === 'no-uuid'), 'bridge no-uuid')
+  expect(w.writes).toEqual([])
+  expect((w.store.get(RECAP) as any).text).toBe('GOAL: ship smart-compact')
 })
 
 const unproven: [string, string, LogOpts][] = [
