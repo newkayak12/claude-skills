@@ -8,7 +8,7 @@ process.env.TZ = 'UTC';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, utimesSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, rmSync, utimesSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -262,7 +262,16 @@ test('live first then stalled, and a stalled task past 24 h is not listed', () =
   } finally { w.cleanup(); }
 });
 
-test('summary under 3 s with prefilter and mtime cache', () => {
+// The speed bar is relative to the slow path in this process: every task of the dir collected (no
+// prefilter) through a freshly imported view-floor-fs.mjs (an empty mtime cache). The two arms alternate
+// and each arm's best of BAR_PAIRS is compared, so a busy machine slows both.
+// K: must stay above filtered+cached/unfiltered+uncached with both working (ratio 0.296 on medians,
+// 15.6 / 52.9 ms; best-of-BAR_PAIRS 0.171 to 0.311 over 26 runs at load 6 to 144 on 8
+// cores) and below it with them bypassed (the full work and more: 0.982 or above over 22 runs).
+const K = 0.65;
+const BAR_PAIRS = 9;
+
+test('summary with prefilter and mtime cache keeps the relative bound against an unfiltered, uncached collect', async (t) => {
   const w = world();
   try {
     lTask(w, { id: 'aaaaaaaa-0001', pkgs: [{ id: 'P1', streamAgeMs: 1000, lines: [asst('x'), result(0.5)] }] });
@@ -272,10 +281,8 @@ test('summary under 3 s with prefilter and mtime cache', () => {
     const cancelled = lTask(w, { id: 'eeeeeeee-0005', pkgs: [{ id: 'P1', streamAgeMs: 1000 }] });
     write(join(cancelled.dir, 'task.json'), JSON.stringify({ ...JSON.parse(readFileSync(join(cancelled.dir, 'task.json'), 'utf8')), cancelled: true }));
     const seen = [];
-    const t0 = Date.now();
     const listed = floorTasks({ tasksDir: w.tasks, cwd: w.cwd, collect: (d, id) => { seen.push(id); return collectTask(d, id); } });
     const items = listed.map((x) => floorOf(x.m, floorFacts(x.m, w.tasks, x.id)));
-    assert.ok(Date.now() - t0 < 3000, 'elapsed < 3000 ms');
     assert.deepEqual(seen, ['aaaaaaaa-0001'], 'collectTask only for this cwd open-or-stalled-under-24h tasks');
     assert.equal(items[0].items[0].cost_usd, 0.5);
     const before = cacheStats();
@@ -283,6 +290,21 @@ test('summary under 3 s with prefilter and mtime cache', () => {
     const after = cacheStats();
     assert.ok(after.hits > before.hits, 'second call hits the mtime cache');
     assert.equal(after.misses, before.misses);
+
+    const ids = readdirSync(w.tasks);
+    const timed = (fn) => { const at = performance.now(); fn(); return performance.now() - at; };
+    const fast = [];
+    const slow = [];
+    for (let i = 0; i < BAR_PAIRS; i++) {
+      const uncached = await import(`./lib/view-floor-fs.mjs?uncached${i}`);
+      slow.push(timed(() => { for (const id of ids) { const m = collectTask(w.tasks, id); floorOf(m, uncached.floorFacts(m, w.tasks, id)); } }));
+      assert.equal(uncached.cacheStats().hits, 0, 'the slow arm starts with an empty cache');
+      fast.push(timed(() => { for (const x of floorTasks({ tasksDir: w.tasks, cwd: w.cwd })) floorOf(x.m, floorFacts(x.m, w.tasks, x.id)); }));
+    }
+    const best = Math.min(...fast);
+    const full = Math.min(...slow);
+    t.diagnostic(`floor best of ${BAR_PAIRS}: filtered+cached ${best.toFixed(1)} ms, unfiltered/uncached ${full.toFixed(1)} ms, ratio ${(best / full).toFixed(3)}`);
+    assert.ok(best <= K * full, `relative bound: filtered+cached ${best.toFixed(1)} ms > ${K} x unfiltered/uncached ${full.toFixed(1)} ms (ratio ${(best / full).toFixed(3)})`);
   } finally { w.cleanup(); }
 });
 

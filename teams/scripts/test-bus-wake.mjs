@@ -11,7 +11,7 @@ process.env.HARNESS_JUDGE_TIMEOUT_MS = '1500';
 delete process.env.HARNESS_TEST_NO_DRIVER;
 delete process.env.HARNESS_ANSWER_DRIVER;
 delete process.env.TEAMS_ASK_TASK_ID;
-import { test } from 'node:test';
+import { test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -24,7 +24,19 @@ const SCRATCH = mkdtempSync(join(tmpdir(), 'bus-wake-scratch-'));
 const STUB_LOG = join(SCRATCH, 'driver-calls.jsonl');
 process.env.HARNESS_TASKS_DIR = ROOT;
 process.env.STUB_LOG = STUB_LOG;
-writeFileSync(join(SCRATCH, 'driver.mjs'), "import { appendFileSync } from 'node:fs';\nappendFileSync(process.env.STUB_LOG, JSON.stringify({ argv: process.argv.slice(2) }) + '\\n');\nsetTimeout(() => {}, 3000);\n");
+// The stub stays alive, as a driver mid-node does, until its test releases it or SCRATCH is gone: a
+// fixed lifetime could end inside a test, and the dead driver would be restarted by the next tick.
+// The 60 s exit is only a hang guard.
+const releases = new Set();
+writeFileSync(join(SCRATCH, 'driver.mjs'), [
+  "import { appendFileSync, existsSync } from 'node:fs';",
+  "import { dirname } from 'node:path';",
+  "const { STUB_LOG, STUB_RELEASE } = process.env;",
+  "appendFileSync(STUB_LOG, JSON.stringify({ argv: process.argv.slice(2) }) + '\\n');",
+  "setInterval(() => { if (existsSync(STUB_RELEASE) || !existsSync(dirname(STUB_LOG))) process.exit(0); }, 50);",
+  "setTimeout(() => process.exit(1), 60000);",
+].join('\n') + '\n');
+afterEach(() => { for (const f of releases) writeFileSync(f, ''); releases.clear(); });
 process.env.HARNESS_CHILD_DRIVER = `node ${join(SCRATCH, 'driver.mjs')}`;
 
 const tm = await import(join(HERE, '..', 'mcp', 'taskmanager.mjs'));
@@ -65,6 +77,8 @@ function seedTask({ dispatchState = 'running' } = {}) {
       graph.node('accept:P1:1', 'accept', ['dispatch:P1:1'], { subgoal_id: 'P1' })],
   }, null, 2));
   current = { childId };
+  process.env.STUB_RELEASE = join(SCRATCH, `release-${seq}`); // read by every stub spawned from here on
+  releases.add(process.env.STUB_RELEASE);
   return { id: run_id, key: `E-${run_id.slice(0, 8)}/P1`, node: 'dispatch:P1:1', childCwd, childId, runFile };
 }
 
@@ -90,6 +104,11 @@ async function until(fn, ms = 6000) {
   while (Date.now() < end) { if (fn()) return true; await sleep(50); }
   return fn();
 }
+// Every spawn is in the ledger, with its pid, before the call that made it returns: store.mjs runs
+// afterCommit before mutateTask returns, and applySpawn there records the event (taskmanager-claims.mjs
+// respawnDriver). So the ledger count right after step() is final; a stub's own log line lags it.
+const spawns = (t) => events(t.id, 'child_driver_restarted').concat(events(t.id, 'child_driver_next_node'), events(t.id, 'child_driver_spawned')).filter((e) => e.pid);
+const driverPid = (t) => load(t.id).nodes.find((x) => x.node_id === t.node).child.driver.pid;
 const ask = (t, question = Q) => callTool('tm_ask', { task_id: t.id, key: t.key, question });
 const post = (t, from, to, body = 'a note') => callTool('tm_post', { task_id: t.id, from, to, body });
 const step = (t, answer) => daemon.stepOnce(t.id, { judge: async () => { throw new Error('no judge expected'); }, answer });
@@ -171,9 +190,11 @@ test('(a) a post to a parked STORY with no open ask starts exactly one driver na
   const ev = events(t.id, 'child_driver_restarted').at(-1);
   assert.equal(ev.reason, 'bus_unread');
   // the driver is alive and the wake is recorded: more ticks start nothing
+  const pid = driverPid(t);
   await step(t);
   await step(t);
-  await sleep(150);
+  assert.equal(spawns(t).length, 1, 'the later ticks spawned nothing');
+  assert.equal(driverPid(t), pid);
   assert.equal(driverCalls().length, calls0 + 1, 'exactly one driver');
 });
 
@@ -191,7 +212,9 @@ test('a started wake is not repeated for the same unread messages once that driv
   save(t.id, task);
   await step(t);
   assert.ok(!events(t.id, 'child_driver_restarted').slice(1).some((e) => e.reason === 'bus_unread'), 'no second wake for the same message');
-  await sleep(100);
+  // That tick's spawn is the ordinary dead-driver restart; wait for its stub before going on.
+  assert.deepEqual(spawns(t).map((e) => e.restart ?? e.reason), ['bus_unread', 1]);
+  assert.ok(await until(() => driverCalls().length === calls0 + 2), 'the restarted driver ran');
   const task2 = load(t.id);
   task2.nodes.find((x) => x.node_id === t.node).child.driver.pid = DEAD;
   save(t.id, task2);
@@ -211,11 +234,13 @@ test('a wake that could not start a process is not counted: bus_woken_ts stays u
   // asynchronous ENOENT here so it does not fail the runner.
   const saved = process.listeners('uncaughtException');
   process.removeAllListeners('uncaughtException');
-  process.on('uncaughtException', (e) => { if (!(e && e.code === 'ENOENT')) throw e; });
+  let enoent = 0;
+  process.on('uncaughtException', (e) => { if (!(e && e.code === 'ENOENT')) throw e; enoent += 1; });
   try {
     await step(t);
     await step(t);
-    await sleep(100);
+    await until(() => enoent >= 2); // both errors must arrive while this handler is installed
+    assert.equal(enoent, 2, 'one spawn error per tick');
   } finally {
     process.removeAllListeners('uncaughtException');
     for (const l of saved) process.on('uncaughtException', l);
@@ -239,7 +264,9 @@ test('(b) a post to a STORY with an open ask starts no driver until the ask is a
   await post(t, 'teamleader', t.key, 'unrelated note');
   await step(t, verdict({ verdict: 'forward', reason: 'unsettled' }));
   await step(t, async () => { throw new Error('must not run again'); });
-  await sleep(150);
+  assert.equal(events(t.id, 'story_ask_forwarded').length, 1, 'the ticks reached the ask');
+  assert.equal(spawns(t).length, 0); // the answer below must then start the one and only driver
+  assert.equal(driverPid(t), DEAD);
   assert.equal(driverCalls().length, calls0, 'no driver while the ask is open');
   assert.equal(events(t.id, 'child_driver_restarted').length, 0);
   const { cards } = await callTool('tm_inbox', { task_id: t.id });
@@ -249,7 +276,7 @@ test('(b) a post to a STORY with an open ask starts no driver until the ask is a
   assert.match(prompt, /integers/);
   assert.match(prompt, /1 unread, call tm_read/, 'the answer line itself is not counted');
   await step(t);
-  await sleep(150);
+  assert.deepEqual(spawns(t).map((e) => e.reason), ['story_answered']);
   assert.equal(driverCalls().length, calls0 + 1, 'one respawn carried both');
   assert.deepEqual(restarts(t), []);
   assert.equal(events(t.id, 'child_driver_restarted').filter((e) => e.reason === 'bus_unread').length, 0);
@@ -263,10 +290,19 @@ test('(c) a post to a STORY whose driver is running starts no driver', async () 
   const calls0 = driverCalls().length;
   await post(t, 'teamleader', t.key, 'for a running driver');
   await step(t);
-  await sleep(150);
+  assert.equal(spawns(t).length, 0);
+  assert.equal(driverPid(t), process.pid);
   assert.equal(driverCalls().length, calls0);
   assert.equal(events(t.id, 'child_driver_restarted').length, 0);
   assert.equal(bus.unreadFor(load(t.id), t.key), 1, 'it waits to be read with tm_read');
+  // The same message does wake once that driver is gone, and its stub is the only one ever logged.
+  const gone = load(t.id);
+  gone.nodes.find((x) => x.node_id === t.node).child.driver.pid = DEAD;
+  save(t.id, gone);
+  await step(t);
+  assert.deepEqual(spawns(t).map((e) => e.reason), ['bus_unread']);
+  assert.ok(await until(() => driverCalls().length > calls0), 'the sentinel wake ran');
+  assert.equal(driverCalls().length, calls0 + 1);
 });
 
 test('(d) a post to `all` starts no driver and counts as unread for nobody', async () => {
@@ -301,7 +337,10 @@ test('a STORY whose dispatch is no longer running, or whose run is done, is not 
   const tt = load(t.id);
   const nt = tt.nodes.find((y) => y.node_id === t.node);
   tm.serviceDeadDriver(tt, nt.child, nt.node_id);
-  await sleep(150);
+  // t's call does start the ordinary restart (not a wake): the sentinel that spawns here get logged.
+  assert.deepEqual(spawns(t).map((e) => e.restart ?? e.reason), [1]);
+  assert.ok(await until(() => driverCallsOf(t).length === 1), 'the sentinel restart ran');
+  assert.equal(spawns(u).length, 0);
   assert.equal(driverCallsOf(u).length, 0, 'zero spawns for the finished run');
   assert.deepEqual(restarts(u), [], 'no restart spent');
   assert.equal(events(t.id, 'child_driver_restarted').filter((e) => e.reason === 'bus_unread').length, 0, 'no bus wake for a settled dispatch');

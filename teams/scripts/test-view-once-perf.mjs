@@ -3,8 +3,8 @@
 // index) from the same fixtures; a task that goes from running to done is not served stale; a corrupt
 // index is a full read. Fixtures are temp dirs.
 // The default large-fixture test proves the index by making every finished task.json unreadable (chmod 000)
-// before the second call; the wall-clock bar (a warm status and summary call under 200 ms, best of 15) runs
-// by default. The index key is the mtime and size of task.json and ledger.jsonl.
+// before the second call; the speed bar (a warm status and summary call against the same call with no
+// index) runs by default. The index key is the mtime and size of task.json and ledger.jsonl.
 //
 //   node --test teams/scripts/test-view-once-perf.mjs
 //   VIEW_ONCE_VIEW=<view.mjs> VIEW_ONCE_REGEN=1 node teams/scripts/test-view-once-perf.mjs   (rewrite goldens from that view.mjs)
@@ -159,39 +159,58 @@ test('large fixture (2001 tasks): status, summary and events equal the golden by
   } finally { w.cleanup(); }
 });
 
-// The wall-clock bar on a warm call (the index written), by default. The full suite runs files in parallel and
-// one call can land on a busy machine, so a format is timed up to BEST_OF times, 200 ms apart, and the best
-// must be under the bound; the samples are printed as a diagnostic (best, median, worst) for the record.
+// The bar on a warm call (the index written) is relative: the same call with the index file removed first
+// (the full read), timed in this process on this fixture. An absolute figure fails on a busy machine; the
+// 200 ms target is only printed. The two arms alternate in pairs, so a load change reaches both. The
+// statistic is the median of the PAIRS per-pair ratios (warm / no-index of the same pair): one lucky or
+// unlucky sample moves a median by one rank, where a best-of minimum of the slow arm alone can collapse
+// the ratio (best-of-9 gave 0.974 against medians of 0.50 at load 137). Every pair is run: stopping at the
+// first passing ratio would give a broken index more chances to get lucky.
+// K: must stay above that median ratio with the index working and below it with the index bypassed
+// (loadIndex() returning {}: both arms then do the full read). Working, over 49 runs of status and summary
+// idle (load 7) and under 16 busy-loop workers (load 113 to 135) on 8 cores: 0.415 to 0.734. Bypassed,
+// 40 runs the same way: 0.885 to 1.136 (mostly 0.95 and above). K = 0.85 sits between 0.734 and 0.885.
 // The bound is held on 2000 finished tasks. A summary that lists a running task also counts the live driver
 // processes, which scans every task.json of the root (mcp/livecap.mjs liveProcesses): that run is timed and
 // printed with the golden's running task in, not bounded.
-const WARM_BOUND_MS = 200;
-const BEST_OF = 15;
+const K = 0.85;
+const PAIRS = 15;
+const WARM_TARGET_MS = 200;
+const TIMED = 5;
 const pause = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 
-function warmCalls(w, args, { bound, expected }) {
-  const ms = [];
-  for (let i = 0; i < BEST_OF && !(ms.length && i >= 5 && (!bound || Math.min(...ms) < bound)); i++) {
-    pause(200);
-    const at = performance.now();
-    const out = scrub(view(w, args));
-    ms.push(performance.now() - at);
-    if (expected) assert.equal(out, expected, `call ${i + 2} (index written)`);
-  }
-  const sorted = ms.sort((a, b) => a - b);
-  return { best: sorted[0], text: `best ${sorted[0].toFixed(0)} ms, median ${sorted[sorted.length >> 1].toFixed(0)} ms, worst ${sorted.at(-1).toFixed(0)} ms over ${sorted.length} warm calls` };
+function timed(w, args) {
+  pause(200);
+  const at = performance.now();
+  const out = scrub(view(w, args));
+  return { out, ms: performance.now() - at };
 }
 
-test(`2000 finished tasks: a warm --once status and summary call is under ${WARM_BOUND_MS} ms (best of ${BEST_OF})`, (t) => {
+const spread = (ms) => {
+  const sorted = [...ms].sort((a, b) => a - b);
+  return `best ${sorted[0].toFixed(0)} ms, median ${sorted[sorted.length >> 1].toFixed(0)} ms, worst ${sorted.at(-1).toFixed(0)} ms over ${sorted.length}`;
+};
+
+test(`2000 finished tasks: a warm --once status and summary call keeps the relative bound (median of ${PAIRS} pair ratios <= ${K})`, (t) => {
   const w = world();
   try {
     large(w, { running: false });
+    const index = join(w.tasks, '.view-index.json');
     for (const k of ['status', 'summary']) {
       const args = CALLS[k](w);
-      view(w, args); // writes the index
-      const { best, text } = warmCalls(w, args, { bound: WARM_BOUND_MS });
-      t.diagnostic(`--once ${k}, 2000 finished: ${text}`);
-      assert.ok(best < WARM_BOUND_MS, `${k}: best warm call took ${best.toFixed(0)} ms, bound ${WARM_BOUND_MS} ms`);
+      const full = [];
+      const warm = [];
+      for (let i = 0; i < PAIRS; i++) {
+        rmSync(index, { force: true });
+        full.push(timed(w, args).ms);
+        assert.ok(existsSync(index), `${k}: the no-index call writes the index the warm call reads`);
+        warm.push(timed(w, args).ms);
+      }
+      const ratios = warm.map((ms, i) => ms / full[i]).sort((a, b) => a - b);
+      const ratio = ratios[ratios.length >> 1];
+      t.diagnostic(`--once ${k}, 2000 finished, warm: ${spread(warm)} (target ${WARM_TARGET_MS} ms, not asserted)`);
+      t.diagnostic(`--once ${k}, 2000 finished, no index: ${spread(full)}; median warm/no-index per pair ${ratio.toFixed(3)}`);
+      assert.ok(ratio <= K, `${k}: relative bound: median warm/no-index ratio ${ratio.toFixed(3)} > ${K} (pair ratios ${ratios.map((r) => r.toFixed(2)).join(' ')})`);
     }
   } finally { w.cleanup(); }
 });
@@ -203,7 +222,13 @@ test('2001 tasks with one running: the warm --once status and summary stay byte-
     for (const k of ['status', 'summary']) {
       const args = CALLS[k](w);
       assert.equal(scrub(view(w, args)), golden().large[k], `${k}: first call (no index yet)`);
-      t.diagnostic(`--once ${k}, 2000 finished + 1 running: ${warmCalls(w, args, { expected: golden().large[k] }).text}`);
+      const ms = [];
+      for (let i = 0; i < TIMED; i++) {
+        const call = timed(w, args);
+        ms.push(call.ms);
+        assert.equal(call.out, golden().large[k], `${k}: call ${i + 2} (index written)`);
+      }
+      t.diagnostic(`--once ${k}, 2000 finished + 1 running, warm: ${spread(ms)}`);
     }
   } finally { w.cleanup(); }
 });

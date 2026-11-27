@@ -6,6 +6,9 @@
 // and the manager reads them back. No vendor CLI is needed; every node is self-submitted.
 //
 //   node --test teams/scripts/test-taskmanager.mjs
+//
+// Run alone this file is shard 1 of 3 (lib/tm-shard.mjs); test-taskmanager-shard2..3.mjs run the rest.
+// TM_SHARD=all runs every test; TM_SHARD=k/N picks slice k of N.
 
 // A test task must not land in the real run archive (mcp/runlog.mjs); spawned daemons inherit this.
 process.env.TEAMS_RUNS_DIR ??= 'off';
@@ -15,7 +18,8 @@ delete process.env.HARNESS_NODE;
 // Fixture daemons are detached and outlive a SIGKILLed or timed-out runner; with this set, daemon.mjs
 // watches the pid and exits once it is gone. Inherited by every fixture spawn.
 process.env.HARNESS_TEST_RUNNER_PID = String(process.pid);
-import { test, after } from 'node:test';
+import { after } from 'node:test';
+import { test, flush } from './lib/tm-shard.mjs';
 import assert from 'node:assert/strict';
 import { spawn, spawnSync, execFileSync } from 'node:child_process';
 import { mkdtempSync, mkdirSync, writeFileSync, appendFileSync, readFileSync, rmSync, existsSync, readdirSync, realpathSync, symlinkSync, statSync, utimesSync } from 'node:fs';
@@ -4750,9 +4754,12 @@ const FAKE_DRIVER_ALIVE = FAKE_DRIVER.replace(
 // stays up on every later invocation - a respawned driver a test can observe alive, instead of
 // racing the next death. A shared counter file (one JS process per invocation; no in-memory
 // state survives between them) says which attempt this is; each attempt's own argv/pid is
-// written to "<FAKE_DRIVER_OUT>.<n>" so a test can read every generation, not just the last.
+// written to "<FAKE_DRIVER_OUT>.<n>" so a test can read every generation, not just the last. "Stays
+// up" ends only when the test writes "<FAKE_DRIVER_OUT>.release" or removes that file's dir, which
+// every test using this script must do; the 120 s exit is only a hang guard.
 const FAKE_DRIVER_RESPAWN = `
 import { writeFileSync, existsSync, readFileSync } from 'node:fs';
+import { dirname } from 'node:path';
 const counterFile = process.env.FAKE_DRIVER_COUNTER;
 let n = 1;
 if (counterFile) {
@@ -4763,7 +4770,10 @@ const out = process.env.FAKE_DRIVER_OUT;
 if (out) writeFileSync(\`\${out}.\${n}\`, JSON.stringify({ n, pid: process.pid, cwd: process.cwd(), argv: process.argv.slice(2), wiki_root: process.env.TEAMS_WIKI_ROOT || null }));
 console.log(JSON.stringify({ type: 'fake-driver', attempt: n }));
 console.error(\`fake driver attempt \${n} drove nothing\`);
-if (n < 2) { process.exit(0); } else { setTimeout(() => process.exit(0), 5000); }
+if (n < 2) { process.exit(0); } else {
+  setInterval(() => { if (existsSync(\`\${out}.release\`) || !existsSync(dirname(out))) process.exit(0); }, 50);
+  setTimeout(() => process.exit(1), 120000);
+}
 `;
 
 // Emits a usage-limit result event on its stdout stream - the same NDJSON shape
@@ -4773,9 +4783,14 @@ const FAKE_DRIVER_LIMIT = `
 import { writeFileSync } from 'node:fs';
 const out = process.env.FAKE_DRIVER_OUT;
 if (out) writeFileSync(out, JSON.stringify({ argv: process.argv.slice(2) }));
+// A test that has seen the park writes <out>.live: a driver started after that stays up, so
+// the resumed run is observed running, not re-parked by a second limit hit.
+import { existsSync } from 'node:fs';
+if (out && existsSync(out + '.live')) { setTimeout(() => process.exit(1), 120000); } else {
 console.log(JSON.stringify({ type: 'result', result: "You've hit your 5-hour limit · resets 11:50pm (Asia/Seoul)" }));
 console.error('fake driver hit a usage limit');
 setTimeout(() => process.exit(1), 50);
+}
 `;
 
 async function waitFor(fn, what, ms = 15000) {
@@ -4904,7 +4919,9 @@ test('a driver that dies mid-run is respawned on the SAME run_id with a resume p
     await throughCritique(tm, task_id);
     const first = await tm.call('tm_next', { task_id });
     const firstChild = first.children[0];
-    const firstPid = firstChild.driver.pid;
+    // Attempt 1's own record, not tm_next's pid: under load attempt 1 is already dead and respawned by
+    // the time that reply is built, so the pid it shows can be attempt 2's.
+    const firstPid = (await waitFor(() => (existsSync(`${f.ran}.1`) ? JSON.parse(readFileSync(`${f.ran}.1`, 'utf8')) : null), 'the first driver')).pid;
 
     // Attempt 1 dies immediately; tm_next's own poll respawns attempt 2, which stays up long
     // enough (FAKE_DRIVER_RESPAWN) for this to observe it alive rather than racing its death too.
@@ -5455,11 +5472,18 @@ test('S2: a legacy s_run task reads its run\'s state, ignores roles.qa, is never
 });
 // ---------- size-S process handoff: s_driver ----------
 
+// FAKE_DRIVER_RESPAWN whose first driver stays up until the test writes "<out>.release1" (after the run
+// pointer exists), then exits with `code`. One that exits at once can be serviced and respawned before the
+// pointer is written (under load), so the recorded pid is the second driver's, alive until release.
+function holdFirstDriver(code) {
+  const held = FAKE_DRIVER_RESPAWN.replace('if (n < 2) { process.exit(0); }', `if (n < 2) { setInterval(() => { if (existsSync(\`\${out}.release1\`) || !existsSync(dirname(out))) process.exit(${code}); }, 50); setTimeout(() => process.exit(1), 120000); }`);
+  assert.notEqual(held, FAKE_DRIVER_RESPAWN);
+  return held;
+}
+
 test('S1: one harness driver in the project cwd; a dead one is respawned with a prompt naming the recorded run; past its budget the task reads blocked and tm_retry gives it a fresh driver', async () => {
   // The first death exits 1: a code-0 exit before any progress is counted too, but 1 is the plain counted death.
-  const dying = FAKE_DRIVER_RESPAWN.replace('if (n < 2) { process.exit(0); }', 'if (n < 2) { process.exit(1); }');
-  assert.notEqual(dying, FAKE_DRIVER_RESPAWN);
-  const f = driverFixture({}, dying);
+  const f = driverFixture({}, holdFirstDriver(1));
   const tm = await f.client.init();
   try {
     const open = await tm.call('tm_open', { roles: { qa: false }, brainstorm: false, request: 'small request', cwd: f.cwd, vendor: 'self', size: 'S', driver_restarts: 1 });
@@ -5472,7 +5496,16 @@ test('S1: one harness driver in the project cwd; a dead one is respawned with a 
     // The first driver opened its run and wrote the pointer, then died (FAKE_DRIVER exits at once).
     const run = graphRunFixture(f.cwd, task_id);
     writePointer(f.root, task_id, run);
-    await waitFor(async () => { const t = readTask(f.root, task_id); return !driverAliveLocal(t.harness_run.driver.pid); }, 'the first driver to exit');
+    const diag = () => {
+      let led = '';
+      try { led = readFileSync(join(f.root, task_id, 'ledger.jsonl'), 'utf8').split('\n').filter((l) => /spawn|driver/.test(l)).join('\n'); } catch {}
+      const ps = spawnSync('pgrep', ['-fl', f.drv]).stdout?.toString() || '';
+      return `recorded pid ${readTask(f.root, task_id).harness_run.driver.pid}, first pid ${first.pid}, ran.2 ${existsSync(`${f.ran}.2`)}\nledger:\n${led}\nprocesses:\n${ps}`;
+    };
+    assert.equal(readTask(f.root, task_id).harness_run.driver.pid, first.pid, `the recorded driver is the first one\n${diag()}`);
+    assert.ok(!existsSync(`${f.ran}.2`), `no second driver before the first exits\n${diag()}`);
+    writeFileSync(`${f.ran}.release1`, '');
+    await waitFor(async () => { const t = readTask(f.root, task_id); return !driverAliveLocal(t.harness_run.driver.pid); }, 'the first driver to exit').catch((e) => { throw new Error(`${e.message}\n${diag()}`); });
     const nx = await tm.call('tm_next', { task_id });
     assert.equal(nx.state, 'running');
     const second = await waitFor(() => (existsSync(`${f.ran}.2`) ? JSON.parse(readFileSync(`${f.ran}.2`, 'utf8')) : null), 'the respawned driver');
@@ -5481,7 +5514,8 @@ test('S1: one harness driver in the project cwd; a dead one is respawned with a 
     assert.ok(resume.includes(run.run_id), resume.slice(0, 400));
     assert.match(resume, /never open a second run/);
     assert.equal(realpathSync(JSON.parse(readFileSync(`${f.ran}.2`, 'utf8')).cwd), realpathSync(readTask(f.root, task_id).harness_run.cwd), 'the respawned driver runs in the run\'s own worktree');
-    // The respawned one dies too (after 5s): the budget of 1 is spent - blocked, with a report.
+    // The respawned one dies too (released here): the budget of 1 is spent - blocked, with a report.
+    writeFileSync(`${f.ran}.release`, '');
     await waitFor(async () => { const t = readTask(f.root, task_id); return !driverAliveLocal(t.harness_run.driver.pid); }, 'the second driver to exit', 20000);
     const dead = await tm.call('tm_next', { task_id });
     assert.equal(dead.state, 'blocked');
@@ -5501,8 +5535,14 @@ test('S1: one harness driver in the project cwd; a dead one is respawned with a 
   }
 });
 
-// Every spawn writes "<FAKE_DRIVER_OUT>.<n>" and exits at once - the spawn stub the stuck tests count.
-const FAKE_DRIVER_DIES = FAKE_DRIVER_RESPAWN.replace('if (n < 2) { process.exit(0); } else { setTimeout(() => process.exit(0), 5000); }', 'process.exit(1); // a counted death');
+// Every spawn writes "<FAKE_DRIVER_OUT>.<n>" and dies with exit 1 (a counted death) once the test
+// writes "<FAKE_DRIVER_OUT>.release" (or removes its dir; 120 s guard) - the spawn stub the stuck
+// tests count. It waits so the test can write the run pointer first: a driver that died before the
+// pointer existed was a respawn the engine counted, under load (the 'no restart spent' flake).
+const FAKE_DRIVER_DIES = FAKE_DRIVER_RESPAWN.replace(/if \(n < 2\)[\s\S]*$/, () => `setInterval(() => { if (existsSync(\`\${out}.release\`) || !existsSync(dirname(out))) process.exit(1); }, 50);
+setTimeout(() => process.exit(1), 120000);
+`);
+assert.notEqual(FAKE_DRIVER_DIES, FAKE_DRIVER_RESPAWN); // a replace that misses leaves a driver that never dies
 
 test('S1: a dead harness driver on an unchanged run that stopped on a failed report is not respawned - the task blocks once, naming the report node and how to retry', async () => {
   const f = driverFixture({}, FAKE_DRIVER_DIES);
@@ -5512,6 +5552,7 @@ test('S1: a dead harness driver on an unchanged run that stopped on a failed rep
     await waitFor(() => existsSync(`${f.ran}.1`), 'the first driver');
     const run = graphRunFixture(f.cwd, task_id, { failedReport: true });
     writePointer(f.root, task_id, run);
+    writeFileSync(`${f.ran}.release`, '');
     await waitFor(async () => { const t = readTask(f.root, task_id); return !driverAliveLocal(t.harness_run.driver.pid); }, 'the first driver to exit');
     for (let i = 0; i < 4; i++) {
       const nx = await tm.call('tm_next', { task_id });
@@ -5545,6 +5586,7 @@ test('S1: once stuck on a failed report, a changed run clears the block and the 
     await waitFor(() => existsSync(`${f.ran}.1`), 'the first driver');
     const run = graphRunFixture(f.cwd, task_id, { failedReport: true });
     writePointer(f.root, task_id, run);
+    writeFileSync(`${f.ran}.release`, '');
     await waitFor(async () => { const t = readTask(f.root, task_id); return !driverAliveLocal(t.harness_run.driver.pid); }, 'the first driver to exit');
     assert.equal((await tm.call('tm_next', { task_id })).state, 'blocked');
     assert.ok(readTask(f.root, task_id).harness_run.stuck);
@@ -5566,13 +5608,16 @@ test('S1: once stuck on a failed report, a changed run clears the block and the 
 });
 
 test('S1: tm_retry on a task stuck on a failed report re-pends only that report node (with feedback), clears the block, and starts one new driver on the same run', async () => {
-  const f = driverFixture({}, FAKE_DRIVER_RESPAWN);
+  const f = driverFixture({}, holdFirstDriver(0));
   const tm = await f.client.init();
   try {
     const { task_id } = await tm.call('tm_open', { roles: { qa: false }, brainstorm: false, request: 'small request', cwd: f.cwd, vendor: 'self', size: 'S', driver_restarts: 2 });
-    await waitFor(() => existsSync(`${f.ran}.1`), 'the first driver');
+    const first = await waitFor(() => (existsSync(`${f.ran}.1`) ? JSON.parse(readFileSync(`${f.ran}.1`, 'utf8')) : null), 'the first driver');
     const run = graphRunFixture(f.cwd, task_id, { failedReport: true, accept: false });
     writePointer(f.root, task_id, run);
+    assert.equal(readTask(f.root, task_id).harness_run.driver.pid, first.pid, 'the recorded driver is the first one');
+    assert.ok(!existsSync(`${f.ran}.2`), 'no second driver before the first exits');
+    writeFileSync(`${f.ran}.release1`, '');
     await waitFor(async () => { const t = readTask(f.root, task_id); return !driverAliveLocal(t.harness_run.driver.pid); }, 'the first driver to exit');
     assert.equal((await tm.call('tm_next', { task_id })).state, 'blocked');
     assert.equal(readTask(f.root, task_id).harness_run.stuck.node, 'report');
@@ -5624,11 +5669,13 @@ test('S1a: a harness driver that hit a usage limit parks on waiting_capacity wit
     const nx = await tm.call('tm_next', { task_id });
     assert.equal(nx.state, 'running', 'a capacity park is not a death: no restart spent, not blocked');
     assert.match(nx.waiting_capacity.reason, /hit your 5-hour limit/);
+    writeFileSync(join(f.drv, 'ran.json.live'), '');
     const r = await tm.call('tm_retry', { task_id, reset_capacity: true });
     assert.deepEqual(r.resumed, ['S']);
     assert.equal(readTask(f.root, task_id).harness_run.waiting_capacity, undefined);
   } finally {
     tm.close();
+    killDriversIn(f.drv);
     rmSync(f.cwd, { recursive: true, force: true });
     rmSync(f.root, { recursive: true, force: true });
     rmSync(f.drv, { recursive: true, force: true });
@@ -11786,7 +11833,7 @@ test('S1 scope: a size-S open records the baseline of pre-dirty paths, and the h
     const paths = out.stdout.split('\n').filter(Boolean);
     assert.ok(paths.includes('new-edit.txt'), out.stdout + out.stderr);
     assert.ok(!paths.includes('pre-dirty.txt'), out.stdout);
-  } finally { tm.close(); rmSync(f.cwd, { recursive: true, force: true }); rmSync(f.root, { recursive: true, force: true }); }
+  } finally { tm.close(); rmSync(f.cwd, { recursive: true, force: true }); rmSync(f.root, { recursive: true, force: true }); rmSync(f.drv, { recursive: true, force: true }); }
 });
 
 // Card 86 (E-7d212456): QA/audit/repair scratch stays out of the project.
@@ -11804,7 +11851,7 @@ test('S1 scope prompt: the size-S driver is told the engine computes its scope v
     assert.match(prompt, /counts only the paths your own nodes wrote/);
     assert.match(prompt, /You do not compute or report a scope verdict/);
     assert.ok(prompt.includes(SCRATCH_RULE), 'the size-S run is told where scratch goes');
-  } finally { tm.close(); rmSync(f.cwd, { recursive: true, force: true }); rmSync(f.root, { recursive: true, force: true }); }
+  } finally { tm.close(); rmSync(f.cwd, { recursive: true, force: true }); rmSync(f.root, { recursive: true, force: true }); rmSync(f.drv, { recursive: true, force: true }); }
 });
 
 // Card 96: base_commit at tm_open, and the size-S driver is told to run gateintegrity against it.
@@ -11815,7 +11862,7 @@ test('base_commit: tm_open in a git repo records the repo HEAD', async () => {
     const head = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: f.cwd, encoding: 'utf8' }).trim();
     const { task_id } = await tm.call('tm_open', { roles: { qa: false }, brainstorm: false, request: 'small', cwd: f.cwd, vendor: 'self', size: 'S' });
     assert.equal(readTask(f.root, task_id).base_commit, head);
-  } finally { tm.close(); rmSync(f.cwd, { recursive: true, force: true }); rmSync(f.root, { recursive: true, force: true }); }
+  } finally { tm.close(); rmSync(f.cwd, { recursive: true, force: true }); rmSync(f.root, { recursive: true, force: true }); rmSync(f.drv, { recursive: true, force: true }); }
 });
 
 test('base_commit: a cwd outside any git work tree records null and the size-S prompt has no gateintegrity sentence', async (t) => {
@@ -11829,7 +11876,7 @@ test('base_commit: a cwd outside any git work tree records null and the size-S p
     assert.equal(readTask(g.root, task_id).base_commit, null);
     const ran = await waitFor(() => (existsSync(`${g.ran}.1`) ? JSON.parse(readFileSync(`${g.ran}.1`, 'utf8')) : null), 'the harness driver to run');
     assert.ok(!ran.argv[ran.argv.length - 1].includes('gateintegrity'));
-  } finally { tm.close(); rmSync(plain, { recursive: true, force: true }); rmSync(g.cwd, { recursive: true, force: true }); rmSync(g.root, { recursive: true, force: true }); }
+  } finally { tm.close(); rmSync(plain, { recursive: true, force: true }); rmSync(g.cwd, { recursive: true, force: true }); rmSync(g.root, { recursive: true, force: true }); rmSync(g.drv, { recursive: true, force: true }); }
 });
 
 test('base_commit: the size-S driver prompt names gateintegrity.mjs, the recorded base_commit and the exit statuses', async () => {
@@ -11844,7 +11891,7 @@ test('base_commit: the size-S driver prompt names gateintegrity.mjs, the recorde
     assert.ok(prompt.includes('gateintegrity.mjs'));
     assert.ok(prompt.includes(sha), 'the recorded base_commit sha');
     assert.match(prompt, /exit status[^.]*\b1 = /);
-  } finally { tm.close(); rmSync(f.cwd, { recursive: true, force: true }); rmSync(f.root, { recursive: true, force: true }); }
+  } finally { tm.close(); rmSync(f.cwd, { recursive: true, force: true }); rmSync(f.root, { recursive: true, force: true }); rmSync(f.drv, { recursive: true, force: true }); }
 });
 
 test('the execute-stage contract, the QA card and the audit card carry the one shared SCRATCH_RULE; none says "Write only to test/"', async () => {
@@ -12610,3 +12657,4 @@ test('card169 guard: a size-S fallback run without providers.json has no harness
     assert.equal('providers' in st.harness, false, JSON.stringify(st.harness));
   });
 });
+flush();
