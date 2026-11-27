@@ -173,6 +173,7 @@ One row per `git worktree list --porcelain` entry of this repo: branch (or detac
 When a `git push` to `main` goes through in one session (`origin main`, `HEAD:main`, `x:main`, or a plain push while on main), every other open session of the same repository that was active in the last 30 minutes gets a message: `main moved to <sha> … Fetch before editing or bumping versions.` At most one message per session every 2 minutes; this session gets a toast `main moved: told N of M`. Headless runs send nothing.
 
 ## Status
+- `0.14.1`: smart-compact writes a bridge file with the pre-written handoff, so the PreCompact hook reuses it where an org policy skips the mod's compact hook.
 - `0.14.0`: a status line drawn by node (model, time, git branch, context %, 5h/7d limits), on by the `status_line` option unless you set your own statusLine; where a policy plugin skips the settings hook, set statusLine by hand.
 - `0.13.0`: smart-compact writes the handoff ahead, once per compaction, near the threshold and reuses it when the compaction comes (auto, plugin, marked manual or precompute), charges that call to the compaction, keeps the engine's own summary after an engine compaction, and `/smart-compact log` gives totals per arm (before, after, off).
 - `0.12.0`: under a policy plugin that skips the `session.compact` mod hook, auto-compact still gets the handoff sections: a PreCompact command hook supplies them. It does nothing for a manual compact, a mark, or when smart-compact is off.
